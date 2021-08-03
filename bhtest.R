@@ -1,33 +1,12 @@
-#' ###
-#' Bernhardt poisson
-#' ###
+df <- simData() # from ./Simulation.R
 
-# simulate some data
-n <- 200
-mi <- 5
-
-# outcome
-Y <- rpois(n*mi,8)
-
-# X
-id <- 1:200
-time <- rep(0:(mi-1), n)
-age <- rnorm(n)
-X <- cbind(id = rep(id, each = mi), time, age = rep(age, each = mi))
-
-# Data and fit 
-data <- data.frame(Y, X)
-glmerfit <- lme4::glmer(Y ~ time + age + (1 + time|id), data, family = 'poisson')
-true.res <- lme4::ranef(glmerfit)$id
-
-betaTrue <- c(2, 0.01, -0.002)
-
+# Get X, Y, Z...
 # Functions to extract subject-specific data
 getXi <- function(data){
   uids <- unique(data$id)
   xx <- list()
   for(i in uids){
-    xx[[i]] <- as.matrix(cbind(1, data[data$id == i, c("time", "age")]))
+    xx[[i]] <- as.matrix(cbind(1, data[data$id == i, c("x1", "x2", 'x3')]))
   }
   xx
 }
@@ -45,13 +24,13 @@ getZi <- function(data){
   uids <- unique(data$id)
   xx <- list()
   for(i in uids){
-    xx[[i]] <- cbind(1, 0:(mi-1))
+    xx[[i]] <- as.matrix(cbind(1, data[data$id == i, "x1"]))
   }
   xx
 }
 
 # Set out complete data loglikelihood -------------------------------------
-X <- getXi(data); Y <- getYi(data); Z <- getZi(data)
+X <- getXi(df); Y <- getYi(df); Z <- getZi(df)
 # FOR SUBJECT i
 ll <- function(b, Y, X, Z, beta, D){
   rtn <- -sum(exp(X %*% beta + Z %*% b)) + Y %*% (X %*% beta + Z %*% b) - sum(lfactorial(Y)) - 
@@ -71,33 +50,29 @@ ll2 <- function(b, Y, X, Z, beta, D){
   attr(rtn, 'gradient') <- -1 * (-1 * c(crossprod(Z, exp(X %*% beta + Z %*% b))) + Y %*% Z - c(solve(D) %*% b))
   -rtn
 }
-  
 
 # Sigmai deriv step
 d2b.ll <- function(b, X, Z, beta, D){
   crossprod(-1 * diag(as.numeric(exp(X %*% beta + Z %*% b))) %*% Z, Z) - solve(D)
 }
 
-nlmfit <- nlm(ll2, b0[1,], Y[[1]], X[[1]], Z[[1]], beta, D)
-Sigmai <- solve(-1 * d2b.ll(nlmfit$estimate, X[[1]], Z[[1]], betaTrue, D))
-
-# EM ----------------------------------------------------------------------
+#  EM ----------------------------------------------------------------------
 gh <- statmod::gauss.quad.prob(9, dist = 'normal')
 w <- gh$weights; v <- gh$nodes
 # Construct a while loop
 diff <- maxiter <- 100
 tol <- 1e-4; iter <- 1
-uids <- unique(data$id)
+uids <- unique(df$id); n <- length(uids)
 # Inits
 b0 <- matrix(0.001, n, 2)
-D <- matrix(lme4::VarCorr(glmerfit)$id, 2, 2)
-beta <- c(summary(glmerfit)$coef[,1])
+D <- diag(2)
+beta <- c(0.1, 0.05, -0.1, 0.1)
 # param vector
 vech <- function(x) x[lower.tri(x, diag = T)]
 params <- c(c(beta), vech(D))
 while(diff > tol && iter < maxiter){
   # Estep
-  Sbetai <- matrix(NA, nr = length(uids), nc = 3)
+  Sbetai <- matrix(NA, nr = length(uids), nc = 4)
   Ibetai <- D.newi <- list()
   bi.mat <- matrix(NA, nr = length(uids), nc = 2)
   for(i in uids){
@@ -111,11 +86,11 @@ while(diff > tol && iter < maxiter){
     
     # Update for beta
     tau <- sqrt(diag(tcrossprod(Z[[i]] %*% Sigmai, Z[[i]])))
-    Sbetai.store <- matrix(NA, nr = 9, nc = 3)
+    Sbetai.store <- matrix(NA, nr = 9, nc = 5)
     for(k in 1:9){
-      Sbetai.store[k,] <- c(crossprod(-X[[i]], w[k] * exp(X[[i]] %*% beta + Z[[i]] %*% bi + v[k] * tau))) + Y[[i]] %*% X[[i]]
+      Sbetai.store[k,] <- w[k] * exp(X[[i]] %*% beta + Z[[i]] %*% bi + v[k] * tau)
     }
-    Sbetai[i, ] <- colSums(Sbetai.store)
+    Sbetai[i, ] <- crossprod(X[[i]], Y[[i]]) - crossprod(X[[i]], colSums(Sbetai.store))
     
     Ibetai.store <- list()
     for(k in 1:9){
@@ -142,5 +117,3 @@ while(diff > tol && iter < maxiter){
   params <- params.new
   iter <- iter + 1
 }
-
-
