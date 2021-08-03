@@ -1,3 +1,4 @@
+library(lme4)
 df <- simData() # from ./Simulation.R
 
 # Get X, Y, Z...
@@ -57,27 +58,36 @@ d2b.ll <- function(b, X, Z, beta, D){
 }
 
 #  EM ----------------------------------------------------------------------
-gh <- statmod::gauss.quad.prob(9, dist = 'normal')
+# Quadrature points
+gh.nodes <- 15
+gh <- statmod::gauss.quad.prob(gh.nodes, dist = 'normal')
 w <- gh$weights; v <- gh$nodes
-# Construct a while loop
+# While/for loop-specific items
 diff <- maxiter <- 100
-tol <- 1e-4; iter <- 1
+tol <- 5e-3; iter <- 1
 uids <- unique(df$id); n <- length(uids)
-# Inits
+# Initial conditions - bad
 b0 <- matrix(0.001, n, 2)
 D <- diag(2)
 beta <- c(0.1, 0.05, -0.1, 0.1)
+# initial conditions - better
+glmfit <- glmer(Y ~ x1 + x2 + x3 + (1 + x1|id), data = df, family = poisson)
+beta <- fixef(glmfit)
+D <- matrix(as.numeric(VarCorr(glmfit)$id), 2, 2)
+b0 <- as.matrix(ranef(glmfit)$id)
 # param vector
 vech <- function(x) x[lower.tri(x, diag = T)]
 params <- c(c(beta), vech(D))
-while(diff > tol && iter < maxiter){
+while(diff > tol && iter <= maxiter){
   # Estep
   Sbetai <- matrix(NA, nr = length(uids), nc = 4)
   Ibetai <- D.newi <- list()
   bi.mat <- matrix(NA, nr = length(uids), nc = 2)
   for(i in uids){
     # bi <- ucminf(c(b0[i,]), ll, gradll, Y[[i]], X[[i]], Z[[i]], beta, D)$par
-    bi <- nlm(ll2, b0[i,], Y[[i]], X[[i]], Z[[i]], beta, D)$estimate
+    # bi <- nlm(ll2, b0[i,], Y[[i]], X[[i]], Z[[i]], beta, D)$estimate
+    bi <- ucminf::ucminf(b0[i,], ll, gradll, 
+                         Y[[i]], X[[i]], Z[[i]], beta, D)$par
     Sigmai <- solve(-1  * d2b.ll(bi, X[[i]], Z[[i]], beta, D))
     
     bi.mat[i,] <- bi
@@ -86,15 +96,15 @@ while(diff > tol && iter < maxiter){
     
     # Update for beta
     tau <- sqrt(diag(tcrossprod(Z[[i]] %*% Sigmai, Z[[i]])))
-    Sbetai.store <- matrix(NA, nr = 9, nc = 5)
-    for(k in 1:9){
+    Sbetai.store <- matrix(NA, nr = gh.nodes, nc = 5)
+    for(k in 1:gh.nodes){
       Sbetai.store[k,] <- w[k] * exp(X[[i]] %*% beta + Z[[i]] %*% bi + v[k] * tau)
     }
     Sbetai[i, ] <- crossprod(X[[i]], Y[[i]]) - crossprod(X[[i]], colSums(Sbetai.store))
     
     Ibetai.store <- list()
-    for(k in 1:9){
-      Ibetai.store[[k]] <- w[k] * crossprod(diag(as.numeric(exp(X[[i]] %*% beta + Z[[i]] %*% bi + v[k] * tau))) %*% X[[i]], X[[i]])
+    for(k in 1:gh.nodes){
+      Ibetai.store[[k]] <-crossprod(diag(as.numeric(w[k] * exp(X[[i]] %*% beta + Z[[i]] %*% bi + v[k] * tau))) %*% X[[i]], X[[i]])
     }
     Ibetai[[i]] <- Reduce('+', Ibetai.store)
   }
