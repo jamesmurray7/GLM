@@ -22,6 +22,8 @@ sderiv <- function(beta){
   crossprod(-diag(as.numeric(exp(Xm %*% beta))) %*% Xm, Xm)
 } #check this with jacobian(po.grad!)
 
+# jacobian(po.grad, beta); sderiv(beta)
+ 
 # While loop NR
 beta <- c(0.001,0.001)
 iter <- 1
