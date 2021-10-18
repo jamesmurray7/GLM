@@ -56,7 +56,7 @@ simData <- function(n, ntms, beta, D, gamma, eta,
   
   cens.time <- rexp(n, cens.rate)
   survtime <- pmin(t, cens.time)
-  survtime[surv.time >= tau] <- tau
+  survtime[survtime >= tau] <- tau
   
   # Status flag
   status <- rep(1, n)
