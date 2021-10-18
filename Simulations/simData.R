@@ -55,20 +55,20 @@ simData <- function(n, ntms, beta, D, gamma, eta,
   t[is.nan(t)] <- tau
   
   cens.time <- rexp(n, cens.rate)
-  surv.time <- pmin(t, cens.time)
-  surv.time[surv.time >= tau] <- tau
+  survtime <- pmin(t, cens.time)
+  survtime[surv.time >= tau] <- tau
   
   # Status flag
   status <- rep(1, n)
-  is.censored <- cens.time < surv.time
-  status[which(surv.time == tau | is.censored | surv.time == cens.time)] <- 0 # Failure flag
+  is.censored <- cens.time < survtime
+  status[which(survtime == tau | is.censored | survtime == cens.time)] <- 0 # Failure flag
   
   # Output Dataframes
-  surv.data <- data.frame(id, surv.time, status)
+  surv.data <- data.frame(id, survtime, status)
   long.data <- do.call(rbind, dfs)
   
   dat <- dplyr::left_join(long.data, surv.data, 'id')
-  dat <- dat[dat$time <= dat$surv.time, ]
+  dat <- dat[dat$time <= dat$survtime, ]
   
   message(round(100 * sum(surv.data$status)/n), '% failure rate')
   dat
