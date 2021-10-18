@@ -32,11 +32,11 @@ inits.long <- suppressMessages(suppressWarnings(Longit.inits(2, data)))
 inits.surv <- TimeVarCox(data, Ranefs(inits.long))
 
 source('./inits/MVLME.R')
-mvlme.fit <- mvlme(data, Y, X, Z, inits.long, mvlme.tol = 6e-3)
-mvlme.fit$beta
+mvlme.fit <- mvlme(data, Y, X, Z, inits.long, mvlme.tol = 5e-3)
 
-beta <- inits.long$beta.init
-D <- inits.long$D.init
+beta <- mvlme.fit$beta.init
+D <- mvlme.fit$D.init
+b <- mvlme.fit$b # currently a list
 gamma <- inits.surv$inits[3:4]
 eta <- inits.surv$inits[1:2]
 
