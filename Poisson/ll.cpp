@@ -19,7 +19,7 @@ double ll(vec& b, const colvec& Y, const colvec& lfactY, const mat& X, const mat
 // [[Rcpp::export]]
 colvec gradll(vec& b, const colvec& Y, const mat& X, const mat& Z, const mat& D,
 		     const rowvec& K, const int Delta, const double l0i,
-		     const rowvec& l0u, const mat& Fu, const vec& g, const vec& beta, const vec& eta,
+		     const rowvec& l0u, const mat& Fu, const vec& beta, const vec& eta,
 		     const vec& gr, const rowvec& rvFi, const int nK){
 	return -1.0 * (-Z.t() * exp(X * beta + Z * b) + Z.t() * Y - D.i() * b + Delta * rvFi.t() % gr + 
 	                 - repmat(Fu, 1, nK).t() * (l0u.t() % (kron(exp(K * eta), exp(repmat(Fu, 1, nK) * (gr % b))))) % gr);
