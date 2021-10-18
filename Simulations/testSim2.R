@@ -1,32 +1,23 @@
 #' #######
-#' Simulates data under a multivariate Poisson model which is then linked with a 
+#' Simulates data under a Poisson model which is then linked with a 
 #' survival sub-model by its random effects, which are assumed to be Gaussian.
 #' #######
 
 n <- 100; id <- 1:n
 D <- matrix(c(0.5, 0, 0, 0.1), 2, 2)
-D <- as.matrix(Matrix::bdiag(D, D))
-b <- MASS::mvrnorm(n, mu = c(0, 0, 0, 0), Sigma = D); q <- ncol(b)
-qk <- split(seq(q), cut(seq_along(seq(q)), nK, labels = F)) # indices
+b <- MASS::mvrnorm(n, mu = c(0, 0), Sigma = D)
 time <- 0:5
 cont <- rnorm(n)
 bin <- rbinom(n, 1, .5)
-beta <- rbind(
-  c(15, 0.15, -0.15, 0.6),
-  c(10, 0.05, -0.1, 1)
-)
-
-dfs <- list(); 
+beta <- c(3.25, 0.15, -0.15, 0.6)
+dfs <- list(); lambda_is <- numeric(n)
 for(i in 1:n){
-  Yijk <- lambda_ijks <- matrix(NA, nr = length(time), nc = nK) # i sub; j time; k longit response
-  for(k in 1:nK){
-    lambda_ijks[, k] <- cbind(1, time, cont[i], bin[i]) %*% beta[k, ] + cbind(1, time) %*% b[i, qk[[k]]]
-    for(j in seq_along(lambda_ijks[, k])){
-      Yijk[j, k] <- rpois(1, lambda_ijks[j, k])
-    }
+  Yi <- numeric(length(time))
+  lambda_i <- cbind(1, time, cont[i], bin[i]) %*% beta + cbind(1, time) %*% b[i, ]
+  for(j in seq_along(lambda_i)){       # This probably very inefficient, but unsure of behaviour of rpois with a vector of lambdas...
+    Yi[j] <- rpois(1, lambda_i[j])
   }
-  colnames(Yijk) <- paste0('Y.', 1:nK)
-  dfs[[i]] <- data.frame(id = id[i], time = time, cont = cont[i], bin = bin[i], Yijk)
+  dfs[[i]] <- data.frame(id = id[i], time = time, cont = cont[i], bin = bin[i], Y = Yi)
 }
 
 K <- cbind(cont, bin)
@@ -34,13 +25,11 @@ eta <- c(-0.2, .5)
 # Simulating surviva; times
 Keta <- K %*% eta
 U <- runif(n)
-gamma <- c(.5, -.5)
-theta0 <- -6; theta1 <- .15
-inds <-  split(seq(nK^2), rep(1:nK, 2))
-b0 <- b[, inds[[1]]]; b1 <- b[, inds[[2]]]
 
-denom <- theta1 * b1 %*% gamma
-rhs <- ((theta1 + b0 %*% gamma) * log(U))/(exp(theta0 + Keta + b0 %*% gamma))
+theta0 <- -6; theta1 <- .15
+
+denom <- theta1 * b[, 2, drop = F] %*% gamma
+rhs <- ((theta1 + b[, 1, drop = F] %*% gamma) * log(U))/(exp(theta0 + Keta + b[, 1, drop = F] %*% gamma))
 t <- suppressWarnings(log((1 - rhs)/denom))
 
 t[is.nan(t)] <- 5.1
@@ -63,21 +52,15 @@ dat <- dat[dat$time <= dat$surv.time, ]
 
 # Make a function as we go ------------------------------------------------
 
-# Multivariate
+# UNIVARIATE
 simData <- function(n, ntms, beta, D, gamma, eta, 
                     theta = c(-6, 0.15), cens.rate = exp(-3.5)){
-  # RE & general stuff & checks pre-simulation ----
-  nK <- nrow(beta)
+  # RE stuff
   q <- length(diag(D))
-  if(nK^2 != q) stop('Only intercept and slope models fit, nK != q')
   if(!isSymmetric(D)) stop('D must be symmetric')
   if(any(eigen(D)$values < 0) || (det(D) <= 0)) stop("Covariance matrix must be positive semi-definite")
-  
   b <- MASS::mvrnorm(n, mu = rep(0, q), Sigma = D)
-  # Split-out some helpful indices
-  qk <- split(seq(q), cut(seq_along(seq(q)), nK, labels = F)) 
-  int.slope.inds <- split(seq(nK^2), rep(1:nK, 2))
-  b0 <- b[, int.slope.inds[[1]]]; b1 <- b[, int.slope.inds[[2]]] # Pull-out intercept(s) and slope(s) for later use...
+  b0 <- b[, 1, drop = F]; b1 <- b[, 2, drop = F] # Pull-out intercept and slope for later use...
   
   # Necessary parameters
   id <- 1:n
@@ -85,17 +68,14 @@ simData <- function(n, ntms, beta, D, gamma, eta,
   cont <- rnorm(n); bin <- rbinom(n, 1, 0.5)
     
   # Simulate longitudinal outcome
-  dfs <- list(); 
+  dfs <- list(); lambda_is <- numeric(n)
   for(i in 1:n){
-    Yijk <- lambda_ijks <- matrix(NA, nr = length(time), nc = nK) # i sub; j time; k longit response
-    for(k in 1:nK){
-      lambda_ijks[, k] <- cbind(1, time, cont[i], bin[i]) %*% beta[k, ] + cbind(1, time) %*% b[i, qk[[k]]]
-      for(j in seq_along(lambda_ijks[, k])){
-        Yijk[j, k] <- rpois(1, lambda_ijks[j, k])
-      }
+    Yi <- numeric(length(time))
+    lambda_i <- cbind(1, time, cont[i], bin[i]) %*% beta + cbind(1, time) %*% b[i, ]
+    for(j in seq_along(lambda_i)){       # This probably very inefficient, but unsure of behaviour of rpois with a vector of lambdas...
+      Yi[j] <- rpois(1, lambda_i[j])
     }
-    colnames(Yijk) <- paste0('Y.', 1:nK)
-    dfs[[i]] <- data.frame(id = id[i], time = time, cont = cont[i], bin = bin[i], Yijk)
+    dfs[[i]] <- data.frame(id = id[i], time = time, cont = cont[i], bin = bin[i], Y = Yi)
   }
   
   # Simulating survival times
@@ -132,12 +112,5 @@ simData <- function(n, ntms, beta, D, gamma, eta,
 
 rm(list=ls())
 
-D <- matrix(c(0.5, 0, 0, 0.1), 2, 2)
-D <- as.matrix(Matrix::bdiag(D, D))
-beta <- rbind(
-  c(15, 0.15, -0.15, 0.6),
-  c(10, 0.05, -0.1, 1)
-)
-
-simData(150, 10, beta, D, c(0.5, -0.25), c(0.05, 0.33))
+simData(150, 10, c(15, -1, 0.5, 3), matrix(c(.5, 0, 0, .05), 2, 2), 0.5, c(0.05, 0.33))
 
