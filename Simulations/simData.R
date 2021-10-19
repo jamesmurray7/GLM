@@ -33,7 +33,7 @@ simData <- function(n, ntms, beta, D, gamma, eta,
   for(i in 1:n){
     Yijk <- lambda_ijks <- matrix(NA, nr = length(time), nc = nK) # i sub; j time; k longit response
     for(k in 1:nK){
-      lambda_ijks[, k] <- cbind(1, time, cont[i], bin[i]) %*% beta[k, ] + cbind(1, time) %*% b[i, qk[[k]]]
+      lambda_ijks[, k] <- exp(cbind(1, time, cont[i], bin[i]) %*% beta[k, ] + cbind(1, time) %*% b[i, qk[[k]]])
       for(j in seq_along(lambda_ijks[, k])){
         Yijk[j, k] <- rpois(1, lambda_ijks[j, k])
       }
