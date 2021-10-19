@@ -1,5 +1,6 @@
-mvlme <- function(d, Y, X, Z, inits.long, mvlme.tol = 5e-3){
-  diff <- 100; iter <- 0;
+mvlme <- function(d, Y, X, Z, inits.long, nK, q,    # data-specific args
+                  mvlme.tol = 5e-3){                # (relative) tolerance.
+  
   uids <- unique(d$id)
   n <- length(uids)
   
@@ -7,15 +8,19 @@ mvlme <- function(d, Y, X, Z, inits.long, mvlme.tol = 5e-3){
   D <- inits.long$D.init; Dinv <- solve(D)
   beta <- inits.long$beta.init
   # b, the REs
-  b <- as.matrix(Ranefs(inits.long))
-  id_name <- grepl('id', colnames(b))
-  b <- lapply(1:nrow(b), function(x) b[x, !id_name])
+  b0 <- as.matrix(Ranefs(inits.long))
+  id_name <- grepl('id', colnames(b0))
+  b0 <- lapply(1:nrow(b0), function(x) b0[x, !id_name])
   
   # And make parameter vector
   params <- c(vech(D), beta)
   names(params) <- c(rep("D", length(vech(D))), names(beta))
   
+  gh <- statmod::gauss.quad.prob(9, 'normal')
+  w <- gh$w; v <- gh$n
+  
   # EM Algorithm
+  diff <- 100; iter <- 0;
   mvlmetime <- c()
   EMstart <- proc.time()[3]
   while(diff > mvlme.tol){
@@ -31,21 +36,27 @@ mvlme <- function(d, Y, X, Z, inits.long, mvlme.tol = 5e-3){
     #              Z) - Dinv
     # }, b = b, X = X, Z = Z, SIMPLIFY = F)
     
-    pois.vars <- mapply(function(b, X, Z){ # Assume dispersion = 1
-      diag(c(exp(X %*% beta + Z %*% b)))
-    }, b = b, X = X, Z = Z, SIMPLIFY = F)
+    b <- mapply(function(b0, Y, lfactY, X, Z){
+      ucminf::ucminf(b0, po_ll, po_grad,
+                     Y, lfactY, X, Z, D, beta, q, control = list())$par
+    }, b0=b0, Y=Y, lfactY = lapply(Y, lfactorial), X = X, Z = Z,
+    SIMPLIFY = F)
     
-    b <- mapply(function(Z, V, X, Y){
-      ZD <- Z %*% D
-      ZDZtV <- Z %*% D %*% t(Z) + V
-      t(ZD) %*% solve(ZDZtV) %*% (Y - exp(X %*% beta))
-    }, Z = Z, V = pois.vars, X = X, Y = Y, SIMPLIFY = F)
+    Sigmai <- mapply(function(b, X, Z){
+      solve(-1 * po_hess(b, X, Z, D, beta))
+    }, b = b, X = X, Z = Z,
+    SIMPLIFY = F)
+    
+    # Old -v- (?)
+    # pois.vars <- mapply(function(b, X, Z){ # Assume dispersion = 1
+    #   diag(c(exp(X %*% beta + Z %*% b)))
+    # }, b = bb, X = X, Z = Z, SIMPLIFY = F)
     
     # Cov(b)
-    Sigmai <- mapply(function(Z, V){  # Total variation
-      solve(crossprod(Z, solve(V) %*% Z) + Dinv)
-    }, Z = Z, V = pois.vars, SIMPLIFY = F)  
-    
+    # Sigmai <- mapply(function(Z, V){  # Total variation
+    #   solve(crossprod(Z, solve(V) %*% Z) + Dinv)
+    # }, Z = Z, V = pois.vars, SIMPLIFY = F)
+
     # E[bbT|\lambda, D]
     EbbT <- mapply(function(Sigmai, b){ # E[bbT|\lambda, D]
       Sigmai + tcrossprod(b)
@@ -62,11 +73,6 @@ mvlme <- function(d, Y, X, Z, inits.long, mvlme.tol = 5e-3){
     }, b = b, X = X, Z = Z, SIMPLIFY = F)
     
     #' M-step -------------------
-    
-    # b.new <- mapply(function(b, Sb, Ib){
-    #   c(b + solve(-Ib, Sb))
-    # }, b = b, Sb = Sb, Ib = Ib, SIMPLIFY = F)
-    
     D.new <- Reduce('+', EbbT)/n
     
     beta.new <- beta + solve(-Reduce('+', Ibeta),
@@ -87,6 +93,7 @@ mvlme <- function(d, Y, X, Z, inits.long, mvlme.tol = 5e-3){
     
     # Update parameters and loop
     params <- params.new
+    b0 <- b
     D <- D.new; Dinv <- solve(D)
     beta <- beta.new; 
     iter <- iter + 1
@@ -94,8 +101,6 @@ mvlme <- function(d, Y, X, Z, inits.long, mvlme.tol = 5e-3){
   message("Converged after ", iter, " iterations ")
   list(
     beta = beta, D = D, b = b,
-    V = pois.vars,
     elapsed.time = proc.time()[3] - EMstart, EMtime = sum(mvlmetime)
   )
 }
-
