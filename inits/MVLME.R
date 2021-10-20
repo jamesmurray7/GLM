@@ -1,5 +1,5 @@
 mvlme <- function(d, Y, X, Z, inits.long, nK, q,    # data-specific args
-                  mvlme.tol = 5e-3){                # (relative) tolerance.
+                  mvlme.tol = 5e-3, verbose = F){                # (relative) tolerance.
   
   uids <- unique(d$id)
   n <- length(uids)
@@ -84,7 +84,7 @@ mvlme <- function(d, Y, X, Z, inits.long, nK, q,    # data-specific args
     params.new <- c(vech(D.new), beta.new)
     names(params.new) <- names(params)
     # Take difference & report
-    print(sapply(params.new, round, 4))
+    if(verbose) print(sapply(params.new, round, 4))
     diffs <- abs(params.new - params)/(abs(params) + 1e-3)
     diff <- max(diffs)
     message("\nIteration ", iter + 1, " largest relative difference = ", round(diff, 5))
