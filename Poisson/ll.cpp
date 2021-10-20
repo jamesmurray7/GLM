@@ -3,6 +3,7 @@
 using namespace Rcpp;
 using namespace arma;
 
+// Joint Likelihood ----------------------------------------------------
 // [[Rcpp::export]]
 double ll(vec& b, const colvec& Y, const colvec& lfactY, const mat& X, const mat& Z, const mat& D,
 		  const rowvec& K, const int Delta, const double l0i, const rowvec& Fi,
@@ -26,7 +27,8 @@ colvec gradll(vec& b, const colvec& Y, const colvec& lfactY, const mat& X, const
 
 }
 
-// Just functions for the poisson likelihood
+// Just functions for the poisson sub-model ----------------------------
+// Likelihood
 // [[Rcpp::export]]
 double po_ll(vec& b, const colvec& Y, const colvec& lfactY, const mat& X, const mat& Z,
 				const mat& D, const vec& beta, const int q){
@@ -50,3 +52,30 @@ mat po_hess(vec& b, const mat& X, const mat& Z, const mat& D, const vec& beta){
 	mat dmat = diagmat(temp);
 	return -1.0 * ((dmat * Z).t() * Z) - D.i();
 }
+  
+// ------
+// Joint likelihood: Hessian
+// [[Rcpp::export]]
+mat hessll(vec& b, const colvec& Y, const colvec& lfactY, const mat& X, const mat& Z, const mat& D,
+           const rowvec& K, const vec& l0u, const mat& Fu, 
+           const vec& beta, const vec& eta, const vec& gr, const int nK){
+  mat po = po_hess(b, X, Z, D, beta);
+  mat diaggr = diagmat(gr);
+  vec kernel = l0u % kron(exp(K * eta), exp(repmat(Fu, 1, nK) * (gr % b)));
+  mat diagkern = diagmat(kernel);
+  return po + (-diaggr * repmat(Fu, 1, nK).t() * diagkern * repmat(Fu, 1, nK) * diaggr);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
