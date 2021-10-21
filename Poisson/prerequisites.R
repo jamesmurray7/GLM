@@ -9,11 +9,11 @@ library(RcppArmadillo)
 library(dplyr)
 
 # Load cpp source files ---------------------------------------------------
-message('Loading ', getwd(), 'll.cpp')
+message('Loading ', getwd(), '/ll.cpp')
 sourceCpp('./ll.cpp')
-message('Loading ', getwd(), 'gammaCalc.cpp')
+message('Loading ', getwd(), '/gammaCalc.cpp')
 sourceCpp('../gammaCalc.cpp')
-message('Loading ', getwd(), 'lambdaUpdate.cpp')
+message('Loading ', getwd(), '/lambdaUpdate.cpp')
 sourceCpp('../lambdaUpdate.cpp')
 
 # Set source on other prerequisites ---------------------------------------

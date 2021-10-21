@@ -51,10 +51,14 @@ em <- function(data, ph, gh.nodes, collect.hist = T, max.iter = 200,
   
   # And cast to parameter vector
   params <- c(vech(D), beta, gamma, eta)
-  names(params) <- c(rep('D', length(vech(D))), names(beta), names(gamma), names(eta))
+  names(params) <- c(rep('D', length(vech(D))), # vech(D)
+                     paste0('beta_', gsub('\\(|\\)', '', names(beta))), 
+                     names(gamma), 
+                     paste0('eta_', names(eta))
+                     )
   
   #' Quadrature ----
-  gh <- statmod::gauss.quad.prob(gh.nodes, 'normal')
+  gh <- statmod::gauss.quad.prob(gh.nodes, 'normal', sigma = sqrt(.5))
   w <- gh$w; v <- gh$n
   
   #' Collect data matrices for post-processing and the iteration history
@@ -88,13 +92,21 @@ em <- function(data, ph, gh.nodes, collect.hist = T, max.iter = 200,
      S <- lapply(Sigmai, function(y) lapply(inds, function(x) y[x,x]))
      
      #' Steps to update Longitudinal and RE parameters --------
-     Sbeta <- mapply(function(Y, X, Z, b){      # Worth noting that Simplify = F is slightly faster
-       crossprod(X, Y) - crossprod(X, exp(X %*% beta + Z %*% b))
-     }, b = b.hat, Y = Y, X = X, Z = Z, SIMPLIFY = F)
+     tau.long <- mapply(function(Z, S){
+       sqrt(diag(tcrossprod(Z %*% S, Z)))
+     }, Z = Z, S = Sigmai, SIMPLIFY = F)
      
-     Ibeta <- mapply(function(X, Z, b){
-       crossprod(-diag(c(exp(X %*% beta + Z %*% b))) %*% X, X)
-     }, X = X, Z = Z, b = b.hat, SIMPLIFY = F)
+     Sbeta <-  mapply(function(Y, X, Z, b, tau){
+       rhs <- numeric(length(beta))
+       for(l in 1:gh.nodes) rhs <- rhs + w[l] * crossprod(X, exp(X %*% beta + Z %*% b + tau * v[l]))
+       crossprod(X, Y) - rhs
+     }, Y = Y, X = X, Z = Z, b = b.hat, tau = tau.long, SIMPLIFY = F)
+     
+     Ibeta <- mapply(function(X, Z, b, tau){
+       out <- matrix(0, length(beta), length(beta))
+       for(l in 1:gh.nodes) out <- out + w[l] * crossprod(diag(c(exp(X %*% beta + Z %*% b + tau * v[l]))) %*% X, X)
+       out
+     }, X = X, Z = Z, b = b.hat, tau = tau.long, SIMPLIFY = F)
      
      #' Steps to update D -----------
      D.news <- mapply(function(S, b){
@@ -165,7 +177,7 @@ em <- function(data, ph, gh.nodes, collect.hist = T, max.iter = 200,
      #' #################
      
      #' \beta -----
-     beta.new <- beta + solve(-Reduce('+', Ibeta), 
+     beta.new <- beta + solve(Reduce('+', Ibeta), 
                               rowSums(do.call(cbind, Sbeta)))
      
      #' D -----
@@ -223,6 +235,7 @@ em <- function(data, ph, gh.nodes, collect.hist = T, max.iter = 200,
      params <- params.new
      b <- b.hat
      D <- D.new; beta <- beta.new; gamma <- gamma.new; eta <- eta.new
+     gr <- rep(gamma, each = nK)
      l0 <- l0.new; l0u <- l0u.new; l0i <- l0i.new
      iter <- iter + 1
      if(collect.hist) iter.hist <- rbind(iter.hist, c(iter = iter, t(params)))

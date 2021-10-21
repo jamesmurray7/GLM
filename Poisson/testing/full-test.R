@@ -28,7 +28,7 @@ D[1, 3] <- D[3, 1] <- -0.5 * 0.5 * 0.5
 gamma <- c(-0.5, 0.8)
 eta <- c(-0.3, 0.5)
 
-data <- simData(250, 10, beta, D, gamma, eta, theta = c(-3, 0.2)) # appx. 50%
+data <- simData(250, 15, beta, D, gamma, eta, theta = c(-3, 0.2)) # appx. 50%
 # Check all ids actually here, if not just rerun line above
 length(unique(data$id))
 ph <- coxph(Surv(survtime, status) ~ cont + bin, data = dplyr::distinct(data, id, cont, bin, survtime, status))
@@ -58,7 +58,7 @@ Krep <- sapply(1:n, function(x){  # For updates to \eta
   x <- apply(K[[x]], 2, rep, nrow(Fu[[x]]))
   if("numeric" %in% class(x)) x <- t(as.matrix(x))
   x
-}) )
+}) 
 
 #' MVLME Step ----
 source('./inits/MVLME.R')
@@ -99,9 +99,27 @@ Sbeta <- mapply(function(Y, X, Z, b){      # Worth noting that Simplify = F is s
   crossprod(X, Y) - crossprod(X, exp(X %*% beta + Z %*% b))
 }, b = b.hat, Y = Y, X = X, Z = Z, SIMPLIFY = F)
 
+# Test with quadrature
+tau.long <- mapply(function(S, Z){
+  sqrt(diag(tcrossprod(Z %*% S, Z)))
+}, S = Sigmai, Z = Z, SIMPLIFY = F)
+
+Sbeta2 <- mapply(function(Y, X, Z, b, tau){
+  rhs <- numeric(length(beta))
+  for(l in 1:9) rhs <- rhs + w[l] * crossprod(X, exp(X %*% beta + Z %*% b + tau * v[l]))
+  crossprod(X, Y) - rhs
+}, Y = Y, X = X, Z = Z, b = b.hat, tau = tau.long, SIMPLIFY = F)
+
 Ibeta <- mapply(function(X, Z, b){
   crossprod(-diag(c(exp(X %*% beta + Z %*% b))) %*% X, X)
 }, X = X, Z = Z, b = b.hat, SIMPLIFY = F)
+
+Ibeta2 <- mapply(function(X, Z, b, tau){
+  out <- matrix(0, length(beta), length(beta))
+  for(l in 1:9) out <- out + -w[l] * crossprod(diag(c(exp(X %*% beta + Z %*% b + tau * v[l]))) %*% X, X)
+  out
+}, X = X, Z = Z, b = b.hat, tau = tau.long, SIMPLIFY = F)
+
 
 #' Steps to update D -----------
 D.new <- mapply(function(S, b){
@@ -115,8 +133,8 @@ b.hat.split <- lapply(b.hat, function(y) lapply(inds, function(x) y[x]))
 mu.surv <- mapply(function(K, Fu, b){
   rhs <- 0
   for(k in 1:nK) rhs <- rhs + gamma[k] * b[inds[[k]]]
-  exp(K %*% eta) %x% exp(Fu %*% rhs)
-}, K = K, Fu = Fu, b = b.hat, SIMPLIFY = F)
+  exp(K %*% eta + Fu %*% rhs)
+}, K = Krep, Fu = Fu, b = b.hat, SIMPLIFY = F)
 
 # Define tau objects
 S <- lapply(Sigmai, function(y) lapply(inds, function(x) y[x,x]))
@@ -169,7 +187,8 @@ Ieta <- mapply(function(K, KK, tau.surv, mu.surv, l0u){
 
 Igammaeta <- list() # for some reason I can't get mapply() to work with this 
 for(i in 1:n){
-  Igammaeta[[i]] <- Igammaetacalc(2, Krep[[i]], tau.surv[[i]], mu.surv[[i]], l0u[[i]], Fu[[i]], b.hat.split[[i]], gamma, w, v, 2, 9)
+  Igammaeta[[i]] <- Igammaetacalc(2, Krep[[i]], tau.surv[[i]], mu.surv[[i]], l0u[[i]], Fu[[i]], 
+                                  b.hat.split[[i]], gamma, w, v, nK, gh.nodes)
 }
 
 
@@ -180,6 +199,9 @@ for(i in 1:n){
 #' \beta -----
 beta.new <- beta + solve(-Reduce('+', Ibeta), 
                          rowSums(do.call(cbind, Sbeta)))
+
+beta.new2 <- beta + solve(-Reduce('+', Ibeta2), 
+                          rowSums(do.call(cbind, Sbeta2)))
 
 #' D -----
 D.new <- Reduce('+', D.new)/n
