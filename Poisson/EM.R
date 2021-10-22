@@ -92,9 +92,9 @@ em <- function(data, ph, gh.nodes, collect.hist = T, max.iter = 200,
      S <- lapply(Sigmai, function(y) lapply(inds, function(x) y[x,x]))
      
      #' Steps to update Longitudinal and RE parameters --------
-     # tau.long <- mapply(function(Z, S){
-     #   sqrt(diag(tcrossprod(Z %*% S, Z)))
-     # }, Z = Z, S = Sigmai, SIMPLIFY = F)
+     tau.long <- mapply(function(Z, S){
+       sqrt(diag(tcrossprod(Z %*% S, Z)))
+     }, Z = Z, S = Sigmai, SIMPLIFY = F)
      
      # Sbeta <-  mapply(function(Y, X, Z, b, tau){
      #   rhs <- numeric(length(beta))
@@ -108,15 +108,16 @@ em <- function(data, ph, gh.nodes, collect.hist = T, max.iter = 200,
      #   out
      # }, X = X, Z = Z, b = b.hat, tau = tau.long, SIMPLIFY = F)
      
-     Sbeta <- mapply(function(X, Z, Y, b, tau){ # Not convinced we need quadrature... Leave this like this for now
-       numDeriv::grad(beta_ll_quadrature, beta, method = 'Richardson', side = NULL, method.args = list(),
-                      Y = Y, X = X, Z = Z, b = b, tau = tau.long, w = w, v = v, gh = gh.nodes)
-     }, X = X, Z = Z, Y = Y, b = b.hat, tau = tau.long, SIMPLIFY = F)
-     
-     Ibeta <- mapply(function(X, Z, Y, b, tau){
+     Sbeta <- mapply(function(X, Z, Y, b){ # Not convinced we need quadrature... Leave this like this for now
+       numDeriv::grad(beta_ll, beta, method = 'Richardson', side = NULL, method.args = list(),
+                      Y = Y, X = X, Z = Z, b = b)
+     }, X = X, Z = Z, Y = Y, b = b.hat, SIMPLIFY = F)
+
+      #, tau = tau, w = w, v = v, gh = gh.nodes
+     Ibeta <- mapply(function(X, Z, Y, b){
        -1 * numDeriv::hessian(beta_ll, beta, method = 'Richardson', method.args = list(),
-                              Y = Y, X = X, Z = Z, b = b, tau = tau.long, w = w, v = v, gh = gh.nodes)
-     }, X = X, Z = Z, Y = Y, b = b.hat, tau = tau.long, SIMPLIFY = F)
+                              Y = Y, X = X, Z = Z, b = b)
+     }, X = X, Z = Z, Y = Y, b = b.hat, SIMPLIFY = F)
      
      
      #' Steps to update D -----------
@@ -153,12 +154,23 @@ em <- function(data, ph, gh.nodes, collect.hist = T, max.iter = 200,
      })
      
      #' S(\gamma) ----
-     Sgamma <- mapply(function(Delta, tau.surv, mu.surv, l0u, Fu, Fi, b){
-       t(Sgammacalc(Delta, gamma, tau.surv, mu.surv, l0u, Fu, Fi, w, v, b, nK, gh.nodes))
-     }, Delta = as.list(Di), tau.surv = tau.surv, mu.surv = mu.surv, l0u = l0u,
-     Fu = Fu, Fi = Fi.list, b = b.hat.split, SIMPLIFY = F)
+     # Old
+     # Sgamma <- mapply(function(Delta, tau.surv, mu.surv, l0u, Fu, Fi, b){
+     #   t(Sgammacalc(Delta, gamma, tau.surv, mu.surv, l0u, Fu, Fi, w, v, b, nK, gh.nodes))
+     # }, Delta = as.list(Di), tau.surv = tau.surv, mu.surv = mu.surv, l0u = l0u,
+     # Fu = Fu, Fi = Fi.list, b = b.hat.split, SIMPLIFY = F)
+     
+     # New
+     Sgamma <- mapply(function(mu.surv, tau.surv, tau2.surv, tau.tilde, 
+                               Delta, l0u, Fu, Fi, b){
+       # t(Sgammacalc(Delta, gamma, tau.surv, mu.surv, l0u, Fu, Fi, w, v, b, nK, gh.nodes))
+       t(S2gammacalc(gamma, mu.surv, tau.surv, tau2.surv, tau.tilde,
+                    Fu, Fi, l0u, b, Delta, w, v, nK, gh.nodes))
+     }, mu.surv = mu.surv, tau.surv = tau.surv, tau2.surv = tau2.surv, tau.tilde = tau.tilde,
+        Delta = as.list(Di), l0u = l0u, Fu = Fu, Fi = Fi.list, b = b.hat.split, SIMPLIFY = F)
      
      #' I(\gamma)
+     # Not yet updated
      Igamma <- mapply(function(tau.tilde, tau.surv, tau2.surv, mu.surv, Fu, l0u, b){
        gamma2Calc(gamma, tau.tilde, tau.surv, tau2.surv, mu.surv, w, v, Fu, l0u, b, nK, gh.nodes)
      }, tau.tilde = tau.tilde, tau.surv = tau.surv, tau2.surv = tau2.surv,
@@ -179,8 +191,27 @@ em <- function(data, ph, gh.nodes, collect.hist = T, max.iter = 200,
      
      #' Second derivates of \gamma and \eta ('cross-terms') -----
      Igammaeta <- list() # for some reason I can't get mapply() to work with this 
+     # Old
+     # for(i in 1:n){
+     #   Igammaeta[[i]] <- Igammaetacalc(2, Krep[[i]], tau.surv[[i]], mu.surv[[i]], l0u[[i]], Fu[[i]], b.hat.split[[i]], gamma, w, v, 2, gh.nodes)
+     # }
+     # New
+     taustar <- mapply(function(Fu, S){
+       out <- numeric(nrow(Fu))
+       for(k in 1:nK) out <- out + diag(gamma[k] * tcrossprod(Fu %*% S[[k]], Fu))
+       out
+     }, Fu = Fu, S = S, SIMPLIFY = F)
+     
+     tau2star <- lapply(taustar, function(x){
+       x <- x^(-0.5)
+       if(any(is.infinite(x))) x[which(is.infinite(x))] <- 0   # Avoid inf
+       if(any(is.nan(x))) x[which(is.nan(x))] <- 0   # Avoid NaN
+       x
+     })
+     
      for(i in 1:n){
-       Igammaeta[[i]] <- Igammaetacalc(2, Krep[[i]], tau.surv[[i]], mu.surv[[i]], l0u[[i]], Fu[[i]], b.hat.split[[i]], gamma, w, v, 2, gh.nodes)
+       Igammaeta[[i]] <- I2gammaetacalc(gamma, mu.surv[[i]], tau.surv[[i]], tau2star[[i]], tau.tilde[[i]], 
+                                        Fu[[i]], Krep[[i]], l0u[[i]], b.hat.split[[i]], 2, w, v, nK, gh.nodes)
      }
      
      #' #################

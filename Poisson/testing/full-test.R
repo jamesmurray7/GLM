@@ -11,7 +11,7 @@ library(dplyr)
 library(Rcpp)
 library(RcppArmadillo)
 sourceCpp('Poisson/ll.cpp')
-sourceCpp('gammaCalc.cpp')
+sourceCpp('temp-gammaCalc.cpp')
 source('Simulations/simData.R')
 source('./DataFunctions/longFns.R')
 source('./DataFunctions/survFns.R')
@@ -52,7 +52,7 @@ l0 <- sv$l0; l0i <- sv$l0i; l0u <- sv$l0u
 Fi <- sv$Fi; Fu <- sv$Fu
 Fi.list <- lapply(1:nrow(Fi), function(i) Fi[i, ])
 rvFi.list <- lapply(1:nrow(Fi), function(i) do.call(c, replicate(nK, Fi[i,], simplify = F)))
-K <- getKi(data, ph)
+K <- getKi(data, ph); n <- 250
 Krep <- sapply(1:n, function(x){  # For updates to \eta
   x <- apply(K[[x]], 2, rep, nrow(Fu[[x]]))
   if("numeric" %in% class(x)) x <- t(as.matrix(x))
@@ -158,6 +158,7 @@ tau2.surv <- lapply(tau, function(x){
 })
 
 #' S(\gamma) ----
+gh.nodes <- 9
 Sgamma <- mapply(function(Delta, tau.surv, mu.surv, l0u, Fu, Fi, b){
   t(Sgammacalc(Delta, gamma, tau.surv, mu.surv, l0u, Fu, Fi, w, v, b, nK, gh.nodes))
 }, Delta = as.list(Di), tau.surv = tau.surv, mu.surv = mu.surv, l0u = l0u,
@@ -233,4 +234,27 @@ gamma.eta.new <- c(gamma, eta) + solve(Imat, Sge)
 
 #' And then update + print etc. ----
 
+Sgamma[[1]]
+sourceCpp('./temp-gammaCalc.cpp')
+args(S2gammacalc)
+S2gammacalc(gamma, mu.surv[[1]], tau.surv[[1]], tau2.surv[[1]], tau.tilde[[1]], 
+            Fu[[1]], Fi[1, ], l0u[[1]], b.hat.split[[1]], Di[1], w, v, 2, 9)
+Sgamma[[1]]
 
+Igammaeta[[1]]
+
+taustar <- mapply(function(Fu, S){
+  out <- numeric(nrow(Fu))
+  for(k in 1:nK) out <- out + diag(gamma[k] * tcrossprod(Fu %*% S[[k]], Fu))
+  out
+}, Fu = Fu, S = S, SIMPLIFY = F)
+
+tau2star <- lapply(taustar, function(x){
+  x <- abs(x)^(-0.5)
+  if(any(is.nan(x))) x[which(is.nan(x))] <- 0   # Avoid NaN
+  x
+})
+
+Igammaeta[[103]]
+I2gammaetacalc(gamma, mu.surv[[103]], tau.surv[[103]], tau2star[[103]], tau.tilde[[103]], 
+               Fu[[103]], Krep[[103]], l0u[[103]], b.hat.split[[103]], 2, w, v, 2, 9)
