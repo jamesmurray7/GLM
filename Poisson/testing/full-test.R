@@ -37,7 +37,6 @@ nK <- 2; q <- 2*nK
 X <- getXi(data, 2)
 Y <- getYi(data, 2)
 Z <- getZi(data, 2)
-mi <- getmi(data, 2) # Dont actually think this will be needed(!)
 
 #' Initial conditions -----
 source('inits/inits.R')
