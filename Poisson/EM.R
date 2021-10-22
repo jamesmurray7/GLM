@@ -58,7 +58,7 @@ em <- function(data, ph, gh.nodes, collect.hist = T, max.iter = 200,
                      )
   
   #' Quadrature ----
-  gh <- statmod::gauss.quad.prob(gh.nodes, 'normal', sigma = sqrt(.5))
+  gh <- statmod::gauss.quad.prob(gh.nodes, 'normal')
   w <- gh$w; v <- gh$n
   
   #' Collect data matrices for post-processing and the iteration history
@@ -92,21 +92,32 @@ em <- function(data, ph, gh.nodes, collect.hist = T, max.iter = 200,
      S <- lapply(Sigmai, function(y) lapply(inds, function(x) y[x,x]))
      
      #' Steps to update Longitudinal and RE parameters --------
-     tau.long <- mapply(function(Z, S){
-       sqrt(diag(tcrossprod(Z %*% S, Z)))
-     }, Z = Z, S = Sigmai, SIMPLIFY = F)
+     # tau.long <- mapply(function(Z, S){
+     #   sqrt(diag(tcrossprod(Z %*% S, Z)))
+     # }, Z = Z, S = Sigmai, SIMPLIFY = F)
      
-     Sbeta <-  mapply(function(Y, X, Z, b, tau){
-       rhs <- numeric(length(beta))
-       for(l in 1:gh.nodes) rhs <- rhs + w[l] * crossprod(X, exp(X %*% beta + Z %*% b + tau * v[l]))
-       crossprod(X, Y) - rhs
-     }, Y = Y, X = X, Z = Z, b = b.hat, tau = tau.long, SIMPLIFY = F)
+     # Sbeta <-  mapply(function(Y, X, Z, b, tau){
+     #   rhs <- numeric(length(beta))
+     #   for(l in 1:gh.nodes) rhs <- rhs + w[l] * crossprod(X, exp(X %*% beta + Z %*% b + tau * v[l]))
+     #   crossprod(X, Y) - rhs
+     # }, Y = Y, X = X, Z = Z, b = b.hat, tau = tau.long, SIMPLIFY = F)
+     # 
+     # Ibeta <- mapply(function(X, Z, b, tau){
+     #   out <- matrix(0, length(beta), length(beta))
+     #   for(l in 1:gh.nodes) out <- out + w[l] * crossprod(diag(c(exp(X %*% beta + Z %*% b + tau * v[l]))) %*% X, X)
+     #   out
+     # }, X = X, Z = Z, b = b.hat, tau = tau.long, SIMPLIFY = F)
      
-     Ibeta <- mapply(function(X, Z, b, tau){
-       out <- matrix(0, length(beta), length(beta))
-       for(l in 1:gh.nodes) out <- out + w[l] * crossprod(diag(c(exp(X %*% beta + Z %*% b + tau * v[l]))) %*% X, X)
-       out
-     }, X = X, Z = Z, b = b.hat, tau = tau.long, SIMPLIFY = F)
+     Sbeta <- mapply(function(X, Z, Y, b, tau){ # Not convinced we need quadrature... Leave this like this for now
+       numDeriv::grad(beta_ll_quadrature, beta, method = 'Richardson', side = NULL, method.args = list(),
+                      Y = Y, X = X, Z = Z, b = b, tau = tau.long, w = w, v = v, gh = gh.nodes)
+     }, X = X, Z = Z, Y = Y, b = b.hat, tau = tau.long, SIMPLIFY = F)
+     
+     Ibeta <- mapply(function(X, Z, Y, b, tau){
+       -1 * numDeriv::hessian(beta_ll, beta, method = 'Richardson', method.args = list(),
+                              Y = Y, X = X, Z = Z, b = b, tau = tau.long, w = w, v = v, gh = gh.nodes)
+     }, X = X, Z = Z, Y = Y, b = b.hat, tau = tau.long, SIMPLIFY = F)
+     
      
      #' Steps to update D -----------
      D.news <- mapply(function(S, b){
@@ -118,8 +129,8 @@ em <- function(data, ph, gh.nodes, collect.hist = T, max.iter = 200,
      mu.surv <- mapply(function(K, Fu, b){
        rhs <- 0
        for(k in 1:nK) rhs <- rhs + gamma[k] * b[inds[[k]]]
-       exp(K %*% eta) %x% exp(Fu %*% rhs)
-     }, K = K, Fu = Fu, b = b.hat, SIMPLIFY = F)
+       exp(K %*% eta + Fu %*% rhs)
+     }, K = Krep, Fu = Fu, b = b.hat, SIMPLIFY = F)
      
      # Define tau objects
      tau <- mapply(function(Fu, S){
