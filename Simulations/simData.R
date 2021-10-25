@@ -17,7 +17,7 @@ simData <- function(n, ntms, beta, D, gamma, eta,
   # Split-out some helpful indices
   qk <- split(seq(q), cut(seq_along(seq(q)), nK, labels = F)) 
   if(nK > 1){
-    int.slope.inds <- split(seq(nK^2), rep(1:nK, 2))
+    int.slope.inds <- split(seq(nK * 2), rep(1:nK, 2))
   }else{
     int.slope.inds <- list(1, 2)
   }
@@ -49,9 +49,9 @@ simData <- function(n, ntms, beta, D, gamma, eta,
   U <- runif(n)
   
   denom <- theta1 + b1 %*% gamma
-  rhs <- ((theta0 + b0 %*% gamma) * log(U))/(exp(theta0 + Keta + b0 %*% gamma))
-  t <- suppressWarnings(log((1 - rhs)/denom))
-  
+  rhs <- (theta1 + b1 %*% gamma) * log(U)/(exp(theta0 + Keta + b0 %*% gamma))
+  t <- suppressWarnings(log((1 - rhs))/denom)
+
   t[is.nan(t)] <- tau
   
   cens.time <- rexp(n, cens.rate)
