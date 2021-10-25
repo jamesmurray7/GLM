@@ -48,8 +48,8 @@ simData <- function(n, ntms, beta, D, gamma, eta,
   Keta <- K %*% eta
   U <- runif(n)
   
-  denom <- theta1 * b1 %*% gamma
-  rhs <- ((theta1 + b0 %*% gamma) * log(U))/(exp(theta0 + Keta + b0 %*% gamma))
+  denom <- theta1 + b1 %*% gamma
+  rhs <- ((theta0 + b0 %*% gamma) * log(U))/(exp(theta0 + Keta + b0 %*% gamma))
   t <- suppressWarnings(log((1 - rhs)/denom))
   
   t[is.nan(t)] <- tau
