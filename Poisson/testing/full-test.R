@@ -160,7 +160,7 @@ tau2.surv <- lapply(tau, function(x){
 #' S(\gamma) ----
 gh.nodes <- 9
 Sgamma <- mapply(function(Delta, tau.surv, mu.surv, l0u, Fu, Fi, b){
-  t(Sgammacalc(Delta, gamma, tau.surv, mu.surv, l0u, Fu, Fi, w, v, b, nK, gh.nodes))
+  t(Sgammacalc(gamma, Delta, tau.surv, mu.surv, l0u, Fu, Fi, w, v, b, nK, gh.nodes))
 }, Delta = as.list(Di), tau.surv = tau.surv, mu.surv = mu.surv, l0u = l0u,
    Fu = Fu, Fi = Fi.list, b = b.hat.split, SIMPLIFY = F)
 
@@ -187,7 +187,7 @@ Ieta <- mapply(function(K, KK, tau.surv, mu.surv, l0u){
 
 Igammaeta <- list() # for some reason I can't get mapply() to work with this 
 for(i in 1:n){
-  Igammaeta[[i]] <- Igammaetacalc(2, Krep[[i]], tau.surv[[i]], mu.surv[[i]], l0u[[i]], Fu[[i]], 
+  Igammaeta[[i]] <- Igammaetacalc(2, Krep[[i]], tau.surv[[i]], tau.tilde[[i]], mu.surv[[i]], l0u[[i]], Fu[[i]], 
                                   b.hat.split[[i]], gamma, w, v, nK, gh.nodes)
 }
 
@@ -234,27 +234,22 @@ gamma.eta.new <- c(gamma, eta) + solve(Imat, Sge)
 
 #' And then update + print etc. ----
 
-Sgamma[[1]]
-sourceCpp('./temp-gammaCalc.cpp')
-args(S2gammacalc)
-S2gammacalc(gamma, mu.surv[[1]], tau.surv[[1]], tau2.surv[[1]], tau.tilde[[1]], 
-            Fu[[1]], Fi[1, ], l0u[[1]], b.hat.split[[1]], Di[1], w, v, 2, 9)
-Sgamma[[1]]
+#' ####
+#' Room for misc. testing 
+#' ####
+sourceCpp('temp-gammaCalc.cpp')
 
-Igammaeta[[1]]
+gammaeta_ll(c(gamma, eta), Di[1], K[[1]], Krep[[1]], gr, rvFi.list[[1]], b.hat[[1]], l0u[[1]],
+            Fu[[1]], b.hat.split[[1]], S[[1]], nK, w, v, gh.nodes)
 
-taustar <- mapply(function(Fu, S){
-  out <- numeric(nrow(Fu))
-  for(k in 1:nK) out <- out + diag(gamma[k] * tcrossprod(Fu %*% S[[k]], Fu))
-  out
-}, Fu = Fu, S = S, SIMPLIFY = F)
+imat <- list()
+for (i in 1:n){
+  imat[[i]] <- -1 * numDeriv::hessian(gammaeta_ll, c(gamma, eta), method="Richardson",method.args=list(),
+                                      Di[i], K[[i]], Krep[[i]], gr, rvFi.list[[i]], b.hat[[i]], l0u[[i]],
+                                      Fu[[i]], b.hat.split[[i]], S[[i]], nK, w, v, gh.nodes)
+}
 
-tau2star <- lapply(taustar, function(x){
-  x <- abs(x)^(-0.5)
-  if(any(is.nan(x))) x[which(is.nan(x))] <- 0   # Avoid NaN
-  x
-})
+Reduce('+', imat)  #  Way to test all
 
-Igammaeta[[103]]
-I2gammaetacalc(gamma, mu.surv[[103]], tau.surv[[103]], tau2star[[103]], tau.tilde[[103]], 
-               Fu[[103]], Krep[[103]], l0u[[103]], b.hat.split[[103]], 2, w, v, 2, 9)
+
+

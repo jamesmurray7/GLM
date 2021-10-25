@@ -3,6 +3,69 @@
 using namespace Rcpp;
 using namespace arma;
 
+// log-likelihood on survival part for \gamma 
+// [[Rcpp::export]]
+double gamma_ll(vec& gamma, const int D, const rowvec& K, const mat& KK,
+			    const vec& eta, const vec& gr, const rowvec& rvFi, const vec& b,
+			    const rowvec& haz, const mat& Fu, List bsplit,
+			    List S, const int nK, const vec& w, const vec& v, const int gh){
+	// Define mu and tau, which contain summations over nK responses.
+	colvec mu_rhs = vec(Fu.n_rows, fill::zeros);
+	mat tau = zeros<mat>(Fu.n_rows, Fu.n_rows);
+	for(int k = 0; k < nK; k++){
+		vec bk = bsplit[k];
+		mat Sk = S[k];
+		mu_rhs += gamma[k] * Fu * bk;
+		tau += pow(gamma[k], 2.0) * Fu * Sk * Fu.t();
+	}
+	colvec mu = KK * eta + mu_rhs;
+	colvec rhs = vec(Fu.n_rows, fill::zeros);
+	for(int l = 0; l < gh; l++){
+		rhs += w[l] * exp(mu + v[l] * diagvec(tau));
+	}
+	return as_scalar(
+		D * (K * eta + rvFi * (gr % b)) - haz * rhs
+	);
+}
+
+// [[Rcpp::export]]
+Rcpp::NumericVector subset_range(Rcpp::NumericVector x,
+                                 int start = 1, int end = 100) {
+
+  // Use the Range function to create a positional index sequence
+  return x[Rcpp::Range(start, end)];
+}
+
+// [[Rcpp::export]]
+double gammaeta_ll(NumericVector gammaeta, const int D, const rowvec& K, const mat& KK,
+			       const vec& gr, const rowvec& rvFi, const vec& b,
+			       const rowvec& haz, const mat& Fu, List bsplit,
+			       List S, const int nK, const vec& w, const vec& v, const int gh){
+	// Initialise gamma and eta vectors
+	vec gamma = subset_range(gammaeta, 0, (nK-1));
+	vec eta = subset_range(gammaeta, (nK), gammaeta.size()-1);
+	
+	// Rcout << "gamma: " << gamma <<std::endl;
+	// Rcout << "eta: " << eta <<std::endl;
+	// Define mu and tau, which contain summations over nK responses.
+	colvec mu_rhs = vec(Fu.n_rows, fill::zeros);
+	mat tau = zeros<mat>(Fu.n_rows, Fu.n_rows);
+	for(int k = 0; k < nK; k++){
+		vec bk = bsplit[k];
+		mat Sk = S[k];
+		mu_rhs += gamma[k] * Fu * bk;
+		tau += pow(gamma[k], 2.0) * Fu * Sk * Fu.t();
+	}
+	colvec mu = KK * eta + mu_rhs;
+	colvec rhs = vec(Fu.n_rows, fill::zeros);
+	for(int l = 0; l < gh; l++){
+		rhs += w[l] * exp(mu + v[l] * diagvec(tau));
+	}
+	return as_scalar(
+		D * (K * eta + rvFi * (gr % b)) - haz * rhs
+	);
+}
+
 // Split out getxi
 // [[Rcpp::export]]
 colvec getxi(const rowvec& tausurv, const colvec& musurv, double v, const rowvec& haz){
@@ -36,8 +99,10 @@ vec S2gammacalc(const vec& gamma,
 	}
 	return out;
 }
-vec Sgammacalc(const int D, const vec& gamma, const rowvec& tausurv, const mat& tautilde, 
-			   const colvec& musurv, const rowvec& haz, const mat& Fu, const rowvec& Fi, const vec& w, const vec& v,
+
+// [[Rcpp::export]]
+vec Sgammacalc(const vec& gamma, const int D, const rowvec& tausurv, const colvec& musurv, 
+			   const rowvec& haz, const mat& Fu, const rowvec& Fi, const vec& w, const vec& v,
 			   List b, const int nK, const int gh){
 	vec out = vec(nK, fill::zeros);
 	for(int k = 0; k < nK; k++){
@@ -52,6 +117,7 @@ vec Sgammacalc(const int D, const vec& gamma, const rowvec& tausurv, const mat& 
 	}
 	return out;		   
 }
+
 
 // [[Rcpp::export]]
 mat gamma2Calc(const vec& gamma,const mat& tautilde, const rowvec& tausurv, const rowvec& tau2surv, const colvec& musurv, 
@@ -114,7 +180,7 @@ mat Ietacalc(const int dim, const rowvec& K, const mat& KK, const rowvec& tausur
 
 // Second derivates d/dgammadeta
 // [[Rcpp::export]]
-List Igammaetacalc(const int dim, const mat& KK, const rowvec& tausurv,
+List Igammaetacalc(const int dim, const mat& KK, const rowvec& tausurv, const mat& tautilde,
 				   const colvec& musurv, const rowvec& haz, const mat& Fu, List b, 
 				   const vec& gamma, const vec& w, const vec& v, const int nK, const int gh){
 	List out(nK);
@@ -124,7 +190,7 @@ List Igammaetacalc(const int dim, const mat& KK, const rowvec& tausurv,
 		for(int l = 0; l < gh; l++){
 			colvec xi = getxi(tausurv, musurv, v[l], haz);
 			outk += w[l] * KK.t() * ((Fu * bk) % xi) + 
-					 2.0 * w[l] * v[l] * gamma[k] * KK.t() * (xi % tausurv.t() % xi);
+					 2.0 * w[l] * v[l] * gamma[k] * KK.t() * (xi % tautilde.row(k).t() % xi);
 		}
 		out[k] = outk;
 	}
