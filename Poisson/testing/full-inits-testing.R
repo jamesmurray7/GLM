@@ -47,7 +47,7 @@ matrix(lme4::VarCorr(lme)$id, 2, 2)
 #' #####
 microbenchmark::microbenchmark(
   `glmer` = {
-    res <- glmer(Y.1 ~ time + cont + bin + (1 + time|id),
+    res1 <- glmer(Y.1 ~ time + cont + bin + (1 + time|id),
                  data = data[[1]], 
                  family = 'poisson',
                  control = glmerControl(
@@ -56,7 +56,11 @@ microbenchmark::microbenchmark(
                  ))
   },
   `glmmTMB` = {
-    res <- glmmTMB(Y.1 ~ time + cont + bin + (1+time|id), data = data[[1]], family = poisson())
+    res2 <- glmmTMB(Y.1 ~ time + cont + bin + (1+time|id), data = data[[1]], family = poisson())
+  },
+  `glmmTMB-with-control` = {
+    res3 <- glmmTMB(Y.1 ~ time + cont + bin + (1+time|id), data = data[[1]], family = poisson(),
+                   control = glmmTMBControl(optCtrl = list(rel.tol = 1e-3)))
   },
   times = 20
 )
