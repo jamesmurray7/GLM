@@ -5,7 +5,7 @@
 #' Longitudinal then undergoes MVLME fit
 #' ####
 
-if(!'lme4'%in%loadedNamespaces()) library(lme4)
+if(!'glmmTMB'%in%loadedNamespaces()) library(glmmTMB)
 if(!'dplyr'%in%loadedNamespaces()) library(dplyr)
 
 # beta, D inits using lme4 -----------------------------------------
@@ -13,21 +13,20 @@ if(!'dplyr'%in%loadedNamespaces()) library(dplyr)
 Longit.inits <- function(K, data){
   lfitK <- list()
   for(k in 1:K){
-    lfitK[[k]] <- glmer(as.formula(paste0('Y.', k, '~ time + cont + bin + (1+time|id)')),
-                        family = poisson, data = data, 
-                          control = glmerControl(optimizer = 'Nelder_Mead', boundary.tol = 1e-3,
-                                                 optCtrl = list(FtolRel = 1e-3, XtolRel = 1e-3)))
+    lfitK[[k]] <- glmmTMB(as.formula(paste0('Y.', k, '~ time + cont + bin + (1+time|id)')),
+                          family = poisson, data = data, 
+                          control = glmmTMBControl(optCtrl = list(rel.tol = 1e-3)))
   }
   
-  # beta and D
-  beta <- do.call(c, lapply(lfitK, lme4::fixef))
+  # \beta and D
+  beta <- do.call(c, lapply(lfitK, glmmTMB::fixef))
   D <- as.matrix(Matrix::bdiag(
     lapply(lfitK, function(X){
-      matrix(lme4::VarCorr(X)$id, dim(lme4::VarCorr(X)$id))
+      matrix(glmmTMB::VarCorr(X)$cond$id, dim(glmmTMB::VarCorr(X)$cond$id))
     })
   ))
   
-  # Checking pos-def. on D
+  # Checking pos-def. on D, if not then use Matrix::nearPD()$mat
   if(any(eigen(D)$values < 0) || (det(D) <= 0)){
     message("Generated covariance matrix not positive semi-definite")
     message("\n------- -> Transforming... <- -------\n")
@@ -39,35 +38,6 @@ Longit.inits <- function(K, data){
        long.fits = lfitK)
 }
 
-# Old version using nlme/MASS
-# Longit.inits <- function(K, data){
-#   lfitK <- list()
-#   for(k in 1:K){
-#     lfitK[[k]] <- glmmPQL(fixed = as.formula(paste0('Y.', k, '~ time + cont + bin')),
-#                           random = ~ 1 + time | id, family = poisson, data = data, niter = 25,
-#                           control = lmeControl(opt = 'optim', msTol = 1e-3), verbose = F)
-#   }
-#   
-#   # beta and D
-#   beta <- do.call(c, lapply(lfitK, nlme::fixef))
-#   D <- as.matrix(Matrix::bdiag(
-#     lapply(lfitK, function(X){
-#       matrix(nlme::getVarCov(X), dim(nlme::getVarCov(X)))
-#     })
-#   ))
-#   
-#   # Checking pos-def. on D
-#   if(any(eigen(D)$values < 0) || (det(D) <= 0)){
-#     message("Generated covariance matrix not positive semi-definite")
-#     message("\n------- -> Transforming... <- -------\n")
-#     D <- as.matrix(Matrix::nearPD(D, maxit = 1e4)$mat)
-#   }
-#   
-#   list(beta.init = beta,
-#        D.init = D,
-#        long.fits = lfitK)
-# }
-
 # Populate REs matrix -----------------------------------------------------
 Ranefs <- function(longfits){
   fits <- longfits$long.fits
@@ -76,7 +46,7 @@ Ranefs <- function(longfits){
   # The random effects
   ranefK <- list()
   for(k in 1:K){
-    ranefK[[k]] <- as.matrix(lme4::ranef(fits[[k]])$id)
+    ranefK[[k]] <- as.matrix(glmmTMB::ranef(fits[[k]])$cond$id)
     colnames(ranefK[[k]]) <- paste0(c("intercept_", "slope_"), k)
   }
 
@@ -99,12 +69,11 @@ ToStartStop <- function(data){
       time1 = i.dat$time,
       time2 = c(i.dat$time[-1], unique(i.dat$survtime))
     ))
-    this.subj[[i]] <- df[df$time1 < df$time2, ]
-    # this.subj[[i]] <- cbind(
-    #   id = i.dat$id,
-    #   time1 = i.dat$time,
-    #   time2 = c(i.dat$time[-1], unique(i.dat$survtime))
-    # )
+    this.subj[[i]] <- cbind(
+      id = i.dat$id,
+      time1 = i.dat$time,
+      time2 = c(i.dat$time[-1], unique(i.dat$survtime))
+    )
   }
   as.data.frame(do.call(rbind, this.subj))
 }
@@ -145,3 +114,68 @@ TimeVarCox <- function(data, REs, fixef.surv = c('cont', 'bin'),
 }
 
 # test <- TimeVarCox(d, REs)
+
+
+
+
+
+#' #####
+#' ARCHIVE
+#' #####
+# Old version Longit.inits using lme4
+# Longit.inits <- function(K, data){
+#   lfitK <- list()
+#   for(k in 1:K){
+#     lfitK[[k]] <- glmer(as.formula(paste0('Y.', k, '~ time + cont + bin + (1+time|id)')),
+#                         family = poisson, data = data, 
+#                         control = glmerControl(optimizer = 'Nelder_Mead', boundary.tol = 1e-3,
+#                                                optCtrl = list(FtolRel = 1e-3, XtolRel = 1e-3)))
+#   }
+#   
+#   # beta and D
+#   beta <- do.call(c, lapply(lfitK, lme4::fixef))
+#   D <- as.matrix(Matrix::bdiag(
+#     lapply(lfitK, function(X){
+#       matrix(lme4::VarCorr(X)$id, dim(lme4::VarCorr(X)$id))
+#     })
+#   ))
+#   
+#   # Checking pos-def. on D
+#   if(any(eigen(D)$values < 0) || (det(D) <= 0)){
+#     message("Generated covariance matrix not positive semi-definite")
+#     message("\n------- -> Transforming... <- -------\n")
+#     D <- as.matrix(Matrix::nearPD(D, maxit = 1e4)$mat)
+#   }
+#   
+#   list(beta.init = beta,
+#        D.init = D,
+#        long.fits = lfitK)
+# }
+# Old version Longit.inits using nlme/MASS
+# Longit.inits <- function(K, data){
+#   lfitK <- list()
+#   for(k in 1:K){
+#     lfitK[[k]] <- glmmPQL(fixed = as.formula(paste0('Y.', k, '~ time + cont + bin')),
+#                           random = ~ 1 + time | id, family = poisson, data = data, niter = 25,
+#                           control = lmeControl(opt = 'optim', msTol = 1e-3), verbose = F)
+#   }
+#   
+#   # beta and D
+#   beta <- do.call(c, lapply(lfitK, nlme::fixef))
+#   D <- as.matrix(Matrix::bdiag(
+#     lapply(lfitK, function(X){
+#       matrix(nlme::getVarCov(X), dim(nlme::getVarCov(X)))
+#     })
+#   ))
+#   
+#   # Checking pos-def. on D
+#   if(any(eigen(D)$values < 0) || (det(D) <= 0)){
+#     message("Generated covariance matrix not positive semi-definite")
+#     message("\n------- -> Transforming... <- -------\n")
+#     D <- as.matrix(Matrix::nearPD(D, maxit = 1e4)$mat)
+#   }
+#   
+#   list(beta.init = beta,
+#        D.init = D,
+#        long.fits = lfitK)
+# }
