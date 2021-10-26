@@ -66,6 +66,21 @@ microbenchmark::microbenchmark(
 )
 # glmmTMB one to beat.
 
+# Try again with short profile
+load('~/Downloads/sim3.RData')
+data[[1]]
+
+dd <- lapply(data, function(x){
+  glmmTMB(Y.1 ~ time + cont + bin + (1+time|id), data = x, family = poisson(),
+          control = glmmTMBControl(optCtrl = list(rel.tol = 1e-3)))
+})
+
+dd2 <- lapply(data, function(x){
+  glmmTMB(Y.1 ~ time + cont + bin + (1+time|id), data = x, family = poisson())
+})
+
+apply(do.call(rbind, lapply(dd, function(x) fixef(x)$cond)),2,mean)
+apply(do.call(rbind, lapply(dd2, function(x) fixef(x)$cond)),2,mean)
 
 #' ####
 #' TO DO:
