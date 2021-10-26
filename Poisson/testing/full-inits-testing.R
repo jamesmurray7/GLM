@@ -1,82 +1,71 @@
-# glmer -----
-library(lme4)
-glmer.fit <- glmer(Y.1 ~ time + cont + bin + (1 + time|id),
-                   data = data, 
-                   family = 'poisson',
-                   control = glmerControl(
-                     optimizer = 'Nelder_Mead', boundary.tol = 1e-3,
-                     optCtrl = list(FtolRel = 1e-3, XtolRel = 1e-3)
-                   )
-)
-
-# MASS -----
 library(MASS)
+library(lme4)
 library(nlme)
-pql.fit <- glmmPQL(fixed = Y.1 ~ time + cont + bin,
-        random = ~ 1 + time | id, family = poisson(link = 'log'), data = data, niter = 25,
-        control = lmeControl(tolerance = 1e-2), verbose = F)
-
-
-# GLMMadaptive -----
 library(GLMMadaptive)
-
-microbenchmark::microbenchmark(
-  `vanilla` = { # No Control arguments
-    glmma.fit1 <- mixed_model(fixed = Y.1 ~ time + cont + bin, 
+library(glmmTMB)
+# Define a function -----
+glm.fit <- function(data, pkg = ''){
+  if(pkg == 'lme4'){
+    res <- glmer(Y.1 ~ time + cont + bin + (1 + time|id),
+                 data = data, 
+                 family = 'poisson',
+                 control = glmerControl(
+                   optimizer = 'Nelder_Mead', boundary.tol = 1e-3,
+                   optCtrl = list(FtolRel = 1e-3, XtolRel = 1e-3)
+                 ))
+  }else if(pkg == 'MASS'){
+    res <- glmmPQL(fixed = Y.1 ~ time + cont + bin,
+                  random = ~ 1 + time | id, family = poisson(link = 'log'), data = data, niter = 25,
+                  verbose = F)
+  }else if(pkg == 'GLMMadaptive'){
+    res <- mixed_model(fixed = Y.1 ~ time + cont + bin, 
                               random = ~ 1 + time | id, data = data,
                               family = poisson())
-  },
-  `penalized` = { # Penalized around {0, 1}
-    glmma.fit2 <- mixed_model(fixed = Y.1 ~ time + cont + bin, 
-                              random = ~ 1 + time | id, data = data,
-                              family = poisson(), penalized = T)
-  },
-  `tolx` = { # Changing tolerance criterion across fits
-    glmma.fit3 <- mixed_model(fixed = Y.1 ~ time + cont + bin, 
-                              random = ~ 1 + time | id, data = data,
-                              family = poisson(),
-                              control = list(tol3 = 1e-3))
-  },
-  `nAGQ=7` = {  # 4 less quadrature points
-    glmma.fit4 <- mixed_model(fixed = Y.1 ~ time + cont + bin, 
-                              random = ~ 1 + time | id, data = data,
-                              family = poisson(),
-                              control = list(nAGQ = 7))
-  },
-  times = 10
-) -> bench
+  }else if(pkg == 'glmmTMB'){
+    res <- glmmTMB(Y.1 ~ time + cont + bin + (1+time|id), data = data, family = poisson())
+  }else{
+    stop('Misspecified `pkg` argument')
+  }
+  res
+}
 
-plot(bench)
+# Load some data
+load('~/Downloads/sim1.RData')
+tmb <- glm.fit(data[[1]], 'glmmTMB')
+lme <- glm.fit(data[[1]], 'lme4')
 
-# Benchmarking all --------------------------------------------------------
+# Extracting VarCorr
+matrix(glmmTMB::VarCorr(tmb)$cond$id,2,2)
+matrix(lme4::VarCorr(lme)$id, 2, 2)
 
+
+
+
+
+#' #####
+#' Benchmarking
+#' #####
 microbenchmark::microbenchmark(
-  `lme4::glmer()` = {
-    glmer.fit <- glmer(Y.1 ~ time + cont + bin + (1 + time|id),
-                       data = data, 
-                       family = 'poisson',
-                       control = glmerControl(
-                         optimizer = 'Nelder_Mead', boundary.tol = 1e-3,
-                         optCtrl = list(FtolRel = 1e-3, XtolRel = 1e-3)
-                       ))
+  `glmer` = {
+    res <- glmer(Y.1 ~ time + cont + bin + (1 + time|id),
+                 data = data[[1]], 
+                 family = 'poisson',
+                 control = glmerControl(
+                   optimizer = 'Nelder_Mead', boundary.tol = 1e-3,
+                   optCtrl = list(FtolRel = 1e-3, XtolRel = 1e-3)
+                 ))
   },
-  `MASS::glmmPLQ()` = {
-    pql.fit <- glmmPQL(fixed = Y.1 ~ time + cont + bin,
-                       random = ~ 1 + time | id, family = poisson(link = 'log'), data = data, niter = 25,
-                       control = lmeControl(tolerance = 1e-3), verbose = F)
+  `glmmTMB` = {
+    res <- glmmTMB(Y.1 ~ time + cont + bin + (1+time|id), data = data[[1]], family = poisson())
   },
-  `GLMMadaptive, nAGQ=7` = {
-    glmma.fit4 <- mixed_model(fixed = Y.1 ~ time + cont + bin, 
-                              random = ~ 1 + time | id, data = data,
-                              family = poisson(),
-                              control = list(nAGQ = 7))
-  },
-  times = 10 
-) -> bench2
+  times = 20
+)
+# glmmTMB one to beat.
 
-bench2
 
-#' #####################
-#' MASS::glmmPQL and lme4::glmer are comparable in speed
-#' GLMMadaptive -- which exists for some reason -- is incomparably slow
-#' #####################
+#' ####
+#' TO DO:
+#' ----
+#' Find that vignette and compare other methods.
+#' ####
+
