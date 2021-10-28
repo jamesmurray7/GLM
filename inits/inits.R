@@ -19,7 +19,12 @@ Longit.inits <- function(K, data){
   }
   
   # \beta and D
-  beta <- do.call(c, lapply(lfitK, glmmTMB::fixef))
+  beta <- do.call(c, lapply(1:K, function(k){
+    x <- glmmTMB::fixef(lfitK[[k]])$cond
+    names(x) <- paste0('beta', k, '_',  names(x))
+    x
+  }))
+  
   D <- as.matrix(Matrix::bdiag(
     lapply(lfitK, function(X){
       matrix(glmmTMB::VarCorr(X)$cond$id, dim(glmmTMB::VarCorr(X)$cond$id))
