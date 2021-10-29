@@ -52,7 +52,7 @@ em <- function(data, ph, gh.nodes, collect.hist = T, max.iter = 200,
   # And cast to parameter vector
   params <- c(vech(D), beta, gamma, eta)
   names(params) <- c(rep('D', length(vech(D))), # vech(D)
-                     paste0('beta_', gsub('\\(|\\)', '', names(beta))), 
+                     names(beta), 
                      names(gamma), 
                      paste0('eta_', names(eta))
                      )
@@ -119,6 +119,7 @@ em <- function(data, ph, gh.nodes, collect.hist = T, max.iter = 200,
                               Y = Y, X = X, Z = Z, b = b)
      }, X = X, Z = Z, Y = Y, b = b.hat, SIMPLIFY = F)
      
+
      #' Steps to update D -----------
      D.news <- mapply(function(S, b){
        S + tcrossprod(b)
