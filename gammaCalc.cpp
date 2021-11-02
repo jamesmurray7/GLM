@@ -3,6 +3,15 @@
 using namespace Rcpp;
 using namespace arma;
 
+// Helper function - subset range
+// [[Rcpp::export]]
+Rcpp::NumericVector subset_range(Rcpp::NumericVector x,
+                                 int start = 1, int end = 100) {
+
+  // Use the Range function to create a positional index sequence
+  return x[Rcpp::Range(start, end)];
+}
+
 // Split out getxi
 // [[Rcpp::export]]
 colvec getxi(const rowvec& tausurv, const colvec& musurv, double v, const rowvec& haz){
@@ -10,9 +19,8 @@ colvec getxi(const rowvec& tausurv, const colvec& musurv, double v, const rowvec
   return xi.t();
 }
 
-// Score for \gamma
 // [[Rcpp::export]]
-vec Sgammacalc(const int D, const vec& gamma, const rowvec& tausurv, const colvec& musurv, 
+vec Sgammacalc(const vec& gamma, const int D, const rowvec& tausurv, const colvec& musurv, 
 			   const rowvec& haz, const mat& Fu, const rowvec& Fi, const vec& w, const vec& v,
 			   List b, const int nK, const int gh){
 	vec out = vec(nK, fill::zeros);
@@ -28,6 +36,7 @@ vec Sgammacalc(const int D, const vec& gamma, const rowvec& tausurv, const colve
 	}
 	return out;		   
 }
+
 
 // [[Rcpp::export]]
 mat gamma2Calc(const vec& gamma,const mat& tautilde, const rowvec& tausurv, const rowvec& tau2surv, const colvec& musurv, 
@@ -90,7 +99,7 @@ mat Ietacalc(const int dim, const rowvec& K, const mat& KK, const rowvec& tausur
 
 // Second derivates d/dgammadeta
 // [[Rcpp::export]]
-List Igammaetacalc(const int dim, const mat& KK, const rowvec& tausurv,
+List Igammaetacalc(const int dim, const mat& KK, const rowvec& tausurv, const mat& tautilde,
 				   const colvec& musurv, const rowvec& haz, const mat& Fu, List b, 
 				   const vec& gamma, const vec& w, const vec& v, const int nK, const int gh){
 	List out(nK);
@@ -100,12 +109,28 @@ List Igammaetacalc(const int dim, const mat& KK, const rowvec& tausurv,
 		for(int l = 0; l < gh; l++){
 			colvec xi = getxi(tausurv, musurv, v[l], haz);
 			outk += w[l] * KK.t() * ((Fu * bk) % xi) + 
-					 2.0 * w[l] * v[l] * gamma[k] * KK.t() * (xi % tausurv.t() % xi);
+					 2.0 * w[l] * v[l] * gamma[k] * KK.t() * (xi % tautilde.row(k).t() % xi);
 		}
 		out[k] = outk;
 	}
 	return out;
 }
+//List Igammaetacalc(const int dim, const mat& KK, const rowvec& tausurv,
+				   //const colvec& musurv, const rowvec& haz, const mat& Fu, List b, 
+				   //const vec& gamma, const vec& w, const vec& v, const int nK, const int gh){
+	//List out(nK);
+	//for(int k = 0; k < nK; k++){
+		//vec outk = vec(dim, fill::zeros);
+		//vec bk = b[k];
+		//for(int l = 0; l < gh; l++){
+			//colvec xi = getxi(tausurv, musurv, v[l], haz);
+			//outk += w[l] * KK.t() * ((Fu * bk) % xi) + 
+					 //2.0 * w[l] * v[l] * gamma[k] * KK.t() * (xi % tausurv.t() % xi);
+		//}
+		//out[k] = outk;
+	//}
+	//return out;
+//}
 
 
 
