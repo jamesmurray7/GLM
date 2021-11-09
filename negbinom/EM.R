@@ -47,7 +47,7 @@ em <- function(data, ph, gh.nodes, collect.hist = T, max.iter = 200,
   D <- mvlme.fit$D
   b <- mvlme.fit$b 
   theta <- mvlme.fit$theta
-  gamma <- inits.surv$inits[3:length(inits.surv$inits)]; gr <- rep(gamma, each = nK)
+  gamma <- inits.surv$inits[3:length(inits.surv$inits)]; gr <- rep(gamma, each = 2)   # 2 for intercept/slope
   eta <- inits.surv$inits[1:2]
   theta.list <- lapply(1:n, function(i){ # list version of theta.
     out <- c();
