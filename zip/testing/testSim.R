@@ -3,110 +3,138 @@
 #' ###
 
 rm(list=ls())
-# data characteristics
-n <- 200
-mi <- 5
-N <- n * mi
-# x1, x2, x3 (time cont bin)
-x1 <- 0:(mi - 1)
-x2 <- rnorm(n)
-x3 <- rbinom(n, 1, .5)  
-# Parameters
-# linear predictor coefficients
-beta <- c(.1, .05, -.1, .1)
-# coefficient for probability of zero occurring
-alpha <- c(-5, .5)
-# Covariance matrix D
-D <- diag(4)
-diag(D) <- c(.5^2, .2^2, .15^2, .1^2)
-eigen(D)
-# Simulate REs
-REs <- MASS::mvrnorm(n, c(0, 0, 0, 0), D)
-b <- REs[,1:2]; bstar <- REs[,3:4]
+n <- 250 # no. subjects
+ntms <- 5 # Max. follow-up time.
 
-Yi <- ww <- list()
-for(i in 1:n){
-  # data matrices
-  # bstar[i,] <- 0
-  W <- Z <- cbind(1, x1)
-  X <- cbind(1, x1, x2[i], x3[i])
-  wi <- exp(W %*% alpha + Z %*% bstar[i,])/(exp(W %*% alpha + Z %*% bstar[i,]) + 1)
-  lambdai <- exp(X %*% beta + Z %*% b[i,])
-  Yij <- numeric(length(x1))
-  for(j in seq_along(wi)){
-    Yij[j] <- ifelse(rbinom(1, 1, wi[j]) == 1, 0, rpois(1, lambdai[j]))
-  }
-  Yi[[i]] <- Yij
-  ww[[i]] <- wi
-}
-Y <- do.call(c, Yi)
+# Baseline covariates
+time <- 0:(ntms - 1)
+cont <- rnorm(n)
+bin <- rbinom(n, 1, 0.5)
 
-df <- data.frame(
-  id = rep(1:n, each = mi),
-  x1 = rep(x1, n),
-  x2 = rep(x2, each = mi),
-  x3 = rep(x3, each = mi),
-  Y = Y
-)
+df <- data.frame(id = rep(1:n, each = ntms),
+                 time = rep(time, n),
+                 cont = rep(cont, each = ntms),
+                 bin = rep(bin, each = ntms))
 
-library(glmmTMB)
-fit <- glmmTMB(Y ~ x1 + x2 + x3 + (1+x1|id),
-               data = df, family = poisson, ziformula = ~ 1 + x1 + (1+x1|id))#,
-               #control = glmmTMBControl(optCtrl = list(rel.tol = 1e-3)))
-fit
-VarCorr(fit)$cond$id
+# Design matrices for the fixed and random effects in the non-zero inflated part.
+X <- model.matrix(~ time + cont + bin, data = df)
+Z <- model.matrix(~ time, data = df)
+# Design matrices for the fixed and random effects in the zero inflated (ZI) part.
+Xzi <- model.matrix(~ time, data = df)
+Zzi <- model.matrix(~ time, data = df)
 
+# Coefficients
+beta <- c(1, 0.05, 0.3, -0.2)
+alpha <- c(-.5, .2)
+# Covariance matrix D - 2x2, intercept ONLY e.g. Zhu et al (2018)
+D11 <- 0.5 # variance of random intercepts non-zero part
+D22 <- 0.4 # variance of random intercepts zero part
+# Random effects (longit and ZI part)
+Dl <- matrix(c(.5^2, 0.05, 0.05, 0.2^2), 2, 2)
+Dzi <- matrix(c(.3^2, 0, 0, .1^2), 2, 2)
+b <- MASS::mvrnorm(n, rep(0, 2), Sigma = Dl)
+bstar <- MASS::mvrnorm(n, rep(0, 2), Sigma = Dzi)
+
+# Linear predictor for the Poisson process
+eta.y <- X %*% beta + rowSums(Z * b[df$id,,drop=F])
+# Linear predictor for ZI process
+eta.zi <- Xzi %*% alpha + rowSums(Zzi * bstar[df$id, , drop = F])
+# Simulate Poisson process
+
+df$y <- rpois(n * ntms, lambda = exp(eta.y))
+df$y[as.logical(rbinom(n * ntms, 1, prob = plogis(eta.zi)))] <- 0   # Set y=0 with probablility logit(eta.zi)
+
+as.integer(table(df$y)[1])
+
+glmmTMB(y ~ time + cont + bin + (1 + time|id), 
+        data = df, 
+        family = poisson, 
+        ziformula = ~ time + (1 + time|id))
 
 # Quick simulation --------------------------------------------------------
 simData <- function(){
-  n <- 200
-  mi <- 5
-  N <- n * mi
-  # x1, x2, x3 (time cont bin)
-  x1 <- 0:(mi - 1)
-  x2 <- rnorm(n)
-  x3 <- rbinom(n, 1, .5)  
-  # coefficients
-  beta0 <- 0.1; beta1 <- 0.05; beta2 <- -0.1; beta3 <- 0.1
-  # REs
-  D <- matrix(c(0.5^2, 0, 0, 0.2^2),2,2)
-  REs <- MASS::mvrnorm(n, c(0,0), D)
-  b0 <- REs[,1]; b1 <- REs[,2]
+  n <- 250 # no. subjects
+  ntms <- 5 # Max. follow-up time.
   
-  Yi <- list()
-  for(i in 1:n){
-    lambdai <- beta0+b0[i] + x1 * (beta1 + b1[i]) + x2[i] * beta2 + x3[i] * beta3
-    Yi[[i]] <- rpois(mi, lambda = exp(lambdai))
-  }
-  Y <- do.call(c, Yi)
+  # Baseline covariates
+  time <- 0:(ntms - 1)
+  cont <- rnorm(n)
+  bin <- rbinom(n, 1, 0.5)
   
-  df <- data.frame(
-    id = rep(1:n, each = mi),
-    x1 = rep(x1, n),
-    x2 = rep(x2, each = mi),
-    x3 = rep(x3, each = mi),
-    b0 = rep(b0, each = mi),
-    b1 = rep(b1, each = mi),
-    Y = Y
-  )
+  df <- data.frame(id = rep(1:n, each = ntms),
+                   time = rep(time, n),
+                   cont = rep(cont, each = ntms),
+                   bin = rep(bin, each = ntms))
   
+  # Design matrices for the fixed and random effects in the non-zero inflated part.
+  X <- model.matrix(~ time + cont + bin, data = df)
+  Z <- model.matrix(~ time, data = df)
+  # Design matrices for the fixed and random effects in the zero inflated (ZI) part.
+  Xzi <- model.matrix(~ time, data = df)
+  Zzi <- model.matrix(~ time, data = df)
+  
+  # Coefficients
+  beta <- c(1, 0.05, 0.3, -0.2)
+  alpha <- c(-.5, .2)
+  # Covariance matrix D - 2x2, intercept ONLY e.g. Zhu et al (2018)
+  D11 <- 0.5 # variance of random intercepts non-zero part
+  D22 <- 0.4 # variance of random intercepts zero part
+  # Random effects (longit and ZI part)
+  Dl <- matrix(c(.5^2, 0.05, 0.05, 0.2^2), 2, 2)
+  Dzi <- matrix(c(.3^2, 0, 0, .1^2), 2, 2)
+  b <- MASS::mvrnorm(n, rep(0, 2), Sigma = Dl)
+  bstar <- MASS::mvrnorm(n, rep(0, 2), Sigma = Dzi)
+  
+  # Linear predictor for the Poisson process
+  eta.y <- X %*% beta + rowSums(Z * b[df$id,,drop=F])
+  # Linear predictor for ZI process
+  eta.zi <- Xzi %*% alpha + rowSums(Zzi * bstar[df$id, , drop = F])
+  # Simulate Poisson process
+  
+  df$y <- rpois(n * ntms, lambda = exp(eta.y))
+  df$y[as.logical(rbinom(n * ntms, 1, prob = plogis(eta.zi)))] <- 0   # Set y=0 with probablility logit(eta.zi)
   df
 }
 
 fitData <- function(){
   df <- simData()
-  glmfit <- glmer(Y ~ x1 + x2 + x3 + (1 + x1|id), data = df, family = poisson)
-  c(fixef(glmfit), diag(VarCorr(glmfit)$id))
+  fit <- glmmTMB(y ~ time + cont + bin + (1 + time|id), 
+          data = df, 
+          family = poisson, 
+          ziformula = ~ time + (1 + time|id))
+  return(fit)
 }
 
 fits <- replicate(100, fitData(), simplify = F)
-fits.bind <- as.data.frame(do.call(rbind, fits))
-names(fits.bind) <- c(paste0("beta_", 0:3), "D11", "D22")
+
+ee <- function(fit){
+  # Fixed effects
+  beta <- fixef(fit)$cond; names(beta) <- paste0('beta_', names(beta))
+  alpha <- fixef(fit)$zi; names(alpha) <- paste0('alpha_', names(alpha))
+  # VarCorr
+  Dl <- diag(matrix(VarCorr(fit)$cond$id,2,2)); names(Dl) <- paste0('Dl_', c(11, 22))
+  Dz <- diag(matrix(VarCorr(fit)$zi$id,2,2)); names(Dz) <- paste0('Dz_', c(11, 22))
+  c(beta, alpha, Dl, Dz)
+}
+
 
 library(tidyverse)
-gather(fits.bind) %>% 
-  ggplot(aes(x = value)) + 
+coeffs <- do.call(rbind, lapply(fits, ee))
+
+targets <- data.frame(
+  parameter = colnames(coeffs),
+  target = c(1, 0.05, 0.3, -0.2,
+             -.5, .2, .5^2, .2^2, .3^2, .1^2)
+)
+
+coeffs %>% 
+  as_tibble %>% 
+  pivot_longer(cols = `beta_(Intercept)`:`Dz_22`, names_to = 'parameter', values_to = 'estimate') %>% 
+  left_join(., targets, 'parameter') %>% 
+  ggplot(aes(x = estimate)) + 
+  geom_vline(aes(xintercept = target), lty = 3, colour = 'grey50') + 
   geom_density() + 
-  facet_wrap(~key, scales = "free") + 
+  facet_wrap(~parameter, scales = 'free') +
   theme_bw()
-# Verified!
+# Looks okay
+ggsave('~/Downloads/ZIP-simplots.png')
