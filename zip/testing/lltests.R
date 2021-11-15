@@ -1,56 +1,39 @@
-aa <- test[test$id == 1, ]
-# Data objects
-Y <- c(aa$Y.1, aa$Y.2)
-X <- cbind(1, aa$time, aa$cont, aa$bin)
-Z <- cbind(1, aa$time)
-XX <- as.matrix(Matrix::bdiag(X, X))
-ZZ <- as.matrix(Matrix::bdiag(Z, Z))
-# b and beta
-b <- MASS::mvrnorm(mu = rep(0, 4), Sigma = D)
-betac <- c(beta[1, ], beta[2, ])
+tr <- function(x) sum(diag(x))
+test <- simData()
+fit <- glmmTMB(y ~ time + cont + bin + (1 + time|id), 
+               data = test, 
+               family = poisson, 
+               ziformula = ~ time + (1 + time|id))
+ll.true <- logLik(fit)
 
-# Survival stuff
-eta <- c(0,1)
-gamma <- c(-1, 1)
-source('~/Documents/PhD/Bernhardt/DataFunctions/survFns.R')
-ph <- coxph(Surv(surv.time, status) ~ cont + bin, 
-            dplyr::distinct(test, id, cont, bin, surv.time, status))
-test$survtime <- test$surv.time
-sv <- surv.mod(ph, test)
-Fi <- sv$Fi; Di <- sv$Di
-Fu <- sv$Fu; l0i <- sv$l0i; l0u <- sv$l0u
-K <- as.matrix(cbind(aa[1, ]$cont, aa[1, ]$bin))
+X <- model.matrix(~time+cont+bin, test)
+Y <- test$y
+Z <- model.matrix(~time, test)
+Xzi <- model.matrix(~time, test)
+Zzi <- model.matrix(~time, test)
 
+alpha <- fixef(fit)$zi
+beta <- fixef(fit)$cond
+b <- as.matrix(ranef(fit)$cond$id)
+bzi <- as.matrix(ranef(fit)$zi$id)
 
-# Likelihood --------------------------------------------------------------
+Dl <- as.matrix(VarCorr(fit)$cond$id)
+Dz <- as.matrix(VarCorr(fit)$zi$id)
 
-# Poisson LL for subject i
-sum(-lfactorial(Y)) + sum(-exp(XX %*% betac + ZZ %*% b)) + Y %*% (XX %*% betac + ZZ %*% b)
+WZ <- Xzi %*% alpha + rowSums(Zzi * bzi[test$id, , drop=F])
+XZ <- X %*% beta + rowSums(Z * b[test$id, , drop = F])
+# Index for non-zero Y
+ii <- Y>0
+l1 <- sum(log(exp(WZ[!ii]) + exp(-exp(XZ[!ii]))))
+l2 <- crossprod(Y[ii], XZ[ii]) - sum(exp(XZ[ii])) - sum(lfactorial(Y[ii]))
+l3 <- sum(log(1 + exp(WZ)))
 
+b.ll <- -1/2 * log(2*pi) -1/2 * log(det(Dl)) - 1/2 * tr(b %*% solve(Dl) %*% t(b))
+bz.ll <- -1/2 * log(2*pi) - 1/2 * log(det(Dz)) - 1/2 * tr(bzi %*% solve(Dz) %*% t(bzi))
 
-# RE LL for subject i
--4/2 * log(2 * pi) - 1/2 * log(det(D)) -1/2 * crossprod(b, solve(D) %*% b) # 1x1
+# Adding on theRE ll's?
+l1 + l2 - l3 + b.ll + bz.ll
 
-# Survival LL for subject i
-Di[1] * log(l0i[1]) + Di[1] * (K %*% eta + c(Fi[1, ], Fi[1, ]) %*% (rep(gamma, each = 2) * b)) - 
-  l0u[[1]] %*% (exp(K %*% eta) %x% exp(cbind(Fu[[1]], Fu[[1]]) %*% (rep(gamma, each = 2) * b)))
+ll.true # A little bit off(?)
 
-# C++
-sourceCpp('../GLM/Poisson/ll.cpp')
-# args(ll) -->
-# b, Y, lfactY, X, Z, D, K, Delta, l0i, Fi, l0u, Fu, beta, eta, gr, rvFi, nK, q
-ll(b, Y, lfactorial(Y), XX, ZZ, D, K, Di[1], l0i[1], Fi[1,], l0u[[1]], Fu[[1]], 
-   betac, eta, rep(gamma, each = 2), c(Fi[1, ], Fi[1, ]), 2, 4)
-
-
-# Gradient terms ----------------------------------------------------------
--crossprod(ZZ, exp(XX %*% betac + ZZ %*% b)) + crossprod(ZZ, Y) - solve(D) %*% b + 
-Di[1] * c(Fi[1, ], Fi[1, ]) * rep(gamma, each = 2)
-crossprod(cbind(Fu[[1]], Fu[[1]]),
-          l0u[[1]] * (exp(K %*% eta) %x% exp(cbind(Fu[[1]], Fu[[1]]) %*% (rep(gamma, each = 2) * b)))
-) * rep(gamma, each = 2)
-
-# args(gradll) -->
-# b, Y, X, Z, D, K, Delta, l0i, l0u, Fu, g, beta, eta, gr, rvFi, nK
-gradll(b, Y, XX, ZZ, D, K, Di[1], l0i[1], l0u[[1]], Fu[[1]], betac,
-       eta, rep(gamma, each = 2), c(Fi[1, ], Fi[1, ]), 2)
+l1+l2-l3
