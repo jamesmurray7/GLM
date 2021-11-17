@@ -5,7 +5,6 @@ source('~/Documents/GLMM/zip/fresh/_Functions.R')
 beta <- c(-.5, .1, 0.5, 1)
 alpha <- c(-5, 0.25)
 n <- 250; ntms <- 8
-D <- list(D1 = diag(c(.5^2, .25^2)), D2 = diag(c(.2^2, .05^2)))
 D <- diag(c(.5^2, .15^2))
 test <- simData_zip(n, ntms, beta, alpha, D)
 testfit <- glmmTMB::glmmTMB(y ~ time  +cont  +bin + (1|id),
@@ -102,10 +101,6 @@ diff <- max(
 )
 message('Maximum relative difference: ', round(diff, 5))
   
-
-  
-  
-
 # let's try full-run while looping ----------------------------------------
 diff <- 100; iter <- 0; tol <- 5e-3
 beta <- fixef(testfit)$cond
@@ -126,6 +121,7 @@ for(i in 1:n){
 
 zi <- zip()
 
+vech <- function(x) x[lower.tri(x, diag = T)]
 params <- c(vech(D), beta, alpha)
 
 while(diff > tol){
@@ -144,10 +140,13 @@ while(diff > tol){
   iter <- iter + 1
 }
 
-beta; beta1
+beta
 alpha
-D; .15^2; .5^2
+D
 # beta <- c(-.5, .1, 0.5, 1)
 # alpha <- c(-5, 0.25)
 # D <- diag(c(.5^2, .15^2))
-  
+
+
+simY <- simulate(testfit)
+plot(do.call(c,Y)~unlist(simY),type='p')

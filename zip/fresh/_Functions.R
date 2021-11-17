@@ -5,7 +5,7 @@
 #' #####
 
 # Data simulation ---------------------------------------------------------
-# 1. ZIP. Assumes FE and RE are random intercept only.
+# 1. ZIP. Assumes RE are random intercept only.
 simData_zip <- function(n, ntms, beta, alpha, D = diag(2)){
   time <- 0:(ntms - 1)
   cont <- rnorm(n); bin <- rbinom(n, 1, 0.5)
@@ -105,7 +105,7 @@ zip <- function(){
                  Seta = Seta, 
                  Setazi = Setazi), class = 'family')
 }
-  
+
 # Functions for parameter updates -----------------------------------------
 beta_alpha <- function(b, Y, X, Z, Xzi, Zzi, beta, D, alpha, ldens, zi.inds, S, Sz, gh, Sigmai){
   gh <- statmod::gauss.quad.prob(gh, 'normal')
