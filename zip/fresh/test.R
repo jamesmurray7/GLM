@@ -140,13 +140,81 @@ while(diff > tol){
   iter <- iter + 1
 }
 
-beta
-alpha
-D
-# beta <- c(-.5, .1, 0.5, 1)
-# alpha <- c(-5, 0.25)
-# D <- diag(c(.5^2, .15^2))
+# C++ versions ------------------------------------------------------------
 
+EMupdateCpp <- function(b, Y, X, Z, Xz, Zz, 
+                     beta, D, alpha, gh, indzi = 2){
+  
+  b.hat <- mapply(function(b, Y, X, Z, Xz, Zz){
+    ucminf::ucminf(b, b_logdensity, b_score, Y, X, Z, Xz, Zz, 
+                   beta, alpha, D, indzi)$par
+  }, b = b, Y = Y, X = X, Z = Z, Xz = Xzi, Zz = Zzi, SIMPLIFY = F)
+  
+  Sigmai <- mapply(function(b, Y, X, Z, Xz, Zz){
+    solve(cd(b, b_score, Y, X, Z, Xz, Zz, beta, alpha, D, indzi))
+  }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xzi, Zz = Zzi, SIMPLIFY = F)
+  
+  Drhs <- mapply(function(b, S){
+    S + tcrossprod(b)
+  }, b = b.hat, S = Sigmai, SIMPLIFY = F)
+  
+  ba <- mapply(function(b, Y, X, Z, Xz, Zz, Sigmai){
+    beta_alpha_new(b, Y, X, Z, Xz, Zz, beta, D, alpha, Sigmai, gh)
+  }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xzi, Zz = Zzi, Sigmai = Sigmai, SIMPLIFY = F)
+  
+  # Updates
+  Sbeta <- Reduce('+', lapply(ba, '[[', 1))
+  Hbeta <- Reduce('+', lapply(ba, '[[', 3))
+  Salpha <- Reduce('+', lapply(ba, '[[', 2))
+  Halpha <- Reduce('+', lapply(ba, '[[', 4))
+  
+  D.new <- Reduce('+', Drhs)/n
+  beta.new <- beta - solve(Hbeta, Sbeta)
+  alpha.new <- alpha - solve(Halpha, Salpha)
+  
+  return(list(
+    D.new = D.new, beta.new = beta.new, alpha.new = alpha.new, b.hat = b.hat
+  ))
+}
 
-simY <- simulate(testfit)
-plot(do.call(c,Y)~unlist(simY),type='p')
+diff <- 100; iter <- 0; tol <- 5e-3
+beta <- fixef(testfit)$cond
+alpha <- fixef(testfit)$zi
+update <- EMupdateCpp(b, Y, X, Z, Xzi, Zzi, beta, D, alpha, gh = 9)
+params.new <- c(vech(update$D.new), update$beta.new, update$alpha)
+diff <- max(
+  abs(params.new-params)/(abs(params)+1e-3)
+)
+message('\nIteration ', iter + 1)
+message('Maximum relative difference: ', round(diff, 5))
+b <- update$b.hat
+D <- update$D.new
+beta <- update$beta.new
+alpha <- update$alpha.new
+params <- c(vech(D), beta, alpha)
+iter <- iter + 1
+
+b <- as.matrix(cbind(ranef(testfit)$cond$id, ranef(testfit)$zi$id))
+b <- lapply(1:n, function(i) b[i,])
+indzi <- zi.ind <- 2
+D <- diag(sapply(1:2, function(x) VarCorr(testfit)[[x]]$id))
+
+vech <- function(x) x[lower.tri(x, diag = T)]
+params <- c(vech(D), beta, alpha)
+
+while(diff > tol){
+  update <- EMupdateCpp(b, Y, X, Z, Xzi, Zzi, beta, D, alpha, gh = 9)
+  params.new <- c(vech(update$D.new), update$beta.new, update$alpha)
+  diff <- max(
+    abs(params.new-params)/(abs(params)+1e-3)
+  )
+  message('\nIteration ', iter + 1)
+  message('Maximum relative difference: ', round(diff, 5))
+  b <- update$b.hat
+  D <- update$D.new
+  beta <- update$beta.new
+  alpha <- update$alpha.new
+  params <- c(vech(D), beta, alpha)
+  iter <- iter + 1
+}
+cpp.params <- params
