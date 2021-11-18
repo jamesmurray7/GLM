@@ -1,15 +1,15 @@
 rm(list=ls())
 library(glmmTMB)
-source('~/Documents/GLMM/zip/fresh/_Functions.R')
+source('./_Functions.R')
 
-beta <- c(-.5, .1, 0.5, 1)
-alpha <- c(-5, 0.25)
-n <- 250; ntms <- 8
+beta <- c(4, 0.5, 1, 3)
+alpha <- c(-2, 0.25)
+n <- 250; ntms <- 15
 D <- diag(c(.5^2, .15^2))
 test <- simData_zip(n, ntms, beta, alpha, D)
 testfit <- glmmTMB::glmmTMB(y ~ time  +cont  +bin + (1|id),
                             ziformula = ~ time + (1|id), data = test, family = poisson)
-
+# pscl::zeroinfl(y~time+cont+bin | time,data=test) # Could we do something with this and speed up a little?
 beta <- fixef(testfit)$cond
 alpha <- fixef(testfit)$zi
 b <- as.matrix(cbind(ranef(testfit)$cond$id, ranef(testfit)$zi$id))
@@ -154,7 +154,7 @@ EMupdateCpp <- function(b, Y, X, Z, Xz, Zz,
   }, b = b, Y = Y, X = X, Z = Z, Xz = Xzi, Zz = Zzi, SIMPLIFY = F)
   
   Sigmai <- mapply(function(b, Y, X, Z, Xz, Zz){
-    solve(cd(b, b_score, Y, X, Z, Xz, Zz, beta, alpha, D, indzi))
+    solve(fd_b(b, Y, X, Z, Xz, Zz, beta, alpha, D, indzi, 1e-4))
   }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xzi, Zz = Zzi, SIMPLIFY = F)
   
   Drhs <- mapply(function(b, S){
@@ -179,7 +179,7 @@ EMupdateCpp <- function(b, Y, X, Z, Xz, Zz,
     D.new = D.new, beta.new = beta.new, alpha.new = alpha.new, b.hat = b.hat
   ))
 }
-
+cd <- GLMMadaptive:::cd_vec
 diff <- 100; iter <- 0; tol <- 5e-3
 beta <- fixef(testfit)$cond
 alpha <- fixef(testfit)$zi
@@ -202,9 +202,11 @@ b <- lapply(1:n, function(i) b[i,])
 indzi <- zi.ind <- 2
 D <- diag(sapply(1:2, function(x) VarCorr(testfit)[[x]]$id))
 
+
+
 vech <- function(x) x[lower.tri(x, diag = T)]
 params <- c(vech(D), beta, alpha)
-
+diff <- 100
 while(diff > tol){
   update <- EMupdateCpp(b, Y, X, Z, Xzi, Zzi, beta, D, alpha, gh = 9)
   params.new <- c(vech(update$D.new), update$beta.new, update$alpha)
@@ -220,4 +222,5 @@ while(diff > tol){
   params <- c(vech(D), beta, alpha)
   iter <- iter + 1
 }
-cpp.params <- params
+params
+params.start

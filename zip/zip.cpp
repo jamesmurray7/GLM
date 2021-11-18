@@ -45,7 +45,7 @@ vec zip_Setazi(vec& Y, vec& eta, vec& etazi){
 }
 
 
-// Functions for items associated with workig out things for b
+// Functions for items associated with working out things for b
 // [[Rcpp::export]]
 double b_logdensity(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
 					vec& beta, vec& alpha, mat& D, int indzi){
@@ -54,7 +54,7 @@ double b_logdensity(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
 	double lhs = -1.0 * as_scalar(sum(zip_logdensity(Y, eta, etazi)));
 	double rhs = as_scalar(0.5 * b.t() * D.i() * b);
 	return lhs + rhs;
-}
+} 
 
 // [[Rcpp::export]]
 vec b_score(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,

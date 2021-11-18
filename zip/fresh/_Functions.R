@@ -41,6 +41,78 @@ simData_zip <- function(n, ntms, beta, alpha, D = diag(2)){
   df
 }
 
+# Simulate under a (very simple) joint model
+simData_zip_joint <- function(n, ntms, beta, alpha, D = diag(2),
+                              theta=c(-6, 0.2), surv.eta = c(0, 1), 
+                              gamma = 0.5, cens.rate = exp(-3.5)){
+  
+  # Necessary parameters
+  id <- 1:n
+  time <- 0:(ntms-1); tau <- (ntms - 1) + 0.1 # time variable and truncation time tau.
+  cont <- rnorm(n); bin <- rbinom(n, 1, 0.5)  # Continuous and binary covariates.
+  
+  df <- data.frame(id = rep(1:n, each = ntms),
+                   time = rep(time, n),
+                   cont = rep(cont, each = ntms),
+                   bin = rep(bin, each = ntms))
+  
+  # Design matrices
+  # Design matrices for the fixed and random effects in the non-zero inflated part.
+  X <- model.matrix(~ time + cont + bin, data = df)
+  Z <- model.matrix(~ 1, data = df)
+  # Design matrices for the fixed and random effects in the zero inflated (ZI) part.
+  Xzi <- model.matrix(~ time, data = df)
+  Zzi <- model.matrix(~ 1, data = df)
+  
+  # Random Effects,
+  b <- MASS::mvrnorm(n, rep(0, 2), Sigma = D);
+  # bzi <- MASS::mvrnorm(n, rep(0, 2), Sigma = D[[2]])
+  
+  # Linear predictors
+  eta <- X %*% beta + rowSums(Z * b[df$id, 1, drop=F])
+  etazi <- Xzi %*% alpha + rowSums(Zzi * b[df$id, 2, drop=F])
+  
+  # Outcome y
+  y <- rpois(n * ntms, lambda = exp(eta))
+  y[as.logical(rbinom(n * ntms, 1, prob = plogis(etazi)))] <- 0
+  df$y <- y; message(sum(df$y == 0)/length(df$y)*100,'% zeroes')
+  
+  # Simulating survival times
+  theta0 <- theta[1]; theta1 <- theta[2]
+  K <- cbind(cont, bin)
+  Keta <- K %*% surv.eta
+  U <- runif(n)
+  
+  # denom <- theta1 + b1 %*% gamma                     # these for if I put intercept + slope back in!
+  # rhs <- (theta1 + b1 %*% gamma) * log(U)/(exp(theta0 + Keta + b0 %*% gamma))   
+  denom <- theta1
+  rhs <- theta1 * log(U)/(exp(theta0 + Keta + rowSums(b * gamma)))
+  
+  t <- suppressWarnings(log((1 - rhs))/denom)
+  t[is.nan(t)] <- tau
+  
+  # Collect survival times, and generate cenors times.
+  cens.time <- rexp(n, cens.rate)
+  survtime <- pmin(t, cens.time)
+  survtime[survtime >= tau] <- tau
+  
+  # Status flag
+  status <- rep(1, n)
+  is.censored <- cens.time < survtime
+  status[which(survtime == tau | is.censored | survtime == cens.time)] <- 0 # Failure flag
+  
+  # Output Dataframes
+  surv.data <- data.frame(id, survtime, status)
+  long.data <- df
+  
+  out.data <- dplyr::left_join(df, surv.data, by = 'id')
+  message(round(100 * sum(surv.data$status)/n), '% failure rate')
+  
+  return(list(data =  out.data, 
+         surv.data = surv.data))
+  
+}
+
 # Families ----------------------------------------------------------------
 
 # 1. Poisson
@@ -181,75 +253,20 @@ beta_alpha <- function(b, Y, X, Z, Xzi, Zzi, beta, D, alpha, ldens, zi.inds, S, 
        H = hess)
 }
 
-# beta_alpha(b[[1]], Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta, D, alpha, zi$ldens, 2, zi$Seta, zi$Setazi, 3, Sigmai)
-# SS <- lapply(split(seq(2), c(1,2)), function(x) as.matrix(Sigmai[x,x]))
-# gh <- statmod::gauss.quad.prob(3, 'normal'); w <- gh$w; v <- gh$n
-# Sbeta_alpha(b[[1]], Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta, D, alpha, 2 ,SS, w,v)
-# 
-# 
-# microbenchmark::microbenchmark(
-#   `old` = {
-#     beta_alpha(b[[1]], Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta, D, alpha, zi$ldens, 2, zi$Seta, zi$Setazi, 3, Sigmai)
-#   },
-#   `new` = {
-#     Sbeta_alpha(b[[1]], Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta, D, alpha, 2 ,SS, w,v)
-#   },
-#   times = 1e3
-# )
-# 
-# microbenchmark::microbenchmark(
-#   `old` = {
-#     a <- beta_alpha(b[[1]], Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta, D, alpha, zi$ldens, 2, zi$Seta, zi$Setazi, 3, Sigmai)
-#   },
-#   `new` = {
-#     Hb <- Ha <- list()
-#     for(l in 1:3){
-#       Hb[[l]] <- GLMMadaptive:::fd_vec(beta, Sbetal, Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], b[[1]], D, alpha, 2, SS, w[l], v[l])
-#       Ha[[l]] <- GLMMadaptive:::fd_vec(alpha, Salphal, Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta, D, b[[1]], 2, SS, w[l], v[l])
-#     }
-#     Hb <- Reduce('+', Hb); Ha <- Reduce('+', Ha)
-#   },
-#   times = 1e2
-# )
-# 
-# 
-# beta_alpha_new <- function(b, Y, X, Z, Xz, Zz, beta, D, alpha, Sigmai, gh){
-#   gh <- statmod::gauss.quad.prob(gh, 'normal')
-#   w <- gh$w; v <- gh$n
-#   SS <- lapply(split(seq(2), c(1,2)), function(x) as.matrix(Sigmai[x,x]))
-#   # Scores
-#   out <- Sbeta_alpha(b, Y, X, Z, Xz, Zz, beta, D, alpha, 2, SS, w, v)
-#   # Hessians
-#   Ha <- Hb <- list()
-#   for(l in 1:length(w)){
-#     Ha[[l]] <- cd(alpha, Salphal, Y, X, Z, Xz, Zz, beta, D, b, 2, SS, w[l], v[l])
-#     Hb[[l]] <- cd(beta , Sbetal,  Y, X, Z, Xz, Zz, b, D, alpha, 2, SS, w[l], v[l])
-#   }
-#   out[["Hbeta"]] <- Reduce('+', Hb)
-#   out[["Halpha"]] <- Reduce('+', Ha)
-#   out
-# }
-# 
-# beta_alpha_new(b[[1]], Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta,D, alpha, Sigmai, 3)
-# beta_alpha(b[[1]], Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta, D, alpha, zi$ldens, 2, zi$Seta, zi$Setazi, 3, Sigmai)
-
-microbenchmark::microbenchmark(
-  `optim-Hess` = {Sigmai <- mapply(function(b, Y, X, Z, Xzi, Zzi){
-    solve(.b()$H(b, Y, X, Z, Xzi, Zzi, beta, D, alpha, zi$ldens, indzi, zi$Seta, zi$Setazi))
-  }, b = b.hat, Y = Y, X = X, Z = Z, Xzi = Xzi, Zzi = Zzi, SIMPLIFY = F)},
-  `cd:c++ function` = {
-    Sigmai2 <- mapply(function(b, Y, X, Z, Xz, Zz){
-      solve(GLMMadaptive:::cd_vec(b, b_score, Y, X, Z, Xz, Zz, beta, alpha, D, indzi))
-    }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xzi, Zz = Zzi, SIMPLIFY = F)
-  },
-  `fd:c++ function` = {
-    Sigmai3 <- mapply(function(b, Y, X, Z, Xz, Zz){
-      solve(GLMMadaptive:::fd_vec(b, b_score, Y, X, Z, Xz, Zz, beta, alpha, D, indzi))
-    }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xzi, Zz = Zzi, SIMPLIFY = F)
-  },
-  `fd: all c++` = {
-    Sigmai4 <- mapply(function(b, Y, X, Z, Xz, Zz){
-      solve(fd_b(b, Y, X, Z, Xz, Zz, beta, alpha, D, indzi, 1e-4))
-    }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xzi, Zz = Zzi, SIMPLIFY = F)
+beta_alpha_new <- function(b, Y, X, Z, Xz, Zz, beta, D, alpha, Sigmai, gh){
+  gh <- statmod::gauss.quad.prob(gh, 'normal')
+  w <- gh$w; v <- gh$n
+  SS <- lapply(split(seq(2), c(1,2)), function(x) as.matrix(Sigmai[x,x]))
+  # Scores
+  out <- Sbeta_alpha(b, Y, X, Z, Xz, Zz, beta, D, alpha, 2, SS, w, v)
+  # Hessians
+  Ha <- Hb <- list()
+  for(l in 1:length(w)){
+    Ha[[l]] <- cd(alpha, Salphal, Y, X, Z, Xz, Zz, beta, D, b, 2, SS, w[l], v[l])
+    Hb[[l]] <- cd(beta , Sbetal,  Y, X, Z, Xz, Zz, b, D, alpha, 2, SS, w[l], v[l])
   }
-)
+  out[["Hbeta"]] <- Reduce('+', Hb)
+  out[["Halpha"]] <- Reduce('+', Ha)
+  out
+}
+
