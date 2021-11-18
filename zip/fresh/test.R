@@ -141,6 +141,9 @@ while(diff > tol){
 }
 
 # C++ versions ------------------------------------------------------------
+library(Rcpp)
+library(RcppArmadillo)
+sourceCpp('./wip.cpp')
 
 EMupdateCpp <- function(b, Y, X, Z, Xz, Zz, 
                      beta, D, alpha, gh, indzi = 2){

@@ -181,54 +181,75 @@ beta_alpha <- function(b, Y, X, Z, Xzi, Zzi, beta, D, alpha, ldens, zi.inds, S, 
        H = hess)
 }
 
-beta_alpha(b[[1]], Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta, D, alpha, zi$ldens, 2, zi$Seta, zi$Setazi, 3, Sigmai)
-SS <- lapply(split(seq(2), c(1,2)), function(x) as.matrix(Sigmai[x,x]))
-gh <- statmod::gauss.quad.prob(3, 'normal'); w <- gh$w; v <- gh$n
-Sbeta_alpha(b[[1]], Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta, D, alpha, 2 ,SS, w,v)
-
+# beta_alpha(b[[1]], Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta, D, alpha, zi$ldens, 2, zi$Seta, zi$Setazi, 3, Sigmai)
+# SS <- lapply(split(seq(2), c(1,2)), function(x) as.matrix(Sigmai[x,x]))
+# gh <- statmod::gauss.quad.prob(3, 'normal'); w <- gh$w; v <- gh$n
+# Sbeta_alpha(b[[1]], Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta, D, alpha, 2 ,SS, w,v)
+# 
+# 
+# microbenchmark::microbenchmark(
+#   `old` = {
+#     beta_alpha(b[[1]], Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta, D, alpha, zi$ldens, 2, zi$Seta, zi$Setazi, 3, Sigmai)
+#   },
+#   `new` = {
+#     Sbeta_alpha(b[[1]], Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta, D, alpha, 2 ,SS, w,v)
+#   },
+#   times = 1e3
+# )
+# 
+# microbenchmark::microbenchmark(
+#   `old` = {
+#     a <- beta_alpha(b[[1]], Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta, D, alpha, zi$ldens, 2, zi$Seta, zi$Setazi, 3, Sigmai)
+#   },
+#   `new` = {
+#     Hb <- Ha <- list()
+#     for(l in 1:3){
+#       Hb[[l]] <- GLMMadaptive:::fd_vec(beta, Sbetal, Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], b[[1]], D, alpha, 2, SS, w[l], v[l])
+#       Ha[[l]] <- GLMMadaptive:::fd_vec(alpha, Salphal, Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta, D, b[[1]], 2, SS, w[l], v[l])
+#     }
+#     Hb <- Reduce('+', Hb); Ha <- Reduce('+', Ha)
+#   },
+#   times = 1e2
+# )
+# 
+# 
+# beta_alpha_new <- function(b, Y, X, Z, Xz, Zz, beta, D, alpha, Sigmai, gh){
+#   gh <- statmod::gauss.quad.prob(gh, 'normal')
+#   w <- gh$w; v <- gh$n
+#   SS <- lapply(split(seq(2), c(1,2)), function(x) as.matrix(Sigmai[x,x]))
+#   # Scores
+#   out <- Sbeta_alpha(b, Y, X, Z, Xz, Zz, beta, D, alpha, 2, SS, w, v)
+#   # Hessians
+#   Ha <- Hb <- list()
+#   for(l in 1:length(w)){
+#     Ha[[l]] <- cd(alpha, Salphal, Y, X, Z, Xz, Zz, beta, D, b, 2, SS, w[l], v[l])
+#     Hb[[l]] <- cd(beta , Sbetal,  Y, X, Z, Xz, Zz, b, D, alpha, 2, SS, w[l], v[l])
+#   }
+#   out[["Hbeta"]] <- Reduce('+', Hb)
+#   out[["Halpha"]] <- Reduce('+', Ha)
+#   out
+# }
+# 
+# beta_alpha_new(b[[1]], Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta,D, alpha, Sigmai, 3)
+# beta_alpha(b[[1]], Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta, D, alpha, zi$ldens, 2, zi$Seta, zi$Setazi, 3, Sigmai)
 
 microbenchmark::microbenchmark(
-  `old` = {
-    beta_alpha(b[[1]], Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta, D, alpha, zi$ldens, 2, zi$Seta, zi$Setazi, 3, Sigmai)
+  `optim-Hess` = {Sigmai <- mapply(function(b, Y, X, Z, Xzi, Zzi){
+    solve(.b()$H(b, Y, X, Z, Xzi, Zzi, beta, D, alpha, zi$ldens, indzi, zi$Seta, zi$Setazi))
+  }, b = b.hat, Y = Y, X = X, Z = Z, Xzi = Xzi, Zzi = Zzi, SIMPLIFY = F)},
+  `cd:c++ function` = {
+    Sigmai2 <- mapply(function(b, Y, X, Z, Xz, Zz){
+      solve(GLMMadaptive:::cd_vec(b, b_score, Y, X, Z, Xz, Zz, beta, alpha, D, indzi))
+    }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xzi, Zz = Zzi, SIMPLIFY = F)
   },
-  `new` = {
-    Sbeta_alpha(b[[1]], Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta, D, alpha, 2 ,SS, w,v)
+  `fd:c++ function` = {
+    Sigmai3 <- mapply(function(b, Y, X, Z, Xz, Zz){
+      solve(GLMMadaptive:::fd_vec(b, b_score, Y, X, Z, Xz, Zz, beta, alpha, D, indzi))
+    }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xzi, Zz = Zzi, SIMPLIFY = F)
   },
-  times = 1e3
-)
-
-microbenchmark::microbenchmark(
-  `old` = {
-    a <- beta_alpha(b[[1]], Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta, D, alpha, zi$ldens, 2, zi$Seta, zi$Setazi, 3, Sigmai)
-  },
-  `new` = {
-    Hb <- Ha <- list()
-    for(l in 1:3){
-      Hb[[l]] <- GLMMadaptive:::fd_vec(beta, Sbetal, Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], b[[1]], D, alpha, 2, SS, w[l], v[l])
-      Ha[[l]] <- GLMMadaptive:::fd_vec(alpha, Salphal, Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta, D, b[[1]], 2, SS, w[l], v[l])
-    }
-    Hb <- Reduce('+', Hb); Ha <- Reduce('+', Ha)
-  },
-  times = 1e2
-)
-
-
-beta_alpha_new <- function(b, Y, X, Z, Xz, Zz, beta, D, alpha, Sigmai, gh){
-  gh <- statmod::gauss.quad.prob(gh, 'normal')
-  w <- gh$w; v <- gh$n
-  SS <- lapply(split(seq(2), c(1,2)), function(x) as.matrix(Sigmai[x,x]))
-  # Scores
-  out <- Sbeta_alpha(b, Y, X, Z, Xz, Zz, beta, D, alpha, 2, SS, w, v)
-  # Hessians
-  Ha <- Hb <- list()
-  for(l in 1:length(w)){
-    Ha[[l]] <- cd(alpha, Salphal, Y, X, Z, Xz, Zz, beta, D, b, 2, SS, w[l], v[l])
-    Hb[[l]] <- cd(beta , Sbetal,  Y, X, Z, Xz, Zz, b, D, alpha, 2, SS, w[l], v[l])
+  `fd: all c++` = {
+    Sigmai4 <- mapply(function(b, Y, X, Z, Xz, Zz){
+      solve(fd_b(b, Y, X, Z, Xz, Zz, beta, alpha, D, indzi, 1e-4))
+    }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xzi, Zz = Zzi, SIMPLIFY = F)
   }
-  out[["Hbeta"]] <- Reduce('+', Hb)
-  out[["Halpha"]] <- Reduce('+', Ha)
-  out
-}
-
-beta_alpha_new(b[[1]], Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta,D, alpha, Sigmai, 3)
-beta_alpha(b[[1]], Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta, D, alpha, zi$ldens, 2, zi$Seta, zi$Setazi, 3, Sigmai)
+)

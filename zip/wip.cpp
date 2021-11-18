@@ -125,22 +125,23 @@ List Sbeta_alpha(vec& b, vec& Y, mat& X, mat& Z,
 	return out;
 }
 
-// Central differencing for Hessians -- maybe come back to this...
+// Forward differencing for Hessians ---------
 // b
-//mat cd_b(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
-		 //vec& beta, vec& alpha, mat& D, int indzi){
-	//int n = b.size();
-	//mat out = zeros<mat>(n, n);
-	//double ex = max(b, 1.0);
-	//vec b1 = b;
-	//vec b2 = b;
-	//for(int i = 0; i < n; i++){
-		//x1[i] = b[i] + 1e-3 * ex[i];
-		//x2[i] = b[i] - 1e-3 * ex[i];
-		//vec difff = b_score(x1[i], Y, X, Z, Xz, Zz, beta, alpha, D, indzi) - 
-					//b_score(x2[i], Y, X, Z, Xz, Zz, beta, alpha, D, indzi);
-		//double diffx = x1[i] - x2[i];
-		//out.cols(i) = difff/diffx
-	//}
-	//return 0.5 * out * out.t();
-//}
+// [[Rcpp::export]]
+mat fd_b(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
+		 vec& beta, vec& alpha, mat& D, int indzi, double eps){
+	int n = b.size();
+	mat out = zeros<mat>(n, n);
+	vec f0 = b_score(b, Y, X, Z, Xz, Zz, beta, alpha, D, indzi);
+	for(int i = 0; i < n; i++){
+	  vec b1 = b;
+		double xi = std::max(b[i], 1.0);
+		b1[i] = b[i] + (eps*xi);
+		vec fdiff = b_score(b1, Y, X, Z, Xz, Zz, beta, alpha, D, indzi) - f0;
+		out.col(i) = fdiff/(b1[i]-b[i]);
+	}
+	return 0.5 * (out + out.t());
+} 
+
+// beta
+
