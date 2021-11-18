@@ -32,11 +32,11 @@ simData_zip <- function(n, ntms, beta, alpha, D = diag(2)){
   etazi <- Xzi %*% alpha + rowSums(Zzi * b[df$id, 2, drop=F])
   
   # Outcome y
-  y <- rpois(n * ntms, lambda = exp(eta))
-  y[as.logical(rbinom(n * ntms, 1, prob = plogis(etazi)))] <- 0
-  df$y <- y
+  Y <- rpois(n * ntms, lambda = exp(eta))
+  Y[as.logical(rbinom(n * ntms, 1, prob = plogis(etazi)))] <- 0
+  df$Y <- Y
   
-  message(sum(df$y == 0)/length(df$y)*100,'% zeroes')
+  message(sum(df$Y == 0)/length(df$Y)*100,'% zeroes')
   
   df
 }
@@ -73,9 +73,9 @@ simData_zip_joint <- function(n, ntms, beta, alpha, D = diag(2),
   etazi <- Xzi %*% alpha + rowSums(Zzi * b[df$id, 2, drop=F])
   
   # Outcome y
-  y <- rpois(n * ntms, lambda = exp(eta))
-  y[as.logical(rbinom(n * ntms, 1, prob = plogis(etazi)))] <- 0
-  df$y <- y; message(sum(df$y == 0)/length(df$y)*100,'% zeroes')
+  Y <- rpois(n * ntms, lambda = exp(eta))
+  Y[as.logical(rbinom(n * ntms, 1, prob = plogis(etazi)))] <- 0
+  df$Y <- Y; message(sum(df$Y == 0)/length(df$Y)*100,'% zeroes')
   
   # Simulating survival times
   theta0 <- theta[1]; theta1 <- theta[2]
