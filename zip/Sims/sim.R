@@ -110,4 +110,4 @@ for(m in 1:100){
                         error = function(e) NULL)
   utils::setTxtProgressBar(pb, m)
 }
-
+save(fits, file = '~/Downloads/fits.RData')

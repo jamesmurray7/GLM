@@ -7,7 +7,7 @@ alpha <- c(-2, 0.25)
 n <- 250; ntms <- 15
 D <- diag(c(.5^2, .15^2))
 test <- simData_zip(n, ntms, beta, alpha, D)
-testfit <- glmmTMB::glmmTMB(y ~ time  +cont  +bin + (1|id),
+testfit <- glmmTMB::glmmTMB(Y ~ time  +cont  +bin + (1|id),
                             ziformula = ~ time + (1|id), data = test, family = poisson)
 # pscl::zeroinfl(y~time+cont+bin | time,data=test) # Could we do something with this and speed up a little?
 beta <- fixef(testfit)$cond
@@ -23,7 +23,7 @@ for(i in 1:n){
   X[[i]] <- model.matrix(~time + cont + bin, i.dat)
   Xzi[[i]] <- model.matrix(~time, i.dat)
   Z[[i]] <- Zzi[[i]] <- model.matrix(~1, i.dat)
-  Y[[i]] <- i.dat$y
+  Y[[i]] <- i.dat$Y
 }          
 
 zi <- zip()

@@ -84,6 +84,7 @@ vec Sbetal(vec& beta, vec& Y, mat& X, mat& Z,
 	vec etaz = Xz * alpha + Zz * b[indzi-1] + tauz * v;
 	return w * X.t() * zip_Seta(Y, eta, etaz);
 }
+
 // \alpha
 // [[Rcpp::export]]
 vec Salphal(vec& alpha, vec& Y, mat& X, mat& Z, 
@@ -143,5 +144,67 @@ mat fd_b(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
 	return 0.5 * (out + out.t());
 } 
 
-// beta
+// beta @ current quadrature l
+// [[Rcpp::export]]
+mat fd_beta(vec& beta, vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
+		    vec& alpha, mat& D, List S, int indzi, double w, double v, double eps){
+	int n = beta.size();
+	mat out = zeros<mat>(n, n);
+	vec f0 = Sbetal(beta, Y, X, Z, Xz, Zz, b, D, alpha, indzi, S, w, v);
+	for(int i = 0; i < n; i++){
+	  vec beta1 = beta;
+	  double xi = std::max(beta[i], 1.0);
+	  beta1[i] = beta[i] + (eps*xi);
+	  vec fdiff = Sbetal(beta1, Y, X, Z, Xz, Zz, b, D, alpha, indzi, S, w, v) - f0;
+	  out.col(i) = fdiff/(beta1[i]-beta[i]);
+	}
+	return 0.5 * (out + out.t());
+}
+
+// alpha @ current quadrature l
+// [[Rcpp::export]]
+mat fd_alpha(vec& alpha, vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
+		     vec& beta, mat& D, List S, int indzi, double w, double v, double eps){
+	int n = alpha.size();
+	mat out = zeros<mat>(n, n);
+	vec f0 = Salphal(alpha, Y, X, Z, Xz, Zz, beta, D, b, indzi, S, w, v);
+	for(int i = 0; i < n; i++){
+	  vec alpha1 = alpha;
+	  double xi = std::max(beta[i], 1.0);
+	  alpha1[i] = alpha[i] + (eps*xi);
+	  vec fdiff = Salphal(alpha1, Y, X, Z, Xz, Zz, beta, D, b, indzi, S, w, v) - f0;
+	  out.col(i) = fdiff/(alpha1[i]-alpha[i]);
+	}
+	return 0.5 * (out + out.t());
+}
+
+
+// Bring all together (this could be more efficient - tau defined in each separate function but could be done locally)
+// [[Rcpp::export]]
+List beta_alpha_update(vec& beta, vec& alpha, vec& b, vec& Y, mat& X, mat& Z, mat& Xz,
+                  mat& Zz, mat& D, List S, int indzi, vec& w, vec& v, double eps){
+	List out;
+	int nbeta = beta.size();
+	int nalpha = alpha.size();
+	mat S1 = S[0];
+	mat S2 = S[1];
+	int gh = w.size();
+	// Create dummy stores
+	vec Sbeta = vec(nbeta);
+	vec Salpha = vec(nalpha);
+	mat Hbeta = zeros<mat>(nbeta, nbeta);
+	mat Halpha = zeros<mat>(nalpha, nalpha);
+	// Loop over quadrature nodes
+	for(int l = 0; l < gh; l++){
+		Sbeta += Sbetal(beta, Y, X, Z, Xz, Zz, b, D, alpha, indzi, S, w[l], v[l]);
+		Salpha += Salphal(alpha, Y, X, Z, Xz, Zz, beta, D, b, indzi, S, w[l], v[l]);
+		Hbeta += fd_beta(beta, b, Y, X, Z, Xz, Zz, alpha, D, S, indzi, w[l], v[l], eps);
+		Halpha += fd_alpha(alpha, b, Y, X, Z, Xz, Zz, beta, D, S, indzi, w[l], v[l], eps);
+	}
+	out["Sbeta"] = Sbeta;
+	out["Salpha"] = Salpha;
+	out["Hbeta"] = Hbeta;
+	out["Halpha"] = Halpha;
+	return out;
+}
 

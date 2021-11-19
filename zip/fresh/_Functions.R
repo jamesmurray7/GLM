@@ -270,3 +270,32 @@ beta_alpha_new <- function(b, Y, X, Z, Xz, Zz, beta, D, alpha, Sigmai, gh){
   out
 }
 
+# sourceCpp('../zip.cpp')
+# cd <- GLMMadaptive:::cd_vec
+# microbenchmark::microbenchmark(
+#   `1` = beta_alpha_new(b.hat[[1]], Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], beta ,D, alpha, Sigmai[[1]], 3),
+#   `2` = beta_alpha_update(beta, alpha, b.hat[[1]], Y[[1]], X[[1]], Z[[1]], Xzi[[1]], Zzi[[1]], D, S, 2, w, v, 1e-4),
+#   times = 1e3
+# )
+# 
+# S <- lapply(Sigmai, function(y) lapply(split(seq(2), c(1,2)), function(x) as.matrix(y[x,x])))
+# aa <- mapply(function(b, Y, X, Z, Xz, Zz, S){
+#   beta_alpha_new(b, Y, X, Z, Xz, Zz, beta ,D, alpha, S, 3)
+# },b=b.hat, Y = Y, X = X, Z = Z, Xz = Xzi, Zz = Zzi, S = Sigmai, SIMPLIFY = F)
+# 
+# bb <- mapply(function(b, Y, X, Z, Xz, Zz, S){
+#   beta_alpha_update(beta, alpha, b, Y, X, Z, Xz, Zz, D, S, 2, w, v, 1e-4)
+# },b=b.hat, Y = Y, X = X, Z = Z, Xz = Xzi, Zz = Zzi, S = S, SIMPLIFY = F)
+# 
+# microbenchmark::microbenchmark(
+#   `one` = {
+#     aa <- mapply(function(b, Y, X, Z, Xz, Zz, S){
+#       beta_alpha_new(b, Y, X, Z, Xz, Zz, beta ,D, alpha, S, 3)
+#     },b=b.hat, Y = Y, X = X, Z = Z, Xz = Xzi, Zz = Zzi, S = Sigmai, SIMPLIFY = F)
+#   },
+#   `two` = {
+#     bb <- mapply(function(b, Y, X, Z, Xz, Zz, S){
+#       beta_alpha_update(beta, alpha, b, Y, X, Z, Xz, Zz, D, S, 2, w, v, 1e-4)
+#     },b=b.hat, Y = Y, X = X, Z = Z, Xz = Xzi, Zz = Zzi, S = S, SIMPLIFY = F)
+#   }
+# )
