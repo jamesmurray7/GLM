@@ -208,3 +208,41 @@ List beta_alpha_update(vec& beta, vec& alpha, vec& b, vec& Y, mat& X, mat& Z, ma
 	return out;
 }
 
+// Joint likelihood 
+// [[Rcpp::export]]
+double joint_density(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
+					 vec& beta, vec& alpha, mat& D, int indzi,
+					 double gamma, rowvec& K, vec& eta, rowvec& haz, mat& KK, mat& Fu, double l0i, int Delta){ // survival stuff
+	double lhs = b_logdensity(b, Y, X, Z, Xz, Zz, beta, alpha, D, indzi);
+	double temp = 0.0;
+	if(Delta == 1) temp = log(l0i);
+	double surv = as_scalar(temp + Delta * (K * eta + sum(gamma * b)) - haz * (exp(KK * eta + Fu * (gamma * b))));
+	return lhs + surv;
+}
+
+// Joint likelihood - first derivative wrt b
+// [[Rcpp::export]]
+vec joint_density_ddb(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
+					 vec& beta, vec& alpha, mat& D, int indzi,
+					 double gamma, rowvec& K, vec& eta, rowvec& haz, mat& KK, mat& Fu, double l0i, int Delta){
+	vec lhs = b_score(b, Y, X, Z, Xz, Zz, beta, alpha, D, indzi);
+	vec ones = vec(b.size());
+	vec rhs = Delta * gamma * ones - gamma * Fu.t() * (haz.t() % exp(KK * eta + gamma * Fu * b));
+	return lhs + rhs;
+}
+
+// And the second derivative wrt b
+// [[Rcpp::export]]
+vec joint_density_sdb(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
+					 vec& beta, vec& alpha, mat& D, int indzi,
+					 double gamma, rowvec& K, vec& eta, rowvec& haz, mat& KK, mat& Fu, double l0i, int Delta){
+	//vec lhs = b_score(b, Y, X, Z, Xz, Zz, beta, alpha, D, indzi);
+	//vec ones = vec(b.size());
+	//vec rhs = Delta * gamma * ones - gamma * Fu.t() * (haz.t() % exp(KK * eta + gamma * Fu * b));
+	//return lhs + rhs;
+	return 1.0 + 1.0;
+}
+
+List joint_density_dsurv()
+					 
+				
