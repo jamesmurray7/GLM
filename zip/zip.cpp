@@ -226,23 +226,106 @@ vec joint_density_ddb(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
 					 vec& beta, vec& alpha, mat& D, int indzi,
 					 double gamma, rowvec& K, vec& eta, rowvec& haz, mat& KK, mat& Fu, double l0i, int Delta){
 	vec lhs = b_score(b, Y, X, Z, Xz, Zz, beta, alpha, D, indzi);
-	vec ones = vec(b.size());
+	vec ones = vec(b.size(), 1.0);
+	// Rcout << "test1" << Delta * gamma * ones << std::endl;
+	// Rcout << "test2" << gamma * Fu.t() * (haz.t() % exp(KK * eta + gamma * Fu * b)) << std::endl;
 	vec rhs = Delta * gamma * ones - gamma * Fu.t() * (haz.t() % exp(KK * eta + gamma * Fu * b));
 	return lhs + rhs;
 }
 
-// And the second derivative wrt b
+// And the second derivative wrt b (via forward differencing)...
 // [[Rcpp::export]]
-vec joint_density_sdb(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
+mat joint_density_sdb(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
 					 vec& beta, vec& alpha, mat& D, int indzi,
-					 double gamma, rowvec& K, vec& eta, rowvec& haz, mat& KK, mat& Fu, double l0i, int Delta){
-	//vec lhs = b_score(b, Y, X, Z, Xz, Zz, beta, alpha, D, indzi);
-	//vec ones = vec(b.size());
-	//vec rhs = Delta * gamma * ones - gamma * Fu.t() * (haz.t() % exp(KK * eta + gamma * Fu * b));
-	//return lhs + rhs;
-	return 1.0 + 1.0;
+					 double gamma, rowvec& K, vec& eta, rowvec& haz, mat& KK, mat& Fu, double l0i, int Delta, double eps){
+	int n = b.size();
+	mat out = zeros<mat>(n, n);
+	vec f0 = joint_density_ddb(b, Y, X, Z, Xz, Zz, beta, alpha, D, indzi, 
+	                           gamma, K, eta, haz, KK, Fu, l0i, Delta);
+	for(int i = 0; i < n; i++){
+		vec b1 = b;
+		double xi = std::max(b[i], 1.0);
+		b1[i] = b[i] + (eps * xi);
+		vec fdiff = joint_density_ddb(b1, Y, X, Z, Xz, Zz, beta, alpha, D, indzi, 
+	                           gamma, K, eta, haz, KK, Fu, l0i, Delta) - f0;
+		out.col(i) = fdiff/(b1[i]-b[i]);
+	}
+	return 0.5 * (out + out.t());
 }
 
-List joint_density_dsurv()
-					 
+// Update for (gamma, eta)
+// [[Rcpp::export]]
+List gamma_eta_update(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,               
+					 vec& beta, vec& alpha, mat& D, int indzi,                                                  // ZIP 
+					 double gamma, rowvec& K, vec& eta, rowvec& haz, mat& KK, mat& Fu, double l0i, int Delta,   // Survival
+					 vec& tau, vec& w, vec& v){                                                                 // Quadrature
+    List out;
+	int gh = w.size();
+	// Initialise stores
+	double score_gamma = 0.0;
+	double H_gamma = 0.0;
+	vec score_eta = vec(eta.size());
+	mat H_eta = zeros<mat>(eta.size(), eta.size());
+	vec cross_term = vec(eta.size());
+	// Loop over quadrature nodes
+	for(int l = 0; l < gh; l++){
+		vec xi = haz.t() % exp(KK * eta + gamma * Fu * b + tau * v[l]);
+		score_gamma += as_scalar(w[l] * xi.t() * (Fu * b) + w[l] * v[l] * xi.t() * tau);
+		score_eta += w[l] * KK.t() * xi;
+		H_gamma += as_scalar(
+			w[l] * v[l] * (tau % xi).t() * (Fu * b) + w[l] * v[l] * v[l] * (tau % xi).t() * tau + 
+			w[l] * b.t() * Fu.t() * (xi % (Fu * b)) - w[l] * v[l] * b.t() * Fu.t() * (xi % tau)
+		);
+		H_eta += w[l] * (diagmat(xi) * KK).t() * KK;
+		cross_term += w[l] * v[l] * KK.t() * (tau % xi) + w[l] * KK.t() * ((Fu * b) % xi);
+	}
+	// Populate outputted list
+	out["Sgamma"] = Delta * sum(b) - score_gamma;
+	out["Seta"] = Delta * K.t() - score_eta;
+	out["Hgamma"] = -1.0 * H_gamma;
+	out["Heta"] = -1.0 * H_eta;
+	out["Hgammaeta"] = -1.0 * cross_term;
+	return out;
+}
+		
+// \lambda_0 update for after the E-step (heavily commented as adapting old code)
+// [[Rcpp::export]]			 
+mat lambdaUpdate(const List survtimes, const vec& ft,
+				 const double gamma, const vec& eta, 
+				 const List K, List S,
+				 const List b,
+				 const int id, 
+				 const vec& w, const vec& v){
+	mat store = zeros<mat>(ft.size(), id); // Initialise the matrix
+	int gh = w.size();
+	// Start loop over i subjects
+	for(int i = 0; i < id; i++){
+		vec survtimes_i = survtimes[i];    // This id's survived time indices
+		// Rcpp::Rcout << "survtimes_i = " << survtimes_i << std::endl;
+		// 'Unpack' the Sigma terms
+		mat Si = S[i];   
+		// mat S1 = as<mat>(Si[0]);
+		// mat S2 = as<mat>(Si[1]);
+		vec bi = b[i];
+		// vec b1i = bi[0];
+		// vec b2i = bi[1];
+		// Rcpp::Rcout << "b1i = " << b1i << std::endl; 
+		// Rcpp::Rcout << "S1 = " << S1 << std::endl;        
+		rowvec Ki = K[i];                   // This id's K
+		// Rcpp::Rcout << "K = " << Ki << std::endl; 
+		for(int j = 0; j < survtimes_i.size(); j++){
+			rowvec Fst  = NumericVector::create(1.0, 1.0);
+			double tau = as_scalar(sqrt(
+				pow(gamma, 2.0) * Fst * Si * Fst.t() 
+			));
+			double mu = as_scalar(exp(Ki * eta + gamma * (Fst * bi)));
+			// Rcpp::Rcout << "mu = " << mu << std::endl;		  
+			for(int k = 0; k < gh; k++){
+				store(j,i) += as_scalar(w[k] * mu * exp(v[k] * tau));
+			}
+		}
+	}
+	
+	return store;
+}
 				
