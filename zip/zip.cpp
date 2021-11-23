@@ -274,7 +274,7 @@ List gamma_eta_update(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
 		score_eta += w[l] * KK.t() * xi;
 		H_gamma += as_scalar(
 			w[l] * v[l] * (tau % xi).t() * (Fu * b) + w[l] * v[l] * v[l] * (tau % xi).t() * tau + 
-			w[l] * b.t() * Fu.t() * (xi % (Fu * b)) - w[l] * v[l] * b.t() * Fu.t() * (xi % tau)
+			w[l] * b.t() * Fu.t() * (xi % (Fu * b)) + w[l] * v[l] * b.t() * Fu.t() * (xi % tau)
 		);
 		H_eta += w[l] * (diagmat(xi) * KK).t() * KK;
 		cross_term += w[l] * v[l] * KK.t() * (tau % xi) + w[l] * KK.t() * ((Fu * b) % xi);
