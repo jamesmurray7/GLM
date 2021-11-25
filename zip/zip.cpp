@@ -62,9 +62,9 @@ vec b_score(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
 	vec eta = X * beta + Z * b(indzi - 2);
 	vec etazi = Xz * alpha + Zz * b(indzi - 1);
 	vec out = vec(b.size());
-	out(0) = -1.0 * as_scalar(Z.t() * zip_Seta(Y, eta, etazi));
-	out(1) = -1.0 * as_scalar(Zz.t() * zip_Setazi(Y, eta, etazi));
-	return out + (b.t() * D.i()).t();
+	out(0) =  as_scalar(Z.t() * zip_Seta(Y, eta, etazi));
+	out(1) =  as_scalar(Zz.t() * zip_Setazi(Y, eta, etazi));
+	return -1.0 * (out - (b.t() * D.i()).t());
 }
 
 
@@ -186,8 +186,6 @@ List beta_alpha_update(vec& beta, vec& alpha, vec& b, vec& Y, mat& X, mat& Z, ma
 	List out;
 	int nbeta = beta.size();
 	int nalpha = alpha.size();
-	mat S1 = S[0];
-	mat S2 = S[1];
 	int gh = w.size();
 	// Create dummy stores
 	vec Sbeta = vec(nbeta);
@@ -230,7 +228,7 @@ vec joint_density_ddb(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
 	// Rcout << "test1" << Delta * gamma * ones << std::endl;
 	// Rcout << "test2" << gamma * Fu.t() * (haz.t() % exp(KK * eta + gamma * Fu * b)) << std::endl;
 	vec rhs = Delta * gamma * ones - gamma * Fu.t() * (haz.t() % exp(KK * eta + gamma * Fu * b));
-	return lhs + rhs;
+	return lhs + -1.0 * rhs;
 }
 
 // And the second derivative wrt b (via forward differencing)...
@@ -267,17 +265,25 @@ List gamma_eta_update(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
 	vec score_eta = vec(eta.size());
 	mat H_eta = zeros<mat>(eta.size(), eta.size());
 	vec cross_term = vec(eta.size());
+	// Setting up tau terms
+	uvec zzz = find(tau == 0.0);
+	vec tau2 = pow(pow(gamma, 2.0) * tau, -0.5);
+	vec tau3 = pow(pow(gamma, 2.0) * tau, -1.5);
+	tau2.elem(zzz).zeros();
+	tau3.elem(zzz).zeros();
 	// Loop over quadrature nodes
 	for(int l = 0; l < gh; l++){
-		vec xi = haz.t() % exp(KK * eta + gamma * Fu * b + tau * v[l]);
-		score_gamma += as_scalar(w[l] * xi.t() * (Fu * b) + w[l] * v[l] * xi.t() * tau);
+		vec xi = haz.t() % exp(KK * eta + gamma * Fu * b + pow(pow(gamma, 2.0) * tau, 0.5) * v[l]);
+		score_gamma += as_scalar(w[l] * xi.t() * (Fu * b) + gamma * w[l] * v[l] * (xi % tau2).t() * tau);
 		score_eta += w[l] * KK.t() * xi;
 		H_gamma += as_scalar(
-			w[l] * v[l] * (tau % xi).t() * (Fu * b) + w[l] * v[l] * v[l] * (tau % xi).t() * tau + 
-			w[l] * b.t() * Fu.t() * (xi % (Fu * b)) + w[l] * v[l] * b.t() * Fu.t() * (xi % tau)
+			w[l] * b.t() * Fu.t() * (xi % (Fu * b)) + gamma * w[l] * v[l] * b.t() * Fu.t() * (xi % tau2 % tau) + 
+			w[l] * v[l] * (xi % tau2).t() * tau + gamma * w[l] * v[l] * (tau % tau2 % xi).t() * tau + 
+			w[l] * v[l] * v[l] * gamma * gamma * (tau % tau2 % xi % tau2).t() * tau - 
+			w[l] * v[l] * gamma * gamma * (tau % xi % tau3).t() * tau
 		);
 		H_eta += w[l] * (diagmat(xi) * KK).t() * KK;
-		cross_term += w[l] * v[l] * KK.t() * (tau % xi) + w[l] * KK.t() * ((Fu * b) % xi);
+		cross_term += w[l] * KK.t() * (xi % (Fu*b)) + gamma * w[l] * v[l] * KK.t() * (xi % tau % tau2);
 	}
 	// Populate outputted list
 	out["Sgamma"] = Delta * sum(b) - score_gamma;
@@ -328,4 +334,50 @@ mat lambdaUpdate(const List survtimes, const vec& ft,
 	
 	return store;
 }
-				
+		
+// For testing against numDeriv::hessian in R
+// [[Rcpp::export]]
+double joint_density_gamma(double gamma, vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
+					 vec& beta, vec& alpha, mat& D, int indzi,
+					  rowvec& K, vec& eta, rowvec& haz, mat& KK, mat& Fu, double l0i, int Delta){ // survival stuff
+	double lhs = b_logdensity(b, Y, X, Z, Xz, Zz, beta, alpha, D, indzi);
+	double temp = 0.0;
+	if(Delta == 1) temp = log(l0i);
+	double surv = as_scalar(temp + Delta * (K * eta + sum(gamma * b)) - haz * (exp(KK * eta + Fu * (gamma * b))));
+	return lhs + surv;
+}
+
+// OLD VERSION
+//List gamma_eta_update(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,               
+					 //vec& beta, vec& alpha, mat& D, int indzi,                                                  // ZIP 
+					 //double gamma, rowvec& K, vec& eta, rowvec& haz, mat& KK, mat& Fu, double l0i, int Delta,   // Survival
+					 //vec& tau, vec& w, vec& v){                                                                 // Quadrature
+    //List out;
+	//int gh = w.size();
+	//// Initialise stores
+	//double score_gamma = 0.0;
+	//double H_gamma = 0.0;
+	//vec score_eta = vec(eta.size());
+	//mat H_eta = zeros<mat>(eta.size(), eta.size());
+	//vec cross_term = vec(eta.size());
+	//// Loop over quadrature nodes
+	//for(int l = 0; l < gh; l++){
+		//vec xi = haz.t() % exp(KK * eta + gamma * Fu * b + tau * v[l]);
+		//score_gamma += as_scalar(w[l] * xi.t() * (Fu * b) + w[l] * v[l] * xi.t() * tau);
+		//score_eta += w[l] * KK.t() * xi;
+		//H_gamma += as_scalar(
+			//w[l] * v[l] * (tau % xi).t() * (Fu * b) + w[l] * v[l] * v[l] * (tau % xi).t() * tau + 
+			//w[l] * b.t() * Fu.t() * (xi % (Fu * b)) + w[l] * v[l] * b.t() * Fu.t() * (xi % tau)
+		//);
+		//H_eta += w[l] * (diagmat(xi) * KK).t() * KK;
+		//cross_term += w[l] * v[l] * KK.t() * (tau % xi) + w[l] * KK.t() * ((Fu * b) % xi);
+	//}
+	//// Populate outputted list
+	//out["Sgamma"] = Delta * sum(b) - score_gamma;
+	//out["Seta"] = Delta * K.t() - score_eta;
+	//out["Hgamma"] = -1.0 * H_gamma;
+	//out["Heta"] = -1.0 * H_eta;
+	//out["Hgammaeta"] = -1.0 * cross_term;
+	//return out;
+//}
+		
