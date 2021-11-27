@@ -1,7 +1,8 @@
 #' #############
 #' EM.R // Approximate EM algorithm for univariate ZIP longitudinal process and 
 #'         a survival model
-#' Assumes working directory is set to ~/.../GLMM/zip/
+#'     --> Mimicks simulation 2 in Zhu et al. (2018).
+#' Assumes working directory is set to ~/.../GLMM/zip/zhu
 #' #############
 library(survival)
 library(dplyr)
@@ -9,70 +10,44 @@ library(Rcpp)
 library(RcppArmadillo)
 
 sourceCpp('zip.cpp')
-source('fresh/_Functions.R')
-source('survFnsInt.R')
-source('inits/inits.R')
+source('./_Functions.R')
+source('../survFnsInt.R')
+source('./inits.R')
 vech <- function(x) x[lower.tri(x,diag=T)]
 
 EMupdate <- function(b, Y, X, Z, Xz, Zz, 
                      beta, D, alpha, indzi,
                      gamma, K, eta, l0u, KK, Fu, l0i, Delta, w, v, survdata, sv){
-  n <- length(Y)
+  # n <- length(Y)
   # E-step
   b.hat <- mapply(function(b, Y, X, Z, Xz, Zz, K, l0u, KK, Fu, l0i, Delta){
-    ucminf::ucminf(b, joint_density, joint_density_ddb, 
+    ucminf::ucminf(b, joint_density, NULL, # joint_density_ddb, 
                    Y, X, Z, Xz, Zz, beta, alpha, D, indzi, gamma, K, eta, l0u, KK, Fu, l0i, Delta)$par
   }, b = b, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, K = K, l0u = l0u, 
   KK = KK, Fu = Fu, l0i = as.list(l0i), Delta = as.list(Delta), SIMPLIFY = F)
-  
+
   Sigmai <- mapply(function(b, Y, X, Z, Xz, Zz, K, l0u, KK, Fu, l0i, Delta){
     solve(joint_density_sdb(b, Y, X, Z, Xz, Zz, beta, alpha, D, indzi, gamma, K, eta, l0u, KK, Fu, l0i, Delta, eps = 1e-4))
   }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, K = K, l0u = l0u, 
   KK = KK, Fu = Fu, l0i = as.list(l0i), Delta = as.list(Delta), SIMPLIFY = F)
-  S <- lapply(Sigmai, function(y) lapply(split(1:2, c(1,2)), function(x) as.matrix(y[x,x])))
   
   Drhs <- mapply(function(b, S){
     S + tcrossprod(b)
   }, b = b.hat, S = Sigmai, SIMPLIFY = F)
   
-  # ba <- mapply(function(b, Y, X, Z, Xz, Zz, S){
-  #   beta_alpha_update(beta, alpha, b, Y, X, Z, Xz, Zz, D, S, indzi, w, v, eps = 1e-4)
-  # }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, S = S, SIMPLIFY = F)
-  
-  ba <- mapply(function(b, Y, X, Z, Xz, Zz){
-    out <- list()
-    out[[1]] <- numDeriv::grad(b_logdensity, beta, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,alpha=alpha,D=D,indzi=2, method = 'simple')
-    out[[3]] <- numDeriv::hessian(b_logdensity, beta, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,alpha=alpha,D=D,indzi=2)
-    out[[2]] <- numDeriv::grad(b_logdensity, alpha, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,beta=beta,D=D,indzi=2, method = 'simple')
-    out[[4]] <- numDeriv::hessian(b_logdensity, alpha, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,beta=beta,D=D,indzi=2)
-    lapply(out, function(x) x * -1)
-  }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, SIMPLIFY = F)
-  
- Sba <- mapply(function(b, Y, X, Z, Xz, Zz, S){
-   Sbetaalpha(c(beta, alpha), b, Y, X, Z, Xz, Zz, length(beta), length(alpha),
-              indzi, S, w, v)
- }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, S = Sigmai, SIMPLIFY = F)
+  Sba <- mapply(function(b, Y, X, Z, Xz, Zz, S){
+     S2betaalpha(c(beta, alpha), b, Y, X, Z, Xz, Zz, length(beta), length(alpha),
+                indzi, S, w, v)
+   }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, S = Sigmai, SIMPLIFY = F)
  
- # S2ba <- mapply(function(b, Y, X, Z, Xz, Zz, S){ # NB this just as fast!
- #   S2betaalpha(c(beta, alpha), b, Y, X, Z, Xz, Zz, length(beta), length(alpha),
- #              indzi, S, w, v)
- # }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, S = Sigmai, SIMPLIFY = F)
- # 
- 
- Hba <- mapply(function(b, Y, X, Z, Xz, Zz, S){
-   Hbetaalpha(c(beta, alpha), b, Y, X, Z, Xz, Zz, length(beta), length(alpha),
-              indzi, S, w, v, 1e-4)
- }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, S = Sigmai, SIMPLIFY = F)
+  Hba <- mapply(function(b, Y, X, Z, Xz, Zz, S){
+     Hbetaalpha(c(beta, alpha), b, Y, X, Z, Xz, Zz, length(beta), length(alpha),
+                indzi, S, w, v, 1e-4)
+  }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, S = Sigmai, SIMPLIFY = F)
 
   tau <- mapply(function(Fu, S){
     diag(tcrossprod(Fu %*% S, Fu))
   }, Fu = Fu, S = Sigmai, SIMPLIFY = F)
-  
-  # gammaeta <- mapply(function(b, Y, X, Z, Xz, Zz, K, l0u, KK, Fu, l0i, Delta, tau){
-  #   gamma_eta_update(b, Y, X, Z, Xz, Zz, beta, alpha, D, indzi, gamma, K, eta, 
-  #                    l0u, KK, Fu, l0i, Delta, tau, w, v)
-  # },  b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, K = K, l0u = l0u, 
-  # KK = KK, Fu = Fu, l0i = as.list(l0i), Delta = as.list(Delta), tau = tau, SIMPLIFY = F)
   
   Sge <- mapply(function(b, Y, X, Z, Xz, Zz, K, l0u, KK, Fu, l0i, Delta, tau){
     Sgammaeta(c(gamma,eta), b, Y, X, Z, Xz, Zz, beta, alpha, D, indzi, K, 
@@ -82,42 +57,30 @@ EMupdate <- function(b, Y, X, Z, Xz, Zz,
   
   Hge <- mapply(function(b, Y, X, Z, Xz, Zz, K, l0u, KK, Fu, l0i, Delta, tau){
     Hgammaeta(c(gamma,eta), b, Y, X, Z, Xz, Zz, beta, alpha, D, indzi, K, 
-              l0u, KK, Fu, l0i, Delta, tau, w, v,1e-4)
+              l0u, KK, Fu, l0i, Delta, tau, w, v, 1e-4)
   },  b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, K = K, l0u = l0u, 
   KK = KK, Fu = Fu, l0i = as.list(l0i), Delta = as.list(Delta), tau = tau, SIMPLIFY = F)
   
   # M-step
-  # ZIP and random effects part.
+  # D covariance matrix
+  D.new <- (Reduce('+', Sigmai) + Reduce('+', lapply(b.hat, tcrossprod)))/250
+  # ZIP and Poisson processes coefficients
   Sba <- rowSums(do.call(cbind, Sba))
   Hba <- Reduce('+', Hba)
-  # Sbeta <- Reduce('+', lapply(ba, '[[', 1))
-  # Hbeta <- Reduce('+', lapply(ba, '[[', 3))
-  # Salpha <- Reduce('+', lapply(ba, '[[', 2))
-  # Halpha <- Reduce('+', lapply(ba, '[[', 4))
   
   beta.alpha.new <- c(beta,alpha) - solve(Hba,Sba)
-  beta.new <- beta.alpha.new[1:4]
-  alpha.new <- beta.alpha.new[5:6]
-  D.new <- Reduce('+', Drhs)/n
-  # beta.new <- beta - solve(Hbeta, Sbeta)
-  # alpha.new <- alpha - solve(Halpha, Salpha)
+  beta.new <- beta.alpha.new[1:3]
+  alpha.new <- beta.alpha.new[4:6]
 
-  # Survival part
-  # Sgamma <- sum(do.call(c, lapply(gammaeta, function(x) x$Sgamma)))
-  # Seta <- rowSums(do.call(cbind, lapply(gammaeta, function(x) x$Seta)))
-  # Hgamma <- sum(do.call(c, lapply(gammaeta, function(x) x$Hgamma)))
-  # Heta <- Reduce('+', lapply(gammaeta, function(x) x$Heta))
-  # Hgammaeta <- rowSums(do.call(cbind, lapply(gammaeta, function(x) x$Hgammaeta)))
-  # 
-  # Form score vector and information matrix
-  #Sgammaeta <- c(Sgamma, Seta)
+  # Survival parameters (gamma, eta)
   Sge <- rowSums(do.call(cbind, Sge))
   Imat <- Reduce('+', Hge)
   gammaeta.new <- c(gamma, eta) - solve(Imat, Sge)
+  gamma.new <- gammaeta.new[1:2]
+  eta.new <- gammaeta.new[3]
   
   # Update for baseline hazard
-  
-  lambda <- lambdaUpdate(sv$surv.times, sv$ft, gamma, eta, K, Sigmai, b.hat, n, w, v)
+  lambda <- lambdaUpdate(sv$surv.times, sv$ft, gamma, eta, K, Sigmai, b.hat, id=250, w, v)
   l0.new <- sv$nev/rowSums(lambda)
   l0u.new <- lapply(l0u, function(x){
     ll <- length(x); l0.new[1:ll]
@@ -128,7 +91,7 @@ EMupdate <- function(b, Y, X, Z, Xz, Zz,
   
   return(list(
     D.new = D.new, beta.new = beta.new, alpha.new = alpha.new, b.hat = b.hat,
-    gamma.new = gammaeta.new[1], eta.new = gammaeta.new[2:3],
+    gamma.new = gamma.new, eta.new = eta.new,
     l0.new = l0.new, l0u.new = l0u.new, l0i.new = l0i.new
   ))
 }
@@ -146,13 +109,13 @@ EM <- function(data, ph, survdata, indzi = 2, gh = 9, tol = 1e-2, verbose = F){
   X <- Y <- Z <- Xz <- Zz <- K <- list()
   for(i in 1:n){
     i.dat <- data[data$id == i, ]
-    X[[i]] <- model.matrix(~time + cont + bin, i.dat)
-    Xz[[i]] <- model.matrix(~time, i.dat)
+    X[[i]] <- model.matrix(~time + bin, i.dat)
+    Xz[[i]] <- model.matrix(~time + bin, i.dat)
     Z[[i]] <- Zz[[i]] <- model.matrix(~1, i.dat)
     Y[[i]] <- i.dat$Y
-    K[[i]] <- as.matrix(unname(unique(i.dat[,c('cont', 'bin')])))
+    K[[i]] <- as.matrix(unname(unique(i.dat[,'bin'])))
     row.names(K[[i]]) <- NULL
-  } 
+  }      
   # Survival objects
   sv <- surv.mod(ph, data, inits.surv$l0.init)
   Fu <- sv$Fu
@@ -164,8 +127,8 @@ EM <- function(data, ph, survdata, indzi = 2, gh = 9, tol = 1e-2, verbose = F){
     if('numeric' %in% class(x)) x <- t(as.matrix(x))
     x
   })
-  gamma <- inits.surv$inits[3]
-  eta <- inits.surv$inits[1:2]
+  gamma <- inits.surv$inits[2:3]
+  eta <- inits.surv$inits[1]
   
   aa <- statmod::gauss.quad.prob(gh, 'normal')
   w <- aa$w; v <- aa$n

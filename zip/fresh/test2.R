@@ -11,7 +11,7 @@ sourceCpp('../zip.cpp')
 beta <- c(1.5, 0.05, 0.33, 0.50)
 alpha <- c(-0.5, 0.25)
 D <- diag(c(.5^2, .15^2))
-gamma <- .5
+gamma <- -1.5
 n <- 250
 ntms <- 15
 data <- simData_zip_joint(n, ntms, beta, alpha, D,
@@ -101,6 +101,8 @@ EMupdate <- function(b, Y, X, Z, Xz, Zz,
   ba <- mapply(function(b, Y, X, Z, Xz, Zz, S){
     beta_alpha_update(beta, alpha, b, Y, X, Z, Xz, Zz, D, S, indzi, w, v, eps = 1e-4)
   }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, S = S, SIMPLIFY = F)
+  
+  ba2 <- 
   
   tau <- mapply(function(Fu, S){
     sqrt(diag(tcrossprod(Fu %*% S, Fu)))
