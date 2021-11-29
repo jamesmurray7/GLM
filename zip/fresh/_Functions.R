@@ -106,10 +106,11 @@ simData_zip_joint <- function(n, ntms, beta, alpha, D = diag(2),
   long.data <- df
   
   out.data <- dplyr::left_join(df, surv.data, by = 'id')
+  out.data <- out.data[out.data$time <= out.data$survtime]
   message(round(100 * sum(surv.data$status)/n), '% failure rate')
   
   return(list(data =  out.data, 
-         surv.data = surv.data))
+         surv.data = dplyr::left_join(surv.data, out.data[,c('id', 'cont', 'bin')])))
   
 }
 
