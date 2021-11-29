@@ -387,8 +387,10 @@ vec S2betaalpha(vec& betaalpha, vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz
 	for(int l = 0; l < gh; l++){
 		vec mu = exp(X * beta + Z * b[indzi - 2] + tau * v[l]);
 		vec lambda = exp(Xz * alpha + Zz * b[indzi - 1] + tau * v[l]);
-		Sbeta += -1.0 * w[l] * X.rows(y0).t() * (mu.elem(y0) / (lambda.elem(y0) % exp(mu.elem(y0)) + 1.0)) + w[l] * X.rows(y1).t() * (Y.elem(y1)-mu.elem(y1));
-		Salpha += w[l] * Xz.rows(y0).t() * (lambda.elem(y0) % exp(mu.elem(y0)) / (lambda.elem(y0) % exp(mu.elem(y0)) + 1)) - w[l] * Xz.t() * (lambda/(1+lambda));
+		vec lambda_exp_mu = lambda % trunc_exp(mu);
+		lambda_exp_mu.replace(datum::inf, 1e100);
+		Sbeta += -1.0 * w[l] * X.rows(y0).t() * (mu.elem(y0) / (lambda_exp_mu.elem(y0) + 1.0)) + w[l] * X.rows(y1).t() * (Y.elem(y1)-mu.elem(y1));
+		Salpha += w[l] * Xz.rows(y0).t() * (lambda_exp_mu.elem(y0) / (lambda_exp_mu.elem(y0) + 1)) - w[l] * Xz.t() * (lambda/(1+lambda));
 	}
 	out.head(beta.size()) = Sbeta;
 	out.tail(alpha.size()) = Salpha;

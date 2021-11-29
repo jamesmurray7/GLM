@@ -49,7 +49,7 @@ EMupdate <- function(b, Y, X, Z, Xz, Zz,
   # }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, SIMPLIFY = F)
   
  Sba <- mapply(function(b, Y, X, Z, Xz, Zz, S){
-   Sbetaalpha(c(beta, alpha), b, Y, X, Z, Xz, Zz, length(beta), length(alpha),
+   S2betaalpha(c(beta, alpha), b, Y, X, Z, Xz, Zz, length(beta), length(alpha),
               indzi, S, w, v)
  }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, S = Sigmai, SIMPLIFY = F)
  
