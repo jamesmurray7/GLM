@@ -89,10 +89,7 @@ simData_zip_joint <- function(n, ntms = 6, beta = zhubeta(), alpha =zhualpha(), 
   
   # denom <- theta1 + b1 %*% gamma                     # these for if I put intercept + slope back in!
   # rhs <- (theta1 + b1 %*% gamma) * log(U)/(exp(theta0 + Keta + b0 %*% gamma))   
-  denom <- theta1
-  rhs <- theta1 * log(U)/(exp(theta0 + Keta + b %*% gamma))
-  
-  t <- suppressWarnings(log((1 - rhs))/denom)
+  t <- suppressWarnings(-log(U)/exp(theta0 + Keta + b %*% gamma))
   t[is.nan(t)] <- tau
   
   # Collect survival times, and generate cenors times.

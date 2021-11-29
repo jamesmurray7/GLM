@@ -18,7 +18,7 @@ vech <- function(x) x[lower.tri(x,diag=T)]
 EMupdate <- function(b, Y, X, Z, Xz, Zz, 
                      beta, D, alpha, indzi,
                      gamma, K, eta, l0u, KK, Fu, l0i, Delta, w, v, survdata, sv){
-  # n <- length(Y)
+  n <- length(Y)
   # E-step
   b.hat <- mapply(function(b, Y, X, Z, Xz, Zz, K, l0u, KK, Fu, l0i, Delta){
     ucminf::ucminf(b, joint_density, NULL, # joint_density_ddb, 
@@ -35,16 +35,15 @@ EMupdate <- function(b, Y, X, Z, Xz, Zz,
     S + tcrossprod(b)
   }, b = b.hat, S = Sigmai, SIMPLIFY = F)
   
-  Sba <- mapply(function(b, Y, X, Z, Xz, Zz, S){
-     S2betaalpha(c(beta, alpha), b, Y, X, Z, Xz, Zz, length(beta), length(alpha),
-                indzi, S, w, v)
-   }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, S = Sigmai, SIMPLIFY = F)
- 
-  Hba <- mapply(function(b, Y, X, Z, Xz, Zz, S){
-     Hbetaalpha(c(beta, alpha), b, Y, X, Z, Xz, Zz, length(beta), length(alpha),
-                indzi, S, w, v, 1e-4)
-  }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, S = Sigmai, SIMPLIFY = F)
-
+  ba <- mapply(function(b, Y, X, Z, Xz, Zz){
+    out <- list()
+    out[[1]] <- pracma::grad(b_logdensity2, c(beta, alpha), b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,
+                             beta_length = length(beta), alpha_length = length(alpha), D=D, indzi=2)
+    out[[2]] <- pracma::hessian(b_logdensity2, c(beta, alpha), b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,
+                                beta_length = length(beta), alpha_length = length(alpha), D=D, indzi=2)
+    out
+  }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, SIMPLIFY = F)
+  
   tau <- mapply(function(Fu, S){
     diag(tcrossprod(Fu %*% S, Fu))
   }, Fu = Fu, S = Sigmai, SIMPLIFY = F)
@@ -65,8 +64,8 @@ EMupdate <- function(b, Y, X, Z, Xz, Zz,
   # D covariance matrix
   D.new <- (Reduce('+', Sigmai) + Reduce('+', lapply(b.hat, tcrossprod)))/250
   # ZIP and Poisson processes coefficients
-  Sba <- rowSums(do.call(cbind, Sba))
-  Hba <- Reduce('+', Hba)
+  Sba <- colSums(do.call(rbind, lapply(ba, '[[', 1)))
+  Hba <- Reduce('+', lapply(ba, '[[', 2))
   
   beta.alpha.new <- c(beta,alpha) - solve(Hba,Sba)
   beta.new <- beta.alpha.new[1:3]
@@ -80,7 +79,7 @@ EMupdate <- function(b, Y, X, Z, Xz, Zz,
   eta.new <- gammaeta.new[3]
   
   # Update for baseline hazard
-  lambda <- lambdaUpdate(sv$surv.times, sv$ft, gamma, eta, K, Sigmai, b.hat, id=250, w, v)
+  lambda <- lambdaUpdate(sv$surv.times, sv$ft, gamma, eta, K, Sigmai, b.hat, id=n, w, v)
   l0.new <- sv$nev/rowSums(lambda)
   l0u.new <- lapply(l0u, function(x){
     ll <- length(x); l0.new[1:ll]

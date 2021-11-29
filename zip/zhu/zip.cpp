@@ -56,8 +56,21 @@ double b_logdensity(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
 	vec etazi = Xz * alpha + Zz * b(indzi - 1);
 	double lhs = as_scalar(sum(zip_logdensity(Y, eta, etazi)));
 	double rhs = as_scalar(0.5 * b.t() * D.i() * b);
-	return lhs - rhs;
+	return -1.0 * (lhs - rhs);
 } 
+
+// The same but with c(beta, alpha) as a variable...
+// [[Rcpp::export]]
+double b_logdensity2(vec& betaalpha, vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
+				     int beta_length, int alpha_length, mat& D, int indzi){
+	vec beta = betaalpha.head(beta_length);
+	vec alpha = betaalpha.tail(alpha_length);
+	vec eta = X * beta + Z * b(indzi - 2);
+	vec etazi = Xz * alpha + Zz * b(indzi - 1);
+	double lhs = as_scalar(sum(zip_logdensity(Y, eta, etazi)));
+	double rhs = as_scalar(0.5 * b.t() * D.i() * b);
+	return -1.0 * (lhs - rhs);
+}
 
 // [[Rcpp::export]]
 vec b_score(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
@@ -67,26 +80,8 @@ vec b_score(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
 	vec out = vec(b.size());
 	out(0) =  as_scalar(Z.t() * zip_Seta(Y, eta, etazi));
 	out(1) =  as_scalar(Zz.t() * zip_Setazi(Y, eta, etazi));
-	return out - (b.t() * D.i()).t();
+	return -1.0 * (out - (b.t() * D.i()).t());
 }
-
-// Forward differencing for Hessians ---------
-// b
-// [[Rcpp::export]]
-mat fd_b(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
-		 vec& beta, vec& alpha, mat& D, int indzi, double eps){
-	int n = b.size();
-	mat out = zeros<mat>(n, n);
-	vec f0 = b_score(b, Y, X, Z, Xz, Zz, beta, alpha, D, indzi);
-	for(int i = 0; i < n; i++){
-	  vec b1 = b;
-		double xi = std::max(b[i], 1.0);
-		b1[i] = b[i] + (eps*xi);
-		vec fdiff = b_score(b1, Y, X, Z, Xz, Zz, beta, alpha, D, indzi) - f0;
-		out.col(i) = fdiff/(b1[i]-b[i]);
-	}
-	return 0.5 * (out + out.t());
-} 
 
 // Joint likelihood 
 // [[Rcpp::export]]
@@ -97,7 +92,7 @@ double joint_density(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
 	double temp = 0.0;
 	if(Delta == 1) temp = log(l0i);
 	double surv = as_scalar(temp + Delta * (K * eta + gamma.t() * b) - haz * (exp(KK * eta + Fu * (gamma % b))));
-	return -1.0 * (lhs + surv);
+	return lhs + -1.0 * surv;
 }
 
 // Joint likelihood - first derivative wrt b
@@ -107,7 +102,7 @@ vec joint_density_ddb(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
 					  vec& gamma, rowvec& K, double eta, rowvec& haz, vec& KK, mat& Fu, double l0i, int Delta){
 	vec lhs = b_score(b, Y, X, Z, Xz, Zz, beta, alpha, D, indzi);
 	vec rhs = Delta * gamma - gamma % (Fu.t() * (haz.t() % exp(KK * eta + Fu * (gamma % b))));
-	return -1.0 * (lhs + rhs);
+	return lhs + -1.0 * rhs;
 }
 
 // And the second derivative wrt b (via forward differencing)...

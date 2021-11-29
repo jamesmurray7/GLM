@@ -37,30 +37,21 @@ EMupdate <- function(b, Y, X, Z, Xz, Zz,
   
   # ba <- mapply(function(b, Y, X, Z, Xz, Zz){
   #   out <- list()
-  #   out[[1]] <- numDeriv::grad(b_logdensity, beta, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,alpha=alpha,D=D,indzi=2, method = 'simple')
-  #   out[[3]] <- numDeriv::hessian(b_logdensity, beta, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,alpha=alpha,D=D,indzi=2)
-  #   out[[2]] <- numDeriv::grad(b_logdensity, alpha, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,beta=beta,D=D,indzi=2, method = 'simple')
-  #   out[[4]] <- numDeriv::hessian(b_logdensity, alpha, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,beta=beta,D=D,indzi=2)
+  #   out[[1]] <- pracma::grad(b_logdensity, beta, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,alpha=alpha,D=D,indzi=2)
+  #   out[[3]] <- pracma::hessian(b_logdensity, beta, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,alpha=alpha,D=D,indzi=2)
+  #   out[[2]] <- pracma::grad(b_logdensity, alpha, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,beta=beta,D=D,indzi=2)
+  #   out[[4]] <- pracma::hessian(b_logdensity, alpha, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,beta=beta,D=D,indzi=2)
   #   out
   # }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, SIMPLIFY = F)
   
   ba <- mapply(function(b, Y, X, Z, Xz, Zz){
     out <- list()
-    out[[1]] <- pracma::grad(b_logdensity, beta, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,alpha=alpha,D=D,indzi=2)
-    out[[3]] <- pracma::hessian(b_logdensity, beta, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,alpha=alpha,D=D,indzi=2)
-    out[[2]] <- pracma::grad(b_logdensity, alpha, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,beta=beta,D=D,indzi=2)
-    out[[4]] <- pracma::hessian(b_logdensity, alpha, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,beta=beta,D=D,indzi=2)
+    out[[1]] <- pracma::grad(b_logdensity2, c(beta, alpha), b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,
+                             beta_length = length(beta), alpha_length = length(alpha), D=D, indzi=2)
+    out[[2]] <- pracma::hessian(b_logdensity2, c(beta, alpha), b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,
+                                beta_length = length(beta), alpha_length = length(alpha), D=D, indzi=2)
     out
   }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, SIMPLIFY = F)
-  
-  # ba2 <- mapply(function(b, Y, X, Z, Xz, Zz){
-  #   out <- list()
-  #   out[[1]] <- pracma::grad(b_logdensity2, c(beta, alpha), b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,
-  #                            beta_length = length(beta), alpha_length = length(alpha), D=D, indzi=2)
-  #   out[[2]] <- pracma::hessian(b_logdensity2, c(beta, alpha), b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,
-  #                               beta_length = length(beta), alpha_length = length(alpha), D=D, indzi=2)
-  #   out
-  # }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, SIMPLIFY = F)
   
  # 
  # Hba <- mapply(function(b, Y, X, Z, Xz, Zz, S){
@@ -88,19 +79,21 @@ EMupdate <- function(b, Y, X, Z, Xz, Zz,
   # ZIP and random effects part.
   # Sba <- rowSums(do.call(cbind, Sba))
   # Hba <- Reduce('+', Hba)
-  Sbeta <- Reduce('+', lapply(ba, '[[', 1))
-  Hbeta <- Reduce('+', lapply(ba, '[[', 3))
-  Salpha <- Reduce('+', lapply(ba, '[[', 2))
-  Halpha <- Reduce('+', lapply(ba, '[[', 4))
+  Sba <- Reduce('+', lapply(ba, '[[', 1))
+  # Hbeta <- Reduce('+', lapply(ba, '[[', 3))
+  Hba <- Reduce('+', lapply(ba, '[[', 2))
+  # Halpha <- Reduce('+', lapply(ba, '[[', 4))
   # Hba <- as.matrix(Matrix::bdiag(Hbeta, Halpha))
   
   # beta.alpha.new <- c(beta,alpha) - solve(Hba,Sba)
   # beta.new <- beta.alpha.new[1:4]
   # alpha.new <- beta.alpha.new[5:6]
   D.new <- Reduce('+', Drhs)/n
-  beta.new <- beta - solve(Hbeta, Sbeta)
-  alpha.new <- alpha - solve(Halpha, Salpha)
-
+  ba.new <- c(beta,alpha) - solve(Hba, Sba)
+  #alpha.new <- alpha - solve(Halpha, Salpha)
+  beta.new <- ba.new[1:4]
+  alpha.new <- ba.new[5:6]
+  
   # Survival part
   # Sgamma <- sum(do.call(c, lapply(gammaeta, function(x) x$Sgamma)))
   # Seta <- rowSums(do.call(cbind, lapply(gammaeta, function(x) x$Seta)))

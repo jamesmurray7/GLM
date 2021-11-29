@@ -72,6 +72,39 @@ double b_logdensity2(vec& betaalpha, vec& b, vec& Y, mat& X, mat& Z, mat& Xz, ma
 	return -1.0 * (lhs - rhs);
 }
 
+// With quadrature
+// [[Rcpp::export]]
+double zip_logdensity2(vec& Y, vec& eta, vec& etazi, vec& tau, vec& w, vec& v){
+	uvec y0 = find(Y == 0);
+	uvec y1 = find(Y > 0);
+	vec out = vec(Y.size());
+	vec rhs = vec(Y.size());
+	vec rhs_y1 = vec(y1.size());
+	int gh = w.size();
+	for(int l = 0; l < gh; l++){
+		vec etal = eta + v[l] * tau;
+		vec etazl = etazi + v[l] * tau;
+		out.elem(y0) += w[l] * log(exp(etazl.elem(y0)) + exp(-exp(etal.elem(y0))));
+		rhs += w[l] * log(1.0 + exp(etazl)); 
+		rhs_y1 += w[l] * exp(etal.elem(y1));
+	}
+	out.elem(y1) = Y.elem(y1) % eta.elem(y1) - rhs_y1 - lgamma(Y.elem(y1) + 1.0);
+	return sum((out - rhs));
+}
+// [[Rcpp::export]]
+double b_logdensity3(vec& betaalpha, vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
+					 int beta_length, int alpha_length, mat& S, mat& D, int indzi, vec& w, vec& v){
+	vec beta = betaalpha.head(beta_length);
+	vec alpha = betaalpha.tail(alpha_length);
+	vec eta = X * beta + Z * b(indzi - 2);
+	vec etazi = Xz * alpha + Zz * b(indzi - 1);
+	vec tau = sqrt(diagvec(join_rows(Z, Zz) * S * join_rows(Z, Zz).t()));
+	return -1.0 * (
+		zip_logdensity2(Y, eta, etazi, tau, w, v) - 
+		as_scalar(0.5 * b.t() * D.i() * b)
+	);
+}
+
 // [[Rcpp::export]]
 vec b_score(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
 			vec& beta, vec& alpha, mat& D, int indzi){
