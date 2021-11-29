@@ -35,44 +35,42 @@ EMupdate <- function(b, Y, X, Z, Xz, Zz,
     S + tcrossprod(b)
   }, b = b.hat, S = Sigmai, SIMPLIFY = F)
   
-  # ba <- mapply(function(b, Y, X, Z, Xz, Zz, S){
-  #   beta_alpha_update(beta, alpha, b, Y, X, Z, Xz, Zz, D, S, indzi, w, v, eps = 1e-4)
-  # }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, S = S, SIMPLIFY = F)
-  
   # ba <- mapply(function(b, Y, X, Z, Xz, Zz){
   #   out <- list()
   #   out[[1]] <- numDeriv::grad(b_logdensity, beta, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,alpha=alpha,D=D,indzi=2, method = 'simple')
   #   out[[3]] <- numDeriv::hessian(b_logdensity, beta, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,alpha=alpha,D=D,indzi=2)
   #   out[[2]] <- numDeriv::grad(b_logdensity, alpha, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,beta=beta,D=D,indzi=2, method = 'simple')
   #   out[[4]] <- numDeriv::hessian(b_logdensity, alpha, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,beta=beta,D=D,indzi=2)
-  #   lapply(out, function(x) x * -1)
+  #   out
   # }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, SIMPLIFY = F)
   
- Sba <- mapply(function(b, Y, X, Z, Xz, Zz, S){
-   S2betaalpha(c(beta, alpha), b, Y, X, Z, Xz, Zz, length(beta), length(alpha),
-              indzi, S, w, v)
- }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, S = Sigmai, SIMPLIFY = F)
- 
- # S2ba <- mapply(function(b, Y, X, Z, Xz, Zz, S){ # NB this just as fast!
- #   S2betaalpha(c(beta, alpha), b, Y, X, Z, Xz, Zz, length(beta), length(alpha),
- #              indzi, S, w, v)
- # }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, S = Sigmai, SIMPLIFY = F)
+  ba <- mapply(function(b, Y, X, Z, Xz, Zz){
+    out <- list()
+    out[[1]] <- pracma::grad(b_logdensity, beta, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,alpha=alpha,D=D,indzi=2)
+    out[[3]] <- pracma::hessian(b_logdensity, beta, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,alpha=alpha,D=D,indzi=2)
+    out[[2]] <- pracma::grad(b_logdensity, alpha, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,beta=beta,D=D,indzi=2)
+    out[[4]] <- pracma::hessian(b_logdensity, alpha, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,beta=beta,D=D,indzi=2)
+    out
+  }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, SIMPLIFY = F)
+  
+  # ba2 <- mapply(function(b, Y, X, Z, Xz, Zz){
+  #   out <- list()
+  #   out[[1]] <- pracma::grad(b_logdensity2, c(beta, alpha), b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,
+  #                            beta_length = length(beta), alpha_length = length(alpha), D=D, indzi=2)
+  #   out[[2]] <- pracma::hessian(b_logdensity2, c(beta, alpha), b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,
+  #                               beta_length = length(beta), alpha_length = length(alpha), D=D, indzi=2)
+  #   out
+  # }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, SIMPLIFY = F)
+  
  # 
- 
- Hba <- mapply(function(b, Y, X, Z, Xz, Zz, S){
-   Hbetaalpha(c(beta, alpha), b, Y, X, Z, Xz, Zz, length(beta), length(alpha),
-              indzi, S, w, v, 1e-4)
- }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, S = Sigmai, SIMPLIFY = F)
+ # Hba <- mapply(function(b, Y, X, Z, Xz, Zz, S){
+ #   Hbetaalpha(c(beta, alpha), b, Y, X, Z, Xz, Zz, length(beta), length(alpha),
+ #              indzi, S, w, v, 1e-3)
+ # }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, S = Sigmai, SIMPLIFY = F)
 
   tau <- mapply(function(Fu, S){
     diag(tcrossprod(Fu %*% S, Fu))
   }, Fu = Fu, S = Sigmai, SIMPLIFY = F)
-  
-  # gammaeta <- mapply(function(b, Y, X, Z, Xz, Zz, K, l0u, KK, Fu, l0i, Delta, tau){
-  #   gamma_eta_update(b, Y, X, Z, Xz, Zz, beta, alpha, D, indzi, gamma, K, eta, 
-  #                    l0u, KK, Fu, l0i, Delta, tau, w, v)
-  # },  b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, K = K, l0u = l0u, 
-  # KK = KK, Fu = Fu, l0i = as.list(l0i), Delta = as.list(Delta), tau = tau, SIMPLIFY = F)
   
   Sge <- mapply(function(b, Y, X, Z, Xz, Zz, K, l0u, KK, Fu, l0i, Delta, tau){
     Sgammaeta(c(gamma,eta), b, Y, X, Z, Xz, Zz, beta, alpha, D, indzi, K, 
@@ -88,19 +86,20 @@ EMupdate <- function(b, Y, X, Z, Xz, Zz,
   
   # M-step
   # ZIP and random effects part.
-  Sba <- rowSums(do.call(cbind, Sba))
-  Hba <- Reduce('+', Hba)
-  # Sbeta <- Reduce('+', lapply(ba, '[[', 1))
-  # Hbeta <- Reduce('+', lapply(ba, '[[', 3))
-  # Salpha <- Reduce('+', lapply(ba, '[[', 2))
-  # Halpha <- Reduce('+', lapply(ba, '[[', 4))
+  # Sba <- rowSums(do.call(cbind, Sba))
+  # Hba <- Reduce('+', Hba)
+  Sbeta <- Reduce('+', lapply(ba, '[[', 1))
+  Hbeta <- Reduce('+', lapply(ba, '[[', 3))
+  Salpha <- Reduce('+', lapply(ba, '[[', 2))
+  Halpha <- Reduce('+', lapply(ba, '[[', 4))
+  # Hba <- as.matrix(Matrix::bdiag(Hbeta, Halpha))
   
-  beta.alpha.new <- c(beta,alpha) - solve(Hba,Sba)
-  beta.new <- beta.alpha.new[1:4]
-  alpha.new <- beta.alpha.new[5:6]
+  # beta.alpha.new <- c(beta,alpha) - solve(Hba,Sba)
+  # beta.new <- beta.alpha.new[1:4]
+  # alpha.new <- beta.alpha.new[5:6]
   D.new <- Reduce('+', Drhs)/n
-  # beta.new <- beta - solve(Hbeta, Sbeta)
-  # alpha.new <- alpha - solve(Halpha, Salpha)
+  beta.new <- beta - solve(Hbeta, Sbeta)
+  alpha.new <- alpha - solve(Halpha, Salpha)
 
   # Survival part
   # Sgamma <- sum(do.call(c, lapply(gammaeta, function(x) x$Sgamma)))

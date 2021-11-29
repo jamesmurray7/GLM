@@ -54,10 +54,23 @@ double b_logdensity(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
 					vec& beta, vec& alpha, mat& D, int indzi){
 	vec eta = X * beta + Z * b(indzi - 2);
 	vec etazi = Xz * alpha + Zz * b(indzi - 1);
-	double lhs = -1.0 * as_scalar(sum(zip_logdensity(Y, eta, etazi)));
+	double lhs = as_scalar(sum(zip_logdensity(Y, eta, etazi)));
 	double rhs = as_scalar(0.5 * b.t() * D.i() * b);
-	return lhs + rhs;
+	return -1.0 * (lhs - rhs);
 } 
+
+// The same but with c(beta, alpha) as a variable...
+// [[Rcpp::export]]
+double b_logdensity2(vec& betaalpha, vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
+				     int beta_length, int alpha_length, mat& D, int indzi){
+	vec beta = betaalpha.head(beta_length);
+	vec alpha = betaalpha.tail(alpha_length);
+	vec eta = X * beta + Z * b(indzi - 2);
+	vec etazi = Xz * alpha + Zz * b(indzi - 1);
+	double lhs = as_scalar(sum(zip_logdensity(Y, eta, etazi)));
+	double rhs = as_scalar(0.5 * b.t() * D.i() * b);
+	return -1.0 * (lhs - rhs);
+}
 
 // [[Rcpp::export]]
 vec b_score(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
@@ -70,145 +83,6 @@ vec b_score(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
 	return -1.0 * (out - (b.t() * D.i()).t());
 }
 
-
-// Quadrature for update to \beta and \alpha
-// \beta
-// [[Rcpp::export]]
-vec Sbetal(vec& beta, vec& Y, mat& X, mat& Z, 
-		   mat& Xz, mat& Zz, vec& b, mat& D, vec& alpha, int& indzi, List S, double w, double v){
-	vec out = vec(beta.size());
-	mat S1 = S[0];
-	mat S2 = S[1];
-	// Make tau terms
-	vec tau = sqrt(diagvec(Z * S1 * Z.t()));
-	vec tauz = sqrt(diagvec(Zz * S2 * Zz.t()));
-	// eta at these quadratures
-	vec eta = X * beta + Z * b[indzi-2] + tau * v;
-	vec etaz = Xz * alpha + Zz * b[indzi-1] + tauz * v;
-	return w * X.t() * zip_Seta(Y, eta, etaz);
-}
-
-// \alpha
-// [[Rcpp::export]]
-vec Salphal(vec& alpha, vec& Y, mat& X, mat& Z, 
-		   mat& Xz, mat& Zz, vec& beta, mat& D, vec& b, int& indzi, List S, double w, double v){
-	vec out = vec(beta.size());
-	mat S1 = S[0];
-	mat S2 = S[1];
-	// Make tau terms
-	vec tau = sqrt(diagvec(Z * S1 * Z.t()));
-	vec tauz = sqrt(diagvec(Zz * S2 * Zz.t()));
-	// eta at these quadratures
-	vec eta = X * beta + Z * b[indzi-2] + tau * v;
-	vec etaz = Xz * alpha + Zz * b[indzi-1] + tauz * v;
-	return w * Xz.t() * zip_Setazi(Y, eta, etaz);
-}
-
-// [[Rcpp::export]]
-List Sbeta_alpha(vec& b, vec& Y, mat& X, mat& Z, 
-				mat& Xz, mat& Zz, vec& beta, mat& D, vec& alpha, int& indzi, List S, vec& w, vec& v){
-	List out;
-	mat S1 = S[0];
-	mat S2 = S[1];
-	int gh = w.size();
-	// Make tau terms
-	vec tau = sqrt(diagvec(Z * S1 * Z.t()));
-	vec tauz = sqrt(diagvec(Zz * S2 * Zz.t()));
-	// Create dummy stores
-	vec Sbeta = vec(beta.size());
-	vec Salpha = vec(alpha.size());
-	// loop over quadrature nodes
-	for(int l = 0; l < gh; l++){
-		vec eta = X * beta + Z * b[indzi-2] + v[l] * tau;
-		vec etaz = Xz * alpha + Zz * b[indzi-1] + v[l] * tauz;
-		Sbeta += w[l] * X.t() * zip_Seta(Y, eta, etaz);
-		Salpha += w[l] * Xz.t() * zip_Setazi(Y, eta, etaz);
-	}
-	out["Sbeta"] = Sbeta;
-	out["Salpha"] = Salpha;
-	return out;
-}
-
-// Forward differencing for Hessians ---------
-// b
-// [[Rcpp::export]]
-mat fd_b(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
-		 vec& beta, vec& alpha, mat& D, int indzi, double eps){
-	int n = b.size();
-	mat out = zeros<mat>(n, n);
-	vec f0 = b_score(b, Y, X, Z, Xz, Zz, beta, alpha, D, indzi);
-	for(int i = 0; i < n; i++){
-	  vec b1 = b;
-		double xi = std::max(b[i], 1.0);
-		b1[i] = b[i] + (eps*xi);
-		vec fdiff = b_score(b1, Y, X, Z, Xz, Zz, beta, alpha, D, indzi) - f0;
-		out.col(i) = fdiff/(b1[i]-b[i]);
-	}
-	return 0.5 * (out + out.t());
-} 
-
-// beta @ current quadrature l
-// [[Rcpp::export]]
-mat fd_beta(vec& beta, vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
-		    vec& alpha, mat& D, List S, int indzi, double w, double v, double eps){
-	int n = beta.size();
-	mat out = zeros<mat>(n, n);
-	vec f0 = Sbetal(beta, Y, X, Z, Xz, Zz, b, D, alpha, indzi, S, w, v);
-	for(int i = 0; i < n; i++){
-	  vec beta1 = beta;
-	  double xi = std::max(beta[i], 1.0);
-	  beta1[i] = beta[i] + (eps*xi);
-	  vec fdiff = Sbetal(beta1, Y, X, Z, Xz, Zz, b, D, alpha, indzi, S, w, v) - f0;
-	  out.col(i) = fdiff/(beta1[i]-beta[i]);
-	}
-	return 0.5 * (out + out.t());
-}
-
-// alpha @ current quadrature l
-// [[Rcpp::export]]
-mat fd_alpha(vec& alpha, vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
-		     vec& beta, mat& D, List S, int indzi, double w, double v, double eps){
-	int n = alpha.size();
-	mat out = zeros<mat>(n, n);
-	vec f0 = Salphal(alpha, Y, X, Z, Xz, Zz, beta, D, b, indzi, S, w, v);
-	for(int i = 0; i < n; i++){
-	  vec alpha1 = alpha;
-	  double xi = std::max(beta[i], 1.0);
-	  alpha1[i] = alpha[i] + (eps*xi);
-	  vec fdiff = Salphal(alpha1, Y, X, Z, Xz, Zz, beta, D, b, indzi, S, w, v) - f0;
-	  out.col(i) = fdiff/(alpha1[i]-alpha[i]);
-	}
-	return 0.5 * (out + out.t());
-}
-
-
-// Bring all together (this could be more efficient - tau defined in each separate function but could be done locally)
-// [[Rcpp::export]]
-List beta_alpha_update(vec& beta, vec& alpha, vec& b, vec& Y, mat& X, mat& Z, mat& Xz,
-                  mat& Zz, mat& D, List S, int indzi, vec& w, vec& v, double eps){
-	List out;
-	int nbeta = beta.size();
-	int nalpha = alpha.size();
-	int gh = w.size();
-	// Create dummy stores
-	vec Sbeta = vec(nbeta);
-	vec Salpha = vec(nalpha);
-	mat Hbeta = zeros<mat>(nbeta, nbeta);
-	mat Halpha = zeros<mat>(nalpha, nalpha);
-	// Loop over quadrature nodes
-	for(int l = 0; l < gh; l++){
-		Sbeta += Sbetal(beta, Y, X, Z, Xz, Zz, b, D, alpha, indzi, S, w[l], v[l]);
-		Salpha += Salphal(alpha, Y, X, Z, Xz, Zz, beta, D, b, indzi, S, w[l], v[l]);
-		Hbeta += fd_beta(beta, b, Y, X, Z, Xz, Zz, alpha, D, S, indzi, w[l], v[l], eps);
-		Halpha += fd_alpha(alpha, b, Y, X, Z, Xz, Zz, beta, D, S, indzi, w[l], v[l], eps);
-	}
-	out["Sbeta"] = Sbeta;
-	out["Salpha"] = Salpha;
-	out["Hbeta"] = Hbeta;
-	out["Halpha"] = Halpha;
-	return out;
-}
-
 // Joint likelihood 
 // [[Rcpp::export]]
 double joint_density(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
@@ -218,7 +92,7 @@ double joint_density(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
 	double temp = 0.0;
 	if(Delta == 1) temp = log(l0i);
 	double surv = as_scalar(temp + Delta * (K * eta + sum(gamma * b)) - haz * (exp(KK * eta + Fu * (gamma * b))));
-	return lhs + surv;
+	return lhs - surv;
 }
 
 // Joint likelihood - first derivative wrt b
@@ -255,50 +129,6 @@ mat joint_density_sdb(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
 }
 
 // Update for (gamma, eta)
-// [[Rcpp::export]]
-List gamma_eta_update(vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,               
-					 vec& beta, vec& alpha, mat& D, int indzi,                                                  // ZIP 
-					 double gamma, rowvec& K, vec& eta, rowvec& haz, mat& KK, mat& Fu, double l0i, int Delta,   // Survival
-					 vec& tau, vec& w, vec& v){                                                                 // Quadrature
-    List out;
-	int gh = w.size();
-	// Initialise stores
-	double score_gamma = 0.0;
-	double H_gamma = 0.0;
-	vec score_eta = vec(eta.size());
-	mat H_eta = zeros<mat>(eta.size(), eta.size());
-	vec cross_term = vec(eta.size());
-	// Setting up tau terms
-	uvec zzz = find(tau == 0.0);
-	vec tau2 = pow(pow(gamma, 2.0) * tau, -0.5);
-	vec tau3 = pow(pow(gamma, 2.0) * tau, -1.5);
-	tau2.elem(zzz).zeros();
-	tau3.elem(zzz).zeros();
-	// Loop over quadrature nodes
-	for(int l = 0; l < gh; l++){
-		vec xi = haz.t() % exp(KK * eta + gamma * Fu * b + pow(pow(gamma, 2.0) * tau, 0.5) * v[l]);
-		score_gamma += as_scalar(w[l] * xi.t() * (Fu * b) + gamma * w[l] * v[l] * (xi % tau2).t() * tau);
-		score_eta += w[l] * KK.t() * xi;
-		H_gamma += as_scalar(
-			w[l] * b.t() * Fu.t() * (xi % (Fu * b)) + gamma * w[l] * v[l] * b.t() * Fu.t() * (xi % tau2 % tau) + 
-			w[l] * v[l] * (xi % tau2).t() * tau + gamma * w[l] * v[l] * (tau % tau2 % xi).t() * tau + 
-			w[l] * v[l] * v[l] * gamma * gamma * (tau % tau2 % xi % tau2).t() * tau - 
-			w[l] * v[l] * gamma * gamma * (tau % xi % tau3).t() * tau
-		);
-		H_eta += w[l] * (diagmat(xi) * KK).t() * KK;
-		cross_term += w[l] * KK.t() * (xi % (Fu*b)) + gamma * w[l] * v[l] * KK.t() * (xi % tau % tau2);
-	}
-	// Populate outputted list
-	out["Sgamma"] = Delta * sum(b) - score_gamma;
-	out["Seta"] = Delta * K.t() - score_eta;
-	out["Hgamma"] = -1.0 * H_gamma;
-	out["Heta"] = -1.0 * H_eta;
-	out["Hgammaeta"] = -1.0 * cross_term;
-	return out;
-}
-
-// Take two -----
-// Score for (gamma, eta)
 // [[Rcpp::export]]
 vec Sgammaeta(vec& gammaeta, vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,               
 			  vec& beta, vec& alpha, mat& D, int indzi,                                                  // ZIP 
@@ -388,14 +218,46 @@ vec S2betaalpha(vec& betaalpha, vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz
 		vec mu = exp(X * beta + Z * b[indzi - 2] + tau * v[l]);
 		vec lambda = exp(Xz * alpha + Zz * b[indzi - 1] + tau * v[l]);
 		vec lambda_exp_mu = lambda % trunc_exp(mu);
-		lambda_exp_mu.replace(datum::inf, 1e100);
-		Sbeta += -1.0 * w[l] * X.rows(y0).t() * (mu.elem(y0) / (lambda_exp_mu.elem(y0) + 1.0)) + w[l] * X.rows(y1).t() * (Y.elem(y1)-mu.elem(y1));
+		lambda_exp_mu.replace(datum::inf, 1e200);
+		Sbeta += -w[l] * X.rows(y0).t() * (mu.elem(y0) / (lambda_exp_mu.elem(y0) + 1.0)) + w[l] * X.rows(y1).t() * (Y.elem(y1)-mu.elem(y1));
 		Salpha += w[l] * Xz.rows(y0).t() * (lambda_exp_mu.elem(y0) / (lambda_exp_mu.elem(y0) + 1)) - w[l] * Xz.t() * (lambda/(1+lambda));
 	}
 	out.head(beta.size()) = Sbeta;
 	out.tail(alpha.size()) = Salpha;
 	return out;
-}				   
+}		
+
+//vec S3betaalpha(vec& betaalpha, vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz, 
+	            //int beta_length, int alpha_length, int& indzi, mat& S, vec& w, vec& v){
+	//vec out = vec(betaalpha.size());
+	//int gh = w.size();
+	//uvec y0 = find(Y == 0);
+	//uvec y1 = find(Y > 0);
+	//// Extract beta and alpha, and create tau
+	//vec beta = betaalpha.head(beta_length);
+	//vec alpha = betaalpha.tail(alpha_length);
+	//vec Sbeta = vec(beta.size());
+	//vec Sbeta_rhs = vec(beta.size());
+	//vec Salpha = vec(alpha.size());
+	//vec tau = sqrt(diagvec(join_rows(Z, Zz) * S * join_rows(Z, Zz).t()));
+	//for(int l = 0; l < gh; l++){
+		//vec eta = X * beta + Z * b[indzi - 2] + tau * v[l];
+		//vec etaz = Xz * alpha + Z * b[indzi - 1] + tau * v[l];
+		//Sbeta += w[l] * X.rows(y0).t() * (
+			//(exp(-exp(eta.elem(y0))) % exp(eta.elem(y0))) / 
+			//(exp(-exp(eta.elem(y0))) + exp(etaz.elem(y0)))
+		//);
+		//Sbeta_rhs += w[l] * X.rows(y1).t() * exp(eta.elem(y1));
+		//Salpha += w[l] * Xz.t() * (exp(etaz) / (1 + exp(etaz))) + 
+		          //w[l] * Xz.rows(y0).t() * (
+					//exp(etaz.elem(y0)) / (exp(etaz.elem(y0)) + exp(-exp(eta.elem(y0))))
+		          //);
+	//}
+	//out.head(beta.size()) = -Sbeta + X.rows(y1).t() * Y.elem(y1) - Sbeta_rhs;
+	//out.tail(alpha.size()) = -Salpha;
+	//return out;
+//}				   
+		   
 
 // [[Rcpp::export]]
 mat Hbetaalpha(vec& betaalpha, vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz, 
