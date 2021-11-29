@@ -39,14 +39,14 @@ EMupdate <- function(b, Y, X, Z, Xz, Zz,
   #   beta_alpha_update(beta, alpha, b, Y, X, Z, Xz, Zz, D, S, indzi, w, v, eps = 1e-4)
   # }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, S = S, SIMPLIFY = F)
   
-  ba <- mapply(function(b, Y, X, Z, Xz, Zz){
-    out <- list()
-    out[[1]] <- numDeriv::grad(b_logdensity, beta, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,alpha=alpha,D=D,indzi=2, method = 'simple')
-    out[[3]] <- numDeriv::hessian(b_logdensity, beta, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,alpha=alpha,D=D,indzi=2)
-    out[[2]] <- numDeriv::grad(b_logdensity, alpha, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,beta=beta,D=D,indzi=2, method = 'simple')
-    out[[4]] <- numDeriv::hessian(b_logdensity, alpha, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,beta=beta,D=D,indzi=2)
-    lapply(out, function(x) x * -1)
-  }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, SIMPLIFY = F)
+  # ba <- mapply(function(b, Y, X, Z, Xz, Zz){
+  #   out <- list()
+  #   out[[1]] <- numDeriv::grad(b_logdensity, beta, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,alpha=alpha,D=D,indzi=2, method = 'simple')
+  #   out[[3]] <- numDeriv::hessian(b_logdensity, beta, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,alpha=alpha,D=D,indzi=2)
+  #   out[[2]] <- numDeriv::grad(b_logdensity, alpha, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,beta=beta,D=D,indzi=2, method = 'simple')
+  #   out[[4]] <- numDeriv::hessian(b_logdensity, alpha, b = b, Y=Y,X=X,Z=Z,Xz=Xz,Zz=Zz,beta=beta,D=D,indzi=2)
+  #   lapply(out, function(x) x * -1)
+  # }, b = b.hat, Y = Y, X = X, Z = Z, Xz = Xz, Zz = Zz, SIMPLIFY = F)
   
  Sba <- mapply(function(b, Y, X, Z, Xz, Zz, S){
    Sbetaalpha(c(beta, alpha), b, Y, X, Z, Xz, Zz, length(beta), length(alpha),
