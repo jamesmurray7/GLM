@@ -402,13 +402,13 @@ mat Hbetaalpha(vec& betaalpha, vec& b, vec& Y, mat& X, mat& Z, mat& Xz, mat& Zz,
 			   int beta_length, int alpha_length, int& indzi, mat& S, vec& w, vec& v, double eps){
 	int n = betaalpha.size();
 	mat out = zeros<mat>(n, n);
-	vec f0 = Sbetaalpha(betaalpha, b, Y, X, Z, Xz, Zz, beta_length, alpha_length,
+	vec f0 = S2betaalpha(betaalpha, b, Y, X, Z, Xz, Zz, beta_length, alpha_length,
 						indzi, S, w, v);
 	for(int i = 0; i < n; i ++){
 		vec ba = betaalpha;
 		double xi = std::max(betaalpha[i], 1.0);
 		ba[i] = betaalpha[i] + (xi * eps);
-		vec fdiff = Sbetaalpha(ba, b, Y, X, Z, Xz, Zz, beta_length, alpha_length,
+		vec fdiff = S2betaalpha(ba, b, Y, X, Z, Xz, Zz, beta_length, alpha_length,
 						       indzi, S, w, v) - f0;
 		out.col(i) = fdiff / (ba[i] - betaalpha[i]);
 	}
