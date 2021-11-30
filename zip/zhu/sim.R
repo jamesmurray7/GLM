@@ -2,11 +2,11 @@ rm(list=ls())
 setwd('~/Documents/GLMM/zip/zhu')
 source('EM.R')
 data6 <- replicate(100, 
-                  simData_zip_joint(n = 250), simplify = F)
+                  simData_zip_joint(n = 250, theta = c(-3, 0.2)), simplify = F)
 data10 <- replicate(100, 
-                  simData_zip_joint(n = 250, ntms = 10), simplify = F)
+                  simData_zip_joint(n = 250, ntms = 10, theta = c(-3, 0.2)), simplify = F)
 data14 <- replicate(100, 
-                  simData_zip_joint(n = 250, ntms = 14), simplify = F)
+                  simData_zip_joint(n = 250, ntms = 14, theta = c(-3, 0.2)), simplify = F)
 
 pb <- utils::txtProgressBar(max=100, style = 3)
 fits6 <- fits10 <- fits14 <- list()
@@ -24,4 +24,4 @@ for(i in 1:100){
 }
 
 fits <- list(fits6=fits6,fits10=fits10,fits14=fits14)
-save(fits, file = '~/Downloads/fits291121.RData')
+save(fits, file = '~/Downloads/fits291121-new.RData')

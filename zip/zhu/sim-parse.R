@@ -26,8 +26,8 @@ extract.inits <- function(x){ # x a 'sub-list'
     }))
     out <- list(ests=ests, inits=inits)
     message('\nfits[[',i,']] had ', nrow(ests), ' successful fits out of 100.')
-    message('\nSaving in ', save.location, 'ests291121-', i, '.RData')
-    save(out, file = paste0(save.location, 'ests291121-', i, '.RData'))
+    message('\nSaving in ', save.location, 'ests291121-new-', i, '.RData')
+    save(out, file = paste0(save.location, 'ests291121-new-', i, '.RData'))
   }
 }
 
@@ -45,7 +45,7 @@ library(tidyverse)
 
 # Function to load one by one, rbind and store
 loader <- function(i){
-  load(paste0('~/Downloads/ests291121-',i,'.RData'))
+  load(paste0('~/Downloads/ests291121-new-',i,'.RData'))
   df <- as_tibble(out$ests) %>% pivot_longer(everything()) %>% mutate(a = as.character(i))
   message(i)
   df
@@ -78,4 +78,39 @@ df %>%
   facet_wrap(~name, scales = 'free') + 
   theme_bw()
 
-ggsave('~/Downloads/zhu-like.png')
+ggsave('~/Downloads/zhu-like-new.png')
+
+# Comparing starting values to  final -------------------------------------
+
+loader2 <- function(i){
+  load(paste0('~/Downloads/ests291121-new-',i,'.RData'))
+  df <- as_tibble(out$inits) %>% pivot_longer(everything()) %>% mutate(a = as.character(i), b = 'Initial estimate')
+  message(i)
+  df
+}
+
+df.inits <- list()
+for(i in 1:3) df.inits[[i]] <- loader2(i)
+df.inits <- do.call(rbind, df.inits) %>% 
+  as_tibble %>% 
+  mutate(
+    description = case_when(
+      a == '1' ~ 'ntms = 6',
+      a == '2' ~ 'ntms = 10',
+      a == '3' ~ 'ntms = 14',
+      T ~ 'AA'
+    )
+  ) 
+
+df$b <- 'aEM'
+df.all <- rbind(df, df.inits)
+
+df.all %>% 
+  left_join(., targets, 'name') %>% 
+  filter(grepl('beta', name) | grepl('alpha', name) | name %in% c('D11', 'D22')) %>% 
+  ggplot(aes(x = value, colour = description, lty = b)) +
+  geom_vline(aes(xintercept = target)) +
+  geom_density(lwd = 0.8, alpha = .75) + 
+  facet_wrap(~name, scales = 'free') + 
+  labs(lty = NULL, colour = 'Profile', x = 'Estimate') +
+  theme_bw()
