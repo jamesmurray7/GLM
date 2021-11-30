@@ -52,3 +52,21 @@ Dll <- -1/2 * log(2*pi) - 1/2 * log(det(D)) - 1/2 * sum(diag(fit.b %*% solve(D) 
 
 true.ll
 sum(dbinom(Y, 1, mu, TRUE)) + Dll # closer
+
+all.equal(1/(exp(-etahat)+1), plogis(etahat)) # Different form...
+all.equal(etahat-log(etahat %>% exp + 1), log(plogis(etahat))) # And for the logged version...
+
+
+# Score ----
+way1 <- Y-plogis(etahat)
+way2 <- (exp(etahat) * (Y - 1) + Y)/(exp(etahat) + 1)
+all.equal(way1, way2)
+
+# Do these match e.g. pracma::grad?
+ll <- function(beta, b, Zb){
+  eta <- X %*% beta + Zb
+  sum(dbinom(Y, 1, plogis(eta), T))
+} 
+# Match 
+pracma::grad(ll, fit.beta, Zb = rowSums(Z * fit.b[df$id,]))
+crossprod(X, way1)
