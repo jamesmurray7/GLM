@@ -88,7 +88,7 @@ simData_zip_joint <- function(n, ntms, beta, alpha, D = diag(2),
   # denom <- theta1
   # rhs <- theta1 * log(U)/(exp(theta0 + Keta + rowSums(b * gamma)))
   # t <- suppressWarnings(log((1 - rhs))/denom)
-  t <- suppressWarnings(-log(U)/exp(theta0 + Keta + rowSums(b %*% gamma)))
+  t <- suppressWarnings(-log(U)/exp(theta0 + Keta + rowSums(b * gamma)))
   t[is.nan(t)] <- tau
   
   # Collect survival times, and generate cenors times.
