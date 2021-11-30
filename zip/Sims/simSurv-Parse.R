@@ -1,4 +1,3 @@
-
 # Extract out individual fits and store separately ------------------------
 save.location <- '~/Downloads/'
 vech <- function(X) X[lower.tri(X, diag = T)]
@@ -17,7 +16,7 @@ extract.inits <- function(x){ # x a 'sub-list'
 }
 # Unpacking function
 .unpack <- function(x){ # x a list of lists.
-  for(i in 1:7){
+  for(i in 1:4){
     this <- x[[i]]
     ests <- do.call(rbind, lapply(this, function(x){
       if(!is.null(x)) extract.coeffs(x)
@@ -27,8 +26,8 @@ extract.inits <- function(x){ # x a 'sub-list'
     }))
     out <- list(ests=ests, inits=inits)
     message('\nfits[[',i,']] had ', nrow(ests), ' successful fits out of 100.')
-    message('\nSaving in ', save.location, 'ests', i, '.RData')
-    save(out, file = paste0(save.location,'ests',i,'.RData'))
+    message('\nSaving in ', save.location, 'ests2-', i, '.RData')
+    save(out, file = paste0(save.location,'ests2-',i,'.RData'))
   }
 }
 
@@ -49,14 +48,14 @@ library(tidyverse)
 
 # Function to load one by one, rbind and store
 loader <- function(i){
-  load(paste0('~/Downloads/ests',i,'.RData'))
+  load(paste0('~/Downloads/ests2-',i,'.RData'))
   df <- as_tibble(out$ests) %>% pivot_longer(everything()) %>% mutate(a = as.character(i))
   message(i)
   df
 }
 
 df <- list()
-for(i in 1:7){df[[i]] <- loader(i)}
+for(i in 1:4){df[[i]] <- loader(i)}
 df <- do.call(rbind, df)
 
 df <- df %>% 
@@ -75,7 +74,7 @@ df <- df %>%
 
 targets1 <- data.frame(
   name = unique(df$name),
-  target = c(1.2, 0.0, 0.6, 0.5, -0.2, 0.1, 0.2, -1.0, -0.1, -0.50, 0.05, -0.30)
+  target = c(.5, 0.0, 0.1, 0.5, -0.2, 0.1, 0.2, -1.0, -0.1, -0.50, 0.05, -0.30)
 )
 
 targets2 <- data.frame(
@@ -84,7 +83,7 @@ targets2 <- data.frame(
 )
 
 df %>% 
-  filter(a %in% c('1','2','3','4'), name != 'gamma') %>%
+  filter(a %in% c('1','2','3','4')) %>% #, name != 'gamma') %>%
   
   left_join(., targets1, 'name') %>% 
   ggplot(aes(x = value, colour = description)) +
