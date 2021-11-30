@@ -11,30 +11,30 @@ true.ll <- logLik(fit)
 fit.beta <- fit$coefficients
 etahat <- X %*% fit.beta
 mu <- plogis(etahat)
-y %*% log(mu) + crossprod(1-y, log(1-mu))
-
+y %*% log(mu) + crossprod(1-y, log(1-mu)) ## The same ----
+sum(dbinom(y, 1, plogis(etahat),T))
 
 # GLMM --------------------------------------------------------------------
-
-X <- replicate(100, cbind(1, 0:4, rnorm(1), rbinom(1, 1, .5)), simplify = F); X <- do.call(rbind, X)
-Z <- replicate(100, cbind(1, 0:4), simplify = F); Z <- do.call(rbind, Z)
+n <- 250
+ntms <- 10
+beta <- c(1, 0.10, 0.33, -0.5) # fixed effects coefficients
+D <- matrix(c(0.5, 0, 0, 0.1), 2, 2)
+b <- MASS::mvrnorm(n, mu=c(0, 0), Sigma = matrix(c(0.5, 0, 0, 0.1), 2, 2))
 
 df <- data.frame(
-  id = rep(seq_len(100), each = 5),
-  X
+  id = rep(1:n, each = ntms),
+  time = rep(0:(ntms-1), n),
+  cont = rep(rnorm(n), each = ntms),
+  bin = rep(rbinom(n, 1, 0.5), each = ntms)
 )
 
-beta <- c(1, 0.10, 0.33, -0.5) # fixed effects coefficients
-D11 <- 0.48 # variance of random intercepts
-D22 <- 0.1 # variance of random slopes
-
-b <- cbind(rnorm(100, sd = sqrt(D11)), rnorm(100, sd = sqrt(D22)))
-# linear predictor
+X <- model.matrix(~time+cont+bin, df)
+Z <- model.matrix(~time, df)
+# Linear predictor
 eta <- X %*% beta + rowSums(Z * b[df$id, ])
+df$Y <- rbinom(n * ntms, 1, plogis(eta))
 
-y <- rbinom(500, 1, plogis(eta))
-
-fit <- glmmTMB::glmmTMB(y ~ X2 + X3 + X4 + (1 + X2|id),
+fit <- glmmTMB::glmmTMB(Y ~ time + cont + bin + (1 + time|id),
                         data = df, family = binomial)
 
 true.ll <- logLik(fit)
@@ -42,18 +42,13 @@ fit.beta <- glmmTMB::fixef(fit)$cond
 fit.b <- as.matrix(glmmTMB::ranef(fit)$cond$id)
 etahat <- X %*% fit.beta + rowSums(Z * fit.b[df$id,])
 mu <- plogis(etahat)
-mu <- exp(etahat)/(1+exp(etahat))
 
-y %*% log(mu) + crossprod(1-y, log(1-mu))
+Y %*% log(mu) + crossprod(1-Y, log(1-mu))
+sum(dbinom(Y, 1, mu, TRUE))
 
-ll.fun <- function(b, y, X, beta, Z){
-  eta <- X %*% beta + Z %*% b
-  mu <- plogis(eta)
-  ll <- y %*% log(mu) + crossprod(1 - y, log(1 - mu))
-  -ll
-}
+# is it missing f(b)?
+D <- as.matrix(glmmTMB::VarCorr(fit)$cond$id)
+Dll <- -1/2 * log(2*pi) - 1/2 * log(det(D)) - 1/2 * sum(diag(fit.b %*% solve(D) %*% t(fit.b)))
 
-ll.fun(fit.b[1,], y[1:5], X[df$id==1, ], fit.beta, Z[df$id == 1, ])
-nlm(ll.fun, fit.b[1,], y = y[1:5], X = X[df$id==1, ], beta = fit.beta, Z = Z[df$id == 1, ])
-
-ucminf::ucminf(c(fit.b[1,]), ll.fun, NULL, y = y[1:5], X = X[df$id==1, ], beta = fit.beta, Z = Z[df$id == 1, ])
+true.ll
+sum(dbinom(Y, 1, mu, TRUE)) + Dll # closer
