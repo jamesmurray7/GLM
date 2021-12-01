@@ -74,15 +74,5 @@ simData_joint <- function(n = 250, ntms = 10, beta = c(1, 0.10, 0.33, -0.5),
   message(round(100 * sum(surv.data$status)/n), '% failure rate')
   
   list(data =  out.data, 
-       surv.data =  dplyr::distinct(out.data, id, survtime, status, bin))
+       surv.data =  dplyr::distinct(out.data, id, survtime, status, cont, bin))
 }
-
-YY <- XX <- ZZ <- b <- list()
-for(i in 1:250){
-  i.dat <- df[df$id==i, ]
-  XX[[i]] <- model.matrix(~time+cont+bin, i.dat)
-  ZZ[[i]] <- model.matrix(~time, i.dat)
-  YY[[i]] <- i.dat$Y
-  b[[i]] <- fit.b[i,]
-}
-
