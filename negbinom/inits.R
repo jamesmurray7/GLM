@@ -1,6 +1,6 @@
 #' ####
 #' inits.R // Initial conditions for longitudinal and survival sub-models
-#'                   for negative binomial sub-model
+#'                   for binary (univariate currently) sub-model.
 #' ---
 #' Survival part STOPs here.
 #' Longitudinal then undergoes MVLME fit
@@ -11,32 +11,16 @@ if(!'dplyr'%in%loadedNamespaces()) library(dplyr)
 
 # beta, D inits using lme4 -----------------------------------------
 
-Longit.inits <- function(K, data){
-  lfitK <- list()
-  for(k in 1:K){
-    lfitK[[k]] <- glmmTMB(as.formula(paste0('Y.', k, '~ time + cont + bin + (1+time|id)')),
-                          family = nbinom2, data = data, 
-                          control = glmmTMBControl(optCtrl = list(rel.tol = 1e-3)))
-  }
-  
+Longit.inits <- function(data){
+  fit <- glmmTMB(as.formula(paste0('Y ~ time + cont + bin + (1 + time|id)')),
+                 family = nbinom2, data = data, dispformula = ~ 1,
+                 control = glmmTMBControl(optCtrl = list(rel.tol = 1e-3)))
+
   # \beta and D
-  beta <- do.call(c, lapply(1:K, function(k){
-    x <- glmmTMB::fixef(lfitK[[k]])$cond
-    names(x) <- paste0('beta', k, '_',  names(x))
-    x
-  }))
+  beta <- glmmTMB::fixef(fit)$cond
+  names(beta) <- paste0('beta', '_', names(beta))
   
-  theta <- do.call(c, lapply(1:K, function(k){
-    x <- glmmTMB::sigma(lfitK[[k]])
-    names(x) <- paste0('theta_', k)
-    x
-  }))
-  
-  D <- as.matrix(Matrix::bdiag(
-    lapply(lfitK, function(X){
-      matrix(glmmTMB::VarCorr(X)$cond$id, dim(glmmTMB::VarCorr(X)$cond$id))
-    })
-  ))
+  D <- matrix(glmmTMB::VarCorr(fit)$c$id, 2, 2)
   
   # Checking pos-def. on D, if not then use Matrix::nearPD()$mat
   if(any(eigen(D)$values < 0) || (det(D) <= 0)){
@@ -46,26 +30,17 @@ Longit.inits <- function(K, data){
   }
   
   list(beta.init = beta,
-       theta.init = theta,
        D.init = D,
-       long.fits = lfitK)
+       theta.init = glmmTMB::sigma(fit),
+       fit = fit)
 }
 
 # Populate REs matrix -----------------------------------------------------
 Ranefs <- function(longfits){
-  fits <- longfits$long.fits
-  K <- length(fits)
-  
-  # The random effects
-  ranefK <- list()
-  for(k in 1:K){
-    ranefK[[k]] <- as.matrix(glmmTMB::ranef(fits[[k]])$cond$id)
-    colnames(ranefK[[k]]) <- paste0(c("intercept_", "slope_"), k)
-  }
-
-  REs <- as.data.frame(do.call(cbind, ranefK))
-  REs$id <- 1:nrow(REs)
-  REs
+  fit <- longfits$fit
+  out <- as.matrix(glmmTMB::ranef(fit)$cond$id)
+  colnames(out) <- c('(intercept)', '(slope)')
+  out
 }
 
 # Survival Inits ----------------------------------------------------------
@@ -91,35 +66,27 @@ ToStartStop <- function(data){
   as.data.frame(do.call(rbind, this.subj))
 }
 
-#ss <- ToStartStop(d)
-
 # Using this StartStop and getting timevarying coxph...
-TimeVarCox <- function(data, REs, fixef.surv = c('cont', 'bin'),
-                       survtime = 'survtime', status = 'status'){
+TimeVarCox <- function(data, REs){
   # Prepare data
   ss <- ToStartStop(data)
+  REs <- as.data.frame(REs); REs$id <- 1:nrow(REs)
   ss2 <- dplyr::left_join(ss, REs, 'id')
-  ss2 <- dplyr::distinct(dplyr::left_join(ss2, data[, c('id', fixef.surv, survtime, status)], 'id'))
+  ss2 <- dplyr::distinct(dplyr::left_join(ss2, data[, c('id', 'cont', 'bin', 'survtime', 'status')], 'id'))
   
   # Create \gamma_k variables
-  K <- ncol(REs) %/% 2
-  gammaK <- matrix(NA, nrow(ss2), K)
-  colnames(gammaK) <- paste0('gamma_', 1:K)
-  
-  for(k in 1:K){
-    ssK <- ss2[, c('time1', paste0(c('intercept_', 'slope_'), k))]
-    gammaK[, k] <- ssK[, 2] + ssK[, 1] * ssK[, 3]
-  }
+  gamma <- matrix(NA, nrow(ss2), 1)
+  gamma[,1] <- ss2[,'(intercept)'] + ss2[,'(slope)'] * ss2[, 'time1']
   
   # And join on ...
-  ss3 <- cbind(ss2, gammaK)
+  ss3 <- cbind(ss2, gamma)
   # Update this to deal with ties too?
   ss3$status2 <- ifelse(ss3$survtime == ss3$time2, ss3$status, 0)
   
   # Time Varying coxph
   # Formula
   timevar.formula <- as.formula(
-    paste0('Surv(time1, time2, status2) ~ ', paste0(fixef.surv, collapse = ' + '), ' + ', paste0('gamma_', 1:K, collapse = ' + '))
+    paste0('Surv(time1, time2, status2) ~ ', paste0(c('cont', 'bin'), collapse = ' + '), ' + gamma')
   )
   ph <- coxph(timevar.formula, data = ss3)
   
