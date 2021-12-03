@@ -67,7 +67,6 @@ KK = KK, Fu = Fu, haz = l0u, SIMPLIFY = F)
 Drhs <- mapply(function(b, S){
   S + tcrossprod(b)
 }, S = Sigmai, b = b.hat, SIMPLIFY = F)
-Reduce('+', Drhs)/n
 
 # beta
 Sb <- mapply(function(X, Y, Z, b){
@@ -99,6 +98,7 @@ Hge <- mapply(function(b, Delta, Fi, K, KK, Fu, l0u, S){
 }, b = b.hat, Delta = Delta, Fi = Fi, K = K, KK = KK, Fu = Fu, l0u = l0u, S = Sigmai, SIMPLIFY = F)
 
 # updates
+D.new <- Reduce('+', Drhs)/250
 beta.new <- beta - solve(Reduce('+', Hb), Reduce('+', Sb))
 theta.new <- theta-sum(do.call(c, St))/sum(do.call(c, Ht))
 gamma.eta.new <- c(gamma, eta) - solve(Reduce('+', Hge), rowSums(Sge))
