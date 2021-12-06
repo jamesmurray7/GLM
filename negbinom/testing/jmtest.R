@@ -31,6 +31,9 @@ for(i in 1:n){
 
 inits.long <- Longit.inits(test)
 b <- Ranefs(inits.long)
+beta <- inits.long$beta.init
+theta <- inits.long$theta.init
+D <- inits.long$D.init
 inits.surv <- TimeVarCox(test, b)
 b <- lapply(1:n, function(i) b[i, ])
 
@@ -52,6 +55,14 @@ Delta <- as.list(sv$Di)
 # Estimates for b and subsequently for Sigmai
 b.hat <- mapply(function(b, X, Y, Z, Delta, K, Fi, l0i, KK, Fu, haz){
   ucminf::ucminf(b, joint_density, joint_density_ddb,
+                 X = X, Y = Y, Z = Z, beta = beta, theta = theta, D = D,
+                 Delta = Delta, K = K, Fi = Fi, l0i = l0i, KK = KK, Fu = Fu,
+                 haz = haz, gamma = gamma, eta = eta)$par
+}, b = b, X = X, Y = Y, Z = Z, Delta = Delta, K = K, Fi = Fi, l0i = l0i,
+KK = KK, Fu = Fu, haz = l0u, SIMPLIFY = F)
+
+b.hat2 <- mapply(function(b, X, Y, Z, Delta, K, Fi, l0i, KK, Fu, haz){
+  ucminf::ucminf(b, joint2_density, joint_density_ddb,
                  X = X, Y = Y, Z = Z, beta = beta, theta = theta, D = D,
                  Delta = Delta, K = K, Fi = Fi, l0i = l0i, KK = KK, Fu = Fu,
                  haz = haz, gamma = gamma, eta = eta)$par
@@ -101,6 +112,7 @@ Hge <- mapply(function(b, Delta, Fi, K, KK, Fu, l0u, S){
 D.new <- Reduce('+', Drhs)/250
 beta.new <- beta - solve(Reduce('+', Hb), Reduce('+', Sb))
 theta.new <- theta-sum(do.call(c, St))/sum(do.call(c, Ht))
+theta2.new <- theta-sum(do.call(c, St2))/sum(do.call(c, Ht2))
 gamma.eta.new <- c(gamma, eta) - solve(Reduce('+', Hge), rowSums(Sge))
 lambda <- lambdaUpdate(sv$surv.times, sv$ft, gamma, eta, K, Sigmai, b.hat, w, v)
 

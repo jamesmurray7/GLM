@@ -18,7 +18,7 @@ extract.inits <- function(x){ # x a 'sub-list'
 
 # Unpacking function
 .unpack <- function(x){ # x a list of lists.
-  for(i in 1:3){
+  for(i in 1:6){
     this <- x[[i]]
     ests <- do.call(rbind, lapply(this, function(x){
       if(!is.null(x)) extract.coeffs(x)
@@ -28,8 +28,8 @@ extract.inits <- function(x){ # x a 'sub-list'
     }))
     out <- list(ests=ests, inits=inits)
     message('\nfits[[',i,']] had ', nrow(ests), ' successful fits out of 100.')
-    message('\nSaving in ', save.location, 'nbests-', i, '.RData')
-    save(out, file = paste0(save.location, 'nbests-', i, '.RData'))
+    message('\nSaving in ', save.location, 'nbests2-', i, '.RData')
+    save(out, file = paste0(save.location, 'nbests2-', i, '.RData'))
   }
 }
 
@@ -48,33 +48,35 @@ library(tidyverse)
 
 # Function to load one by one, rbind and store
 loader <- function(i){
-  load(paste0('~/Downloads/nbests-',i,'.RData'))
+  load(paste0('~/Downloads/nbests2-',i,'.RData'))
   df <- as_tibble(out$ests) %>% pivot_longer(everything()) %>% mutate(a = as.character(i))
   message(i)
   df
 }
 
 df <- list()
-for(i in 1:3){df[[i]] <- loader(i)}
+for(i in 1:6){df[[i]] <- loader(i)}
 df <- do.call(rbind, df)
 
 df <- df %>% 
   mutate(
     description = case_when(
-      a == '1' ~ 'ntms = 10',
-      a == '2' ~ 'ntms = 15',
-      a == '3' ~ 'ntms = 10, gamma = -1',
+      a == '1' ~ 'theta = 0.25',
+      a == '2' ~ 'theta = 0.50',
+      a == '3' ~ 'theta = 0.75',
+      a == '4' ~ 'theta = 1.00',
+      a == '5' ~ 'theta = 1.50',
+      a == '6' ~ 'theta = 2.00',
       T ~ 'AA'
     )
   )
 
 targets <- data.frame(
   name = unique(df$name),
-  target = c(0.5, 0, 0.1, 1, 0.1, 0.33, -0.50, 1.5, 0.5, 0.05, -0.3)
+  target = c(0.5, 0, 0.1, 1, 0.1, 0.33, -0.50, NA, 0.5, 0.05, -0.3)
 )
 
 df %>% 
-  filter(a %in% c('1', '2')) %>% 
   left_join(., targets, 'name') %>% 
   ggplot(aes(x = value, colour = description)) +
   geom_vline(aes(xintercept = target)) +

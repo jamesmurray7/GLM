@@ -22,7 +22,7 @@ EMupdate <- function(b, Y, X, Z,
   #' ### ------
   
   b.hat <- mapply(function(b, X, Y, Z, Delta, K, Fi, l0i, KK, Fu, haz){
-    ucminf::ucminf(b, joint_density, joint_density_ddb,
+    ucminf::ucminf(b, joint2_density, joint_density_ddb,
                    X = X, Y = Y, Z = Z, beta = beta, theta = theta, D = D,
                    Delta = Delta, K = K, Fi = Fi, l0i = l0i, KK = KK, Fu = Fu,
                    haz = haz, gamma = gamma, eta = eta)$par
@@ -56,11 +56,11 @@ EMupdate <- function(b, Y, X, Z,
   St <- mapply(function(X, Y, Z, b){
     Stheta(theta, beta, X, Y, Z, b)
   }, X = X, Y = Y, Z = Z, b = b.hat, SIMPLIFY = F)
-  
+    
   Ht <- mapply(function(X, Y, Z, b){
     Htheta(theta, beta, X, Y, Z, b, 1e-4)
   }, X = X, Y = Y, Z = Z, b = b.hat, SIMPLIFY = F)
-  
+
   # Score and Hessian for (gamma, eta)
   Sge <- mapply(function(b, Delta, Fi, K, KK, Fu, l0u, S){
     Sgammaeta(c(gamma, eta), b, Delta, Fi, K, KK, Fu, l0u, S, w, v)

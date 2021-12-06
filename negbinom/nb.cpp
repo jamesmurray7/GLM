@@ -30,6 +30,25 @@ double joint_density(vec& b, mat& X, vec& Y, mat& Z, vec& beta, double theta, ma
 	return -1.0 * (nb + RE + surv);
 }
 
+// [[Rcpp::export]]
+double joint2_density(vec& b, mat& X, vec& Y, mat& Z, vec& beta, double theta, mat& D,
+                     int Delta, rowvec& K, rowvec Fi, double l0i, 
+                     mat& KK, mat& Fu, rowvec& haz, double gamma, vec& eta){
+	vec this_eta = X * beta + Z * b;
+	vec mu = exp(this_eta);
+	mu.replace(datum::inf, 1e100); // failsafe
+	double temp = 0.0;
+	if(Delta == 1) temp = log(l0i);
+	// The log likelihood parts
+	vec nb = vec(Y.size());
+	for(int i = 0; i < Y.size(); i++){
+		nb[i] = Y[i] * log(mu[i]) - (theta + Y[i]) * log(mu[i] + theta) + lgamma(theta + Y[i]) - lgamma(theta) - lgamma(Y[i] + 1.0) + theta * log(theta);
+	}
+	double RE = -b.size()/2.0 * log(2.0 * M_PI) - 0.5 * log(det(D)) - 0.5 * as_scalar(b.t() * D.i() * b);
+	double surv = temp + as_scalar(Delta * (K * eta + Fi * (gamma * b)) - haz * exp(KK * eta + Fu * (gamma * b)));
+	return -1.0 * (sum(nb) + RE + surv);
+}
+
 // First derivative of negative log likelihood of joint density w.r.t b
 // [[Rcpp::export]]
 vec joint_density_ddb(vec& b, mat& X, vec& Y, mat& Z, vec& beta, double theta, mat& D,
@@ -93,7 +112,7 @@ double Stheta(double theta, vec& beta, mat& X, vec& Y, mat& Z, vec& b){
 	}
 	vec p1 = digtY - R::digamma(theta) + log(theta) + 1.0;
 	vec p2 = (theta + Y)/(exp(eta) + theta) + log(exp(eta) + theta);
-	return sum(p1-p2);
+	return sum(p1-p2)	;
 }
 
 // Function for Hessian of \theta
@@ -179,9 +198,6 @@ mat lambdaUpdate(List survtimes, vec& ft,
 	}
 	return store;
 }
-
-
-
 
 
 
