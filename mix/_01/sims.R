@@ -17,7 +17,18 @@ fit <- EM(dd$data, ph, dd$surv.data, verbose = T, gh =3)
 rm(list=ls())
 source('EM.R')
 # Simulate some different datasets
-data1 <- replicate(100, simData_joint(), simplify = F)
+data1 <- replicate(50, simData_joint(), simplify = F)
+
+pb <- utils::txtProgressBar(max = 50, style = 3)
+fit <- list()
+for(i in 1:50){
+  ph <- coxph(Surv(survtime, status) ~ cont + bin, data1[[i]]$surv.data)
+  fit[[i]] <- tryCatch(suppressMessages(EM(data1[[i]]$data, ph, data1[[i]]$surv.data, gh = 3, verbose = F)),
+                       error = function(e) NULL)
+  utils::setTxtProgressBar(pb, i)
+}
+save(fit, file = "~/Downloads/mix.RData")
+
 data2 <- replicate(100, simData_joint(ntms = 15), simplify = F)
 data3 <- replicate(100, simData_joint(ntms = 15, theta = c(-6, 0.25)), simplify = F)
 
