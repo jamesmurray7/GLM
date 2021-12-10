@@ -17,18 +17,7 @@ fit <- EM(dd$data, ph, dd$surv.data, verbose = T, gh =3)
 rm(list=ls())
 source('EM.R')
 # Simulate some different datasets
-data1 <- replicate(50, simData_joint(), simplify = F)
-
-pb <- utils::txtProgressBar(max = 50, style = 3)
-fit <- list()
-for(i in 1:50){
-  ph <- coxph(Surv(survtime, status) ~ cont + bin, data1[[i]]$surv.data)
-  fit[[i]] <- tryCatch(suppressMessages(EM(data1[[i]]$data, ph, data1[[i]]$surv.data, gh = 3, verbose = F)),
-                       error = function(e) NULL)
-  utils::setTxtProgressBar(pb, i)
-}
-save(fit, file = "~/Downloads/mix.RData")
-
+data1 <- replicate(100, simData_joint(), simplify = F)
 data2 <- replicate(100, simData_joint(ntms = 15), simplify = F)
 data3 <- replicate(100, simData_joint(ntms = 15, theta = c(-6, 0.25)), simplify = F)
 
@@ -41,11 +30,11 @@ for(i in 1:100){
   # ph4 <- coxph(Surv(survtime, status) ~ cont + bin, data4[[i]]$surv.data)
   # ph5 <- coxph(Surv(survtime, status) ~ cont + bin, data5[[i]]$surv.data)
   # ph6 <- coxph(Surv(survtime, status) ~ cont + bin, data6[[i]]$surv.data)
-  fits1[[i]] <- tryCatch(suppressMessages(EM(data1[[i]]$data, ph1, data1[[i]]$surv.data, verbose = F)),
+  fits1[[i]] <- tryCatch(suppressMessages(EM(data1[[i]]$data, ph1, data1[[i]]$surv.data, verbose = F, gh = 3)),
                          error = function(e) NULL)
-  fits2[[i]] <- tryCatch(suppressMessages(EM(data2[[i]]$data, ph2, data2[[i]]$surv.data, verbose = F)),
+  fits2[[i]] <- tryCatch(suppressMessages(EM(data2[[i]]$data, ph2, data2[[i]]$surv.data, verbose = F, gh = 3)),
                          error = function(e) NULL)
-  fits3[[i]] <- tryCatch(suppressMessages(EM(data3[[i]]$data, ph3, data3[[i]]$surv.data, verbose = F)),
+  fits3[[i]] <- tryCatch(suppressMessages(EM(data3[[i]]$data, ph3, data3[[i]]$surv.data, verbose = F, gh = 3)),
                          error = function(e) NULL)
   # fits4[[i]] <- tryCatch(suppressMessages(EM(data4[[i]]$data, ph4, data4[[i]]$surv.data, verbose = F)),
   #                        error = function(e) NULL)
