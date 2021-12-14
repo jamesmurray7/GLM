@@ -57,12 +57,16 @@ EMupdate <- function(b, Y, X, Z, V,
   }, X = X, Y = Y, Z = Z, b = b.hat, V = V, SIMPLIFY = F)
   
   # var.e (Gaussian submodel)
-  var.e.update <- mapply(function(b, Y, X, Z){
-    out <- c()
-    out[1] <- crossprod(Y[,1] - X %*% beta[1:4] - Z %*% b[1:2])
+  tauL <- mapply(function(S, Z){
+    sqrt(diag(tcrossprod(Z %*% S[1:2, 1:2], Z)))
+  }, S = Sigmai, Z = Z, SIMPLIFY = F)
+  
+  var.e.update <- mapply(function(b, Y, X, Z, tau){
+    out <- numeric(2)
+    for(l in 1:length(w)) out[1] <- out[1] + w[l] * crossprod(Y[,1] - X %*% beta[1:4] - Z %*% b[1:2] - tau * v[l])
     out[2] <- length(Y[,1])
     out
-  }, b = b.hat, Y = Y, X = X, Z = Z)
+  }, b = b.hat, Y = Y, X = X, Z = Z, tau = tauL)
   
   Sge <- mapply(function(b, S, K, KK, Fu, Fi, l0u, Delta){
     Sgammaeta(c(gamma, eta), b, S, K, KK, Fu, Fi[1:2], l0u, Delta, w, v, 1e-4)
