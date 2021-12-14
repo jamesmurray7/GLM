@@ -1,11 +1,11 @@
 setwd("~/Documents/GLMM/mix/_01")
-load('~/Downloads/pbc-jmb.RData')
-load('~/Documents/GLMM/mix/_01/myfit.RData')
+load('./pbc-jmb2.RData')
+load('myfit2.RData')
 load('~/Documents/GLMM/mix/_01/pbc.RData')
 source('EM.R')
 
-jmb.fit$running_time # > 1 hour
-my.fit3$totaltime # < 3 minutes
+jmb.fit$running_time[3]/60 # > 1 hour
+my.fit3$totaltime # < 20s minutes
 
 
 # Extraction/compilation functions ----------------------------------------
@@ -96,11 +96,11 @@ cis %>%
   theme_light() + 
   labs(x = '', y = '')
 
-# ggsave('~/Downloads/jm-vs-me.png')
+# ggsave('~/Downloads/jm-vs-me2.png')
 
 # Tabulation
-is_in <- function(x) paste0('\textcolour{darkgreen}{', as.character(x), '}')
-is_not_in <- function(x) paste0('\textcolour{red}{', as.character(x), '}')
+is_in <- function(x) paste0('textcolour{darkgreen}{', as.character(x), '}')
+is_not_in <- function(x) paste0('textcolour{red}{', as.character(x), '}')
 
 table <- cis %>% 
   filter(!grepl('^\\[', name)) %>% 
