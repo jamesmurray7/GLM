@@ -61,6 +61,7 @@ my.fit3 <- EM(pbcdata$pbc, ph, pbcdata$survdata, gh = 3)
 save(my.fit3, file = 'myfit2.RData')
 
 # JMBayes
+library(glmmTMB)
 fitglmmtmb <- glmmTMB(Y.3 ~ time + cont + bin + (1 + time|id), data =pbcdata$pbc, family = poisson())
 
 m1 <- lme(fixed = Y.1 ~ time + cont + bin, random = ~ time | id, data = pbcdata$pbc)
@@ -72,12 +73,22 @@ m3 <- mixed_model(Y.3 ~ time + cont + bin, random = ~ time | id, data = pbcdata$
                   ))
 M <- list(m1, m2, m3)
 
-jmb.fit <- jm(ph, M, time_var = 'time', n_chains = 1L, n_iter = 11000L, n_burnin = 1000L)
+jmb.fit <- jm(ph, M, time_var = 'time', 
+              n_iter = 12000L, n_burnin = 2000L, n_thin = 5L)
 
-# 
-# 
-# 
-# 
+# Comparing different GLMMs for Y.3
+library(bbmle)
+fit1 <- glmmTMB(Y.3 ~ time + cont + bin + (1 + time|id), data =pbcdata$pbc, family = poisson())
+fit2a <- glmmTMB(Y.3 ~ time + cont + bin + (1 + time|id), 
+                 dispformula = ~ 1 + time, data =pbcdata$pbc, family = glmmTMB::nbinom1())
+fit2b <- glmmTMB(Y.3 ~ time + cont + bin + (1 + time|id), 
+                 dispformula = ~ 1 + time, data =pbcdata$pbc, family = glmmTMB::nbinom2())
+fit3 <- glmmTMB(Y.3 ~ time + cont + bin + (1 + time|id), data =pbcdata$pbc, family = glmmTMB::compois())
+
+AICtab(fit1, fit2a, fit2b)
+
+
+AIC(fit2b)
 # fm1 <- lme(fixed = log(serBilir) ~ year * sex,
 #            random = ~ year | id, data = pbc2)
 # 
