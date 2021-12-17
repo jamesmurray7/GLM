@@ -89,22 +89,12 @@ AICtab(fit1, fit2a, fit2b)
 
 
 AIC(fit2b)
-# fm1 <- lme(fixed = log(serBilir) ~ year * sex,
-#            random = ~ year | id, data = pbc2)
+
+# run
+
+# MCMC summary:
+#   chains: 1 
+# iterations per chain: 11000 
+# burn-in per chain: 1000 
+# thinning: 1 
 # 
-# fm2 <- mixed_model(hepatomegaly ~ sex + age + year, data = pbc2,
-#                    random = ~ year | id, family = binomial())
-# 
-# fm3 <- mixed_model(ascites ~ year + age, data = pbc2,
-#                    random = ~ year | id, family = binomial())
-# 
-# # [2] Save all the fitted mixed-effects models in a list.
-# Mixed <- list(fm1, fm2, fm3)
-# 
-# # [3] Fit a Cox model, specifying the baseline covariates to be included in the
-# # joint model.
-# fCox1 <- coxph(Surv(years, status2) ~ drug + age, data = pbc2.id)
-# 
-# # [4] The joint model is fitted using a call to jm() i.e.,
-# joint_model_fit_2 <- jm(fCox1, Mixed, time_var = "year",
-#                         n_chains = 1L, n_iter = 11000L, n_burnin = 1000L)
