@@ -54,7 +54,7 @@ simData <- function(n = 250, ntms = 10, beta = true.beta,
 }
 
 simData_joint <- function(n = 250, ntms = 10, beta = true.beta, var.e = 0.25,
-                          D = true.D, Disptheta = NULL,
+                          D = true.D, thetaDisp = NULL,
                           gamma = true.gamma, surv.eta = true.eta, theta = c(-4, 0.2),
                           cens.rate = exp(-3.5)){
   nK <- nrow(beta)
@@ -81,12 +81,12 @@ simData_joint <- function(n = 250, ntms = 10, beta = true.beta, var.e = 0.25,
   eta2 <- X %*% beta[2, ] + rowSums(Z * b[df$id, 3:4])
   eta3 <- X %*% beta[3, ] + rowSums(Z * b[df$id, 5:6])
   
-  df$Y.1 <- eta1 + rnorm(n * ntms, sd = sqrt(var.e))
+  df$Y.1 <- c(eta1 + rnorm(n * ntms, sd = sqrt(var.e)))
   df$Y.2 <- rbinom(n * ntms, 1, plogis(eta2))
-  if(is.null(Disptheta)){
+  if(is.null(thetaDisp)){
     df$Y.3 <- rpois(n * ntms, lambda = exp(eta3))
   }else{
-    df$Y.3 <- MASS::rnegbin(n * ntms, mu = exp(eta3), theta = rep(Disptheta, n * ntms))
+    df$Y.3 <- rnbinom(n * ntms, size = thetaDisp, mu = exp(eta3))
   }
   
   #' Survival ----

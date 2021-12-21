@@ -36,7 +36,11 @@ Longit.inits <- function(data, nb = F){
   names(var.e) <- 'var.e'
   
   # Extract theta if nb
-  if(nb) theta <- sigma(fits[[3]]) else theta <- NULL
+  if(nb){
+    theta <- sigma(fits[[3]]); names(theta) <- 'NB_theta'
+  }else{
+    theta <- NULL
+  }
   
   # Extract D
   Ds <- lapply(fits, glmmTMB::VarCorr)

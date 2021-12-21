@@ -1,17 +1,24 @@
 #' #############
 #' Tests of EM fits.
-#  args(simData_joint) = 
-#  beta = c(1, 0.1, 0.33, -0.5), theta = 1.5
-#  D = matrix(c(0.5, 0, 0, 0.1), 2, 2), gamma = 0.5, surv.eta = c(0.05, -0.3)
+#'  args(simData_joint) = 
+#'  beta =      [,1] [,2] [,3]  [,4]
+#'         [1,]    0 1.00 0.50 -0.25   // Gauss
+#'         [2,]    1 0.10 0.33 -0.50   // bin
+#'         [3,]    0 0.05 0.01  0.30   // count
+#'  diag(D) = 0.25 0.06 0.60 0.10 0.25 0.05
+#'  gamma = 0.5, -0.25, 0.40,
+#'  eta = 0.05, -0.3,
+#'  var.e = 0.25, 
 #' #########
 
 rm(list=ls())
 source('EM.R')
 
 # One fit...
-dd <- simData_joint()
+dd <- simData_joint(thetaDisp = 1.5)
 ph <- coxph(Surv(survtime, status) ~ cont + bin, dd$surv.data)
-fit <- EM(dd$data, ph, dd$surv.data, verbose = T, gh =3)
+fitP <- EM(dd$data, ph, dd$surv.data, verbose = T, gh =3, nb = F)
+fitNB <- EM(dd$data, ph, dd$surv.data, verbose = T, gh =3, nb = T)
 
 # Many fits...
 rm(list=ls())

@@ -13,10 +13,10 @@ sourceCpp('mix.cpp')
 vech <- function(x) x[lower.tri(x, diag = T)]
 
 EMupdate <- function(b, Y, X, Z, V,
-                     D, beta, var.e, gamma, eta,
+                     D, beta, var.e, gamma, eta, theta, nb, 
                      Delta, l0i, l0u, Fi, Fu, K, KK, survdata, sv, w, v){
   n <- length(b)
-  
+  if(!nb) theta <- 0.0;
   #' ### ------
   #' E step
   #' ### ------
@@ -24,7 +24,7 @@ EMupdate <- function(b, Y, X, Z, V,
   b.hat <- mapply(function(b, X, Y, Z, V, Delta, K, Fi, l0i, KK, Fu, haz){
     ucminf::ucminf(b, joint_density, joint_density_ddb,
                    X = X, Z = Z, beta = beta, V = V, D = D,
-                   Y_1 = Y[, 1], Y_2 = Y[, 2], Y_3 = Y[, 3],
+                   Y_1 = Y[, 1], Y_2 = Y[, 2], Y_3 = Y[, 3], nb, theta,
                    Delta = Delta, K = K, Fi = Fi, l0i = l0i, KK = KK, Fu = Fu,
                    haz = haz, gamma = rep(gamma, each = 2), eta = eta)$par
   }, b = b, X = X, Y = Y, Z = Z, V = V, Delta = Delta, K = K, Fi = Fi, l0i = l0i,
@@ -34,7 +34,7 @@ EMupdate <- function(b, Y, X, Z, V,
   
   Sigmai <- mapply(function(b, X, Z, V, Y, Delta, K, Fi, l0i, KK, Fu, l0u){
     solve(joint_density_sdb(b = b, X = X, Z = Z, beta = beta, V = V, D = D,
-                            Y_1 = Y[,1], Y_2 = Y[,2], Y_3 = Y[,3],
+                            Y_1 = Y[,1], Y_2 = Y[,2], Y_3 = Y[,3], nb, theta,
                             Delta = Delta, K = K, Fi = Fi, l0i = l0i, KK = KK, Fu = Fu, 
                             haz = l0u, gamma = rep(gamma, each = 2), eta = eta, eps = 1e-3))
   }, b = b.hat, X = X, Z = Z, V = V, Y = Y, Delta = Delta, K = K, Fi = Fi,
@@ -49,11 +49,11 @@ EMupdate <- function(b, Y, X, Z, V,
   
   # beta
   Sb <- mapply(function(X, Y, Z, b, V){
-    Sbeta(beta, X, Y[,1], Y[,2], Y[,3], Z, b, V)
+    Sbeta(beta, X, Y[,1], Y[,2], Y[,3], Z, b, V, nb, theta)
   }, X = X, Y = Y, Z = Z, b = b.hat, V = V, SIMPLIFY = F)
   
   Hb <- mapply(function(X, Y, Z, b, V){
-    Hbeta(beta, X, Y[,1], Y[,2], Y[,3], Z, b, V, 1e-4)
+    Hbeta(beta, X, Y[,1], Y[,2], Y[,3], Z, b, V, nb, theta, 1e-4)
   }, X = X, Y = Y, Z = Z, b = b.hat, V = V, SIMPLIFY = F)
   
   # var.e (Gaussian submodel)
@@ -68,6 +68,17 @@ EMupdate <- function(b, Y, X, Z, V,
     out
   }, b = b.hat, Y = Y, X = X, Z = Z, tau = tauL)
   
+  # theta
+  if(nb){
+    St <- mapply(function(b, X, Y, Z, S){
+      Stheta(theta, beta[9:12], X, Y[, 3], Z, b[[3]], S[[3]], w, v, 1e-4)
+    }, b = bsplit, X = X, Y = Y, Z = Z, S = SigmaiSplit, SIMPLIFY = F)
+    Ht <- mapply(function(b, X, Y, Z, S){
+      Htheta(theta, beta[9:12], X, Y[, 3], Z, b[[3]], S[[3]], w, v, 1e-4)
+    }, b = bsplit, X = X, Y = Y, Z = Z, S = SigmaiSplit, SIMPLIFY = F)
+  }
+  
+  # gamma, eta
   Sge <- mapply(function(b, S, K, KK, Fu, Fi, l0u, Delta){
     Sgammaeta(c(gamma, eta), b, S, K, KK, Fu, Fi[1:2], l0u, Delta, w, v, 1e-4)
   }, b = bmat, S = SigmaiSplit, K = K, KK = KK, Fu = Fu, Fi = Fi, l0u = l0u, Delta = Delta)
@@ -87,6 +98,8 @@ EMupdate <- function(b, Y, X, Z, V,
   # var.e
   var.e.update <- rowSums(var.e.update)
   var.e.new <- var.e.update[1]/var.e.update[2]
+  # theta
+  if(nb) theta.new <- theta - sum(do.call(c, St))/sum(do.call(c, Ht)) else theta.new <- NULL
   # (gamma, eta)
   gammaeta.new <- c(gamma, eta) - solve(Reduce('+', Hge), rowSums(Sge))
   # baseline hazard
@@ -103,13 +116,13 @@ EMupdate <- function(b, Y, X, Z, V,
   l0i.new <- as.list(l0i.new)
   
   return(list(
-    D.new = D.new, beta.new = beta.new, var.e.new = var.e.new,
+    D.new = D.new, beta.new = beta.new, var.e.new = var.e.new, theta.new = theta.new, 
     gamma.new = gammaeta.new[1:3], eta.new = gammaeta.new[4:5], 
     b.hat = b.hat, l0 = l0.new, l0i.new = l0i.new, l0u.new = l0u.new
   ))
 }
 
-EM <- function(data, ph, survdata, gh = 9, tol = 0.01, verbose = F){
+EM <- function(data, ph, survdata, gh = 9, tol = 0.01, verbose = F, nb = F){
   start <- proc.time()[3]
   n <- nrow(survdata)
   # Get data matrices
@@ -124,12 +137,12 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, verbose = F){
   }
   
   # initial conditions
-  inits.long <- Longit.inits(data)
+  inits.long <- Longit.inits(data, nb)
   b <- Ranefs(inits.long)
   beta <- inits.long$beta.init
   var.e <- inits.long$var.e.init
   V <- lapply(m, function(x) diag(x = var.e, nr = x, nc = x))
-  # theta <- inits.long$theta.init
+  if(nb) theta <- inits.long$theta.init else theta <- NULL
   D <- inits.long$D.init
   inits.surv <- TimeVarCox(data, b)
   b <- lapply(1:n, function(i) b[i, ])
@@ -153,14 +166,18 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, verbose = F){
   # Quadrature //
   aa <- statmod::gauss.quad.prob(gh, 'normal')
   w <- aa$w; v <- aa$n
-  EMstart <- proc.time()[3]
+  
   vD <- vech(D);
   names(vD) <- paste0('D[', apply(which(lower.tri(D, T), arr.ind = T), 1, paste0, collapse = ','),']')
   params <- c(vD, beta, var.e, gamma, eta)
+  if(nb) params <- c(params, theta)
+  
+  EMstart <- proc.time()[3]
   diff <- 100; iter <- 0
   while(diff > tol){
-    update <- EMupdate(b, Y, X, Z, V, D, beta, var.e, gamma, eta, Delta, l0i, l0u, Fi, Fu, K, KK, survdata, sv, w, v)
+    update <- EMupdate(b, Y, X, Z, V, D, beta, var.e, gamma, eta, theta, nb, Delta, l0i, l0u, Fi, Fu, K, KK, survdata, sv, w, v)
     params.new <- c(vech(update$D.new), update$beta.new, update$var.e.new, update$gamma.new, update$eta.new)
+    if(nb) params.new <- c(params.new, update$theta.new)
     names(params.new) <- names(params)
     if(verbose) print(sapply(params.new, round, 4))
     diff <- max(
@@ -174,12 +191,14 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, verbose = F){
     var.e <- update$var.e.new; V <- lapply(m, function(x) diag(x = var.e, nr = x, nc = x))
     gamma <- update$gamma.new
     eta <- update$eta.new
+    theta <- update$theta.new
     l0 <- update$l0.new; l0u <- update$l0u.new; l0i <- update$l0i.new
     params <- params.new
     iter <- iter + 1
   }
   EMend <- proc.time()[3]
   coeffs <- list(D = D, beta = beta, var.e = var.e, gamma = gamma, eta = eta)
+  if(nb) coeffs$theta <- theta
   out <- list(coeffs = coeffs,
               RE = do.call(rbind, b),
            #   inits = inits.long,

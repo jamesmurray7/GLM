@@ -37,10 +37,10 @@ double poisson_ll(vec& Y, vec& eta){
 
 // Log-likelihood for Negative Binomial
 // [[Rcpp::export]]
-double negbin_ll(vec& Y, vec& eta){
+double negbin_ll(vec& Y, vec& eta, double theta){
 	vec out = vec(Y.size());
 	for(int i = 0; i < Y.size(); i++){
-		out[i] = R::dnbinom_mu(Y[i], 1, exp(eta[i]), 1);
+		out[i] = R::dnbinom_mu(Y[i], theta, exp(eta[i]), 1);
 	}
 	return sum(out);
 }
@@ -64,12 +64,21 @@ vec Score_eta_negbin(vec& Y, vec& eta, double theta){
 	return (theta * (Y - exp(eta))) / (exp(eta) + theta);
 }
 
+// [[Rcpp::export]]
+void test_print(bool test){
+	if(test == TRUE){
+		Rcout << "Negbin" << std::endl;
+	}else{
+		Rcout << "Poisson" << std::endl;
+	}
+}
+
 // 3. Scores for coefficients \beta ------------------------------------
 // All-in-one first attempt, largely taking advantage of same covariate structure for all Y
 // and just one vector for beta
 // [[Rcpp::export]]
 vec Sbeta(vec& beta, mat& X, vec& Y_1, vec& Y_2, vec& Y_3,
-          mat& Z, vec& b, mat& V){
+          mat& Z, vec& b, mat& V, bool nb, double theta){
 	// _g: Gaussian, _b: Binomial, _c: Count (poisson for now)
 	vec beta_g = beta.subvec(0, 3);
 	vec beta_b = beta.subvec(4, 7);
@@ -86,7 +95,12 @@ vec Sbeta(vec& beta, mat& X, vec& Y_1, vec& Y_2, vec& Y_3,
 	// Scores
 	vec Score_g = X.t() * Score_eta_gauss(Y_1, eta_g, V);
 	vec Score_b = X.t() * Score_eta_binom(Y_2, eta_b);
-	vec Score_c = X.t() * Score_eta_poiss(Y_3, eta_c);
+	vec Score_c = vec(beta_c.size());
+	if(nb == TRUE){
+		Score_c += X.t() * Score_eta_negbin(Y_3, eta_c, theta);
+	}else{
+		Score_c += X.t() * Score_eta_poiss(Y_3, eta_c);
+	}
 	
 	vec out = join_cols(Score_g, Score_b, Score_c);
 	return out;
@@ -95,15 +109,15 @@ vec Sbeta(vec& beta, mat& X, vec& Y_1, vec& Y_2, vec& Y_3,
 // Hessian of \beta, done via forward differencing...
 // [[Rcpp::export]]
 mat Hbeta(vec& beta, mat& X, vec& Y_1, vec& Y_2, vec& Y_3,
-          mat& Z, vec& b, mat& V, double eps){
+          mat& Z, vec& b, mat& V, bool nb, double theta, double eps){
 	int n = beta.size();
 	mat out = zeros<mat>(n, n);
-	vec f0 = Sbeta(beta, X, Y_1, Y_2, Y_3, Z, b, V);
+	vec f0 = Sbeta(beta, X, Y_1, Y_2, Y_3, Z, b, V, nb, theta);
 	for(int i = 0; i < n; i++){
 		vec bb = beta;
 		double xi = std::max(beta[i], 1.0);
 		bb[i] = beta[i] + (eps * xi);
-		vec fdiff = Sbeta(bb, X, Y_1, Y_2, Y_3, Z, b, V) - f0;
+		vec fdiff = Sbeta(bb, X, Y_1, Y_2, Y_3, Z, b, V, nb, theta) - f0;
 		out.col(i) = fdiff/(bb[i]-beta[i]);
 	}
 	return 0.5 * (out + out.t());
@@ -113,7 +127,7 @@ mat Hbeta(vec& beta, mat& X, vec& Y_1, vec& Y_2, vec& Y_3,
 // (Negative ll)
 // [[Rcpp::export]]
 double joint_density(vec& b, mat& X, mat& Z, vec& beta, mat& V, mat& D,           // Longit data matrices + (co)Variance
-					 vec& Y_1, vec& Y_2, vec& Y_3, 	                              // The three longitudinal responses.
+					 vec& Y_1, vec& Y_2, vec& Y_3, bool nb, double theta,         // The three longitudinal responses.
 					 int Delta, rowvec& K, rowvec& Fi, double l0i,                // Survival
 					 mat& KK, mat& Fu, rowvec& haz, vec& gamma, vec& eta){        // -"-
 	int q = b.size();
@@ -133,7 +147,12 @@ double joint_density(vec& b, mat& X, mat& Z, vec& beta, mat& V, mat& D,         
 	// Log densities of responses Y_1->Y_3
 	double ll_g = gaussian_ll(Y_1, eta_g, V);
 	double ll_b = binomial_ll(Y_2, eta_b);
-	double ll_c = poisson_ll(Y_3, eta_c);
+	double ll_c = 0.0;
+	if(nb == TRUE){
+		ll_c += negbin_ll(Y_3, eta_c, theta);
+	}else{
+	  ll_c += poisson_ll(Y_3, eta_c);
+	}
 	double ll = ll_g + ll_b + ll_c;
 	
 	double temp = 0.0;
@@ -147,9 +166,9 @@ double joint_density(vec& b, mat& X, mat& Z, vec& beta, mat& V, mat& D,         
 // First derivative w.r.t b
 // [[Rcpp::export]]
 vec joint_density_ddb(vec& b, mat& X, mat& Z, vec& beta, mat& V, mat& D,          // Longit data matrices + (co)Variance
-					  vec& Y_1, vec& Y_2, vec& Y_3, 	                          // The three longitudinal responses. --> Matrix and then .col(i) better?
+					  vec& Y_1, vec& Y_2, vec& Y_3, bool nb, double theta,     // The three longitudinal responses. --> Matrix and then .col(i) better?
 					  int Delta, rowvec& K, rowvec& Fi, double l0i,               // Survival
-				 	 mat& KK, mat& Fu, rowvec& haz, vec& gamma, vec& eta){
+				 	  mat& KK, mat& Fu, rowvec& haz, vec& gamma, vec& eta){
 	// Combine the three LL scores and then subtract d/db(f(RE)) and d/db)(f(survival))
 	// _g: Gaussian, _b: Binomial, _c: Count (poisson for now)
 	vec beta_g = beta.subvec(0, 3);
@@ -167,7 +186,12 @@ vec joint_density_ddb(vec& b, mat& X, mat& Z, vec& beta, mat& V, mat& D,        
 	// Scores
 	vec Score_g = Z.t() * Score_eta_gauss(Y_1, eta_g, V);
 	vec Score_b = Z.t() * Score_eta_binom(Y_2, eta_b);
-	vec Score_c = Z.t() * Score_eta_poiss(Y_3, eta_c);
+	vec Score_c = vec(b_c.size());
+	if(nb == TRUE){
+		Score_c += Z.t() * Score_eta_negbin(Y_3, eta_c, theta);
+	}else{
+		Score_c += Z.t() * Score_eta_poiss(Y_3, eta_c);
+	}
 	
 	vec SbY = join_cols(Score_g, Score_b, Score_c); // score for b per Y
 	
@@ -180,19 +204,19 @@ vec joint_density_ddb(vec& b, mat& X, mat& Z, vec& beta, mat& V, mat& D,        
 // Second derivative w.r.t b, done via forward differencing.
 // [[Rcpp::export]]
 mat joint_density_sdb(vec& b, mat& X, mat& Z, vec& beta, mat& V, mat& D,          // Longit data matrices + (co)Variance
-					  vec& Y_1, vec& Y_2, vec& Y_3, 	                          // The three longitudinal responses. --> Matrix and then .col(i) better?
+					  vec& Y_1, vec& Y_2, vec& Y_3, bool nb, double theta,        // The three longitudinal responses. --> Matrix and then .col(i) better?
 					  int Delta, rowvec& K, rowvec& Fi, double l0i,               // Survival
 				 	  mat& KK, mat& Fu, rowvec& haz, vec& gamma, vec& eta,
  					  double eps){
 	int n = b.size();
 	mat out = zeros<mat>(n, n);
-	vec f0 = joint_density_ddb(b, X, Z, beta, V, D, Y_1, Y_2, Y_3,
+	vec f0 = joint_density_ddb(b, X, Z, beta, V, D, Y_1, Y_2, Y_3, nb, theta, 
 							   Delta, K, Fi, l0i, KK, Fu, haz, gamma, eta);
 	for(int i = 0; i < n; i++){
 		vec bb = b;
 		double xi = std::max(b[i], 1.0);
 		bb[i] = b[i] + (xi * eps);
-		vec fdiff = joint_density_ddb(bb, X, Z, beta, V, D, Y_1, Y_2, Y_3,
+		vec fdiff = joint_density_ddb(bb, X, Z, beta, V, D, Y_1, Y_2, Y_3, nb, theta,
 							   Delta, K, Fi, l0i, KK, Fu, haz, gamma, eta) - f0;
 		out.col(i) = fdiff/(bb[i]-b[i]);
 	}
@@ -284,4 +308,41 @@ mat Hgammaeta(vec& gammaeta, mat& bmat, List S,
  	return store;
  }
 
+// 7. Update for \theta, in case of Y|. ~ NB(mu, theta) parameterisation.
+// [[Rcpp::export]]
+double ll_theta_quad(double theta, vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S,
+				     vec& w, vec& v){
+	vec rhs = vec(Y.size());
+	vec tau = sqrt(diagvec(Z * S * Z.t()));
+	vec eta = X * beta + Z * b;
+	for(int l = 0; l < w.size(); l++){
+		vec this_eta = eta + v[l] * tau;
+		rhs += w[l] * log(exp(this_eta) + theta);
+	}
+	vec out = vec(Y.size());
+	for(int i = 0; i < Y.size(); i++){
+	   out[i] = lgamma(theta + Y[i]) - lgamma(theta) + theta * log(theta) - (theta + Y[i]) * rhs[i];
+	}
+	return sum(out);
+}
+
+// [[Rcpp::export]]
+double Stheta(double theta, vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S,
+               vec& w, vec& v, double eps){
+	double theta1 = theta + eps;
+	double theta2 = theta - eps;
+	double l1 = ll_theta_quad(theta1, beta, X, Y, Z, b, S, w, v);
+	double l2 = ll_theta_quad(theta2, beta, X, Y, Z, b, S, w, v);
+	return (l1-l2)/(theta1-theta2);
+}
+
+// [[Rcpp::export]]
+double Htheta(double theta, vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S,
+               vec& w, vec& v, double eps){
+	double f0 = Stheta(theta, beta, X, Y, Z, b, S, w, v, eps);
+	double xi = eps * (abs(theta) + eps);
+	double tt = theta + xi;
+	double fdiff = Stheta(tt, beta, X, Y, Z, b, S, w, v, eps) - f0;
+	return fdiff/(tt - theta);
+}
 
