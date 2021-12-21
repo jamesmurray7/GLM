@@ -43,7 +43,7 @@ changes %>% # and here
 
 # Make our set to export
 pbc <- pbc %>% 
-  select(id, survtime, status, cont, bin, time, Y.1 = albumin, Y.2 = hepatomegaly, Y.3 = platelets) %>% 
+  select(id, survtime, status, cont, bin, time, Y.1 = albumin, Y.2 = ascites, Y.3 = platelets) %>% 
   mutate_at('Y.2', ~ as.numeric(.x) - 1) %>% 
   mutate_at('id', ~ as.numeric(.x)) %>% 
   filter(complete.cases(.))
@@ -51,7 +51,7 @@ pbc <- pbc %>%
 survdata <- distinct(pbc, id, survtime, status, cont, bin)
 
 pbcdata <- list(pbc = as.data.frame(pbc), survdata = as.data.frame(survdata))
-save(pbcdata, file = 'pbc-hepa.RData')
+save(pbcdata, file = 'pbc-ascites.RData')
 
 
 # Fits
@@ -60,7 +60,7 @@ ph <- coxph(Surv(survtime, status) ~ cont + bin, pbcdata$survdata)
 my.fitP <- EM(pbcdata$pbc, ph, pbcdata$survdata, gh = 3, verbose = T, nb = F)
 my.fitN <- EM(pbcdata$pbc, ph, pbcdata$survdata, gh = 3, verbose = T, nb = T)
 myfits <- list(`Po` = my.fitP, `NB` = my.fitN)
-save(myfits, file = 'myfit-hepa.RData')
+save(myfits, file = 'myfit-ascites.RData')
 
 # JMBayes
 library(glmmTMB)
@@ -91,5 +91,5 @@ M <- list(m1, m2, m3)
 jmb.fitN <- jm(ph, M, time_var = 'time', 
                n_iter = 12000L, n_burnin = 2000L, n_thin = 1L, cores = 1L, n_chains = 1L)
 jmfits <- list(`Po` = jmb.fitP, `NB` = jmb.fitN)
-save(jmfits, file = 'jmfit-hepa.RData')
+save(jmfits, file = 'jmfit-ascites.RData')
 
