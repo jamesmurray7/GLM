@@ -86,18 +86,16 @@ df %>%
 
 ggsave('~/Downloads/nb-ests.png')
 
-# with neg
-targets2 <- data.frame(
-  name = unique(df$name),
-  target = c(0.5, 0, 0.1, 1, 0.1, 0.33, -0.50, 1.5, -1, 0.05, -0.3)
-)
+# Thetas only
+glimpse(df)
 df %>% 
-  filter(a %in% c('3')) %>% 
-  left_join(., targets2, 'name') %>% 
-  ggplot(aes(x = value, colour = description)) +
-  geom_vline(aes(xintercept = target)) +
-  geom_density(lwd = 0.8, alpha = .75) + 
-  facet_wrap(~name, scales = 'free') + 
+  filter(name == 'theta') %>% 
+  separate(description, c('dummy', 'target'), sep = '\\=') %>% 
+  mutate(dummy = paste0(dummy, a)) %>% 
+  ggplot(aes(x = value)) + 
+  geom_vline(aes(xintercept = as.numeric(target)), lty = 3, colour = 'steelblue') + 
+  geom_density() + 
+  facet_wrap(~dummy, scales = 'free') + 
   theme_bw()
 
 
