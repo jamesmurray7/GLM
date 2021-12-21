@@ -28,8 +28,8 @@ extract.inits <- function(x){ # x a 'sub-list'
     }))
     out <- list(ests=ests, inits=inits)
     message('\nfits[[',i,']] had ', nrow(ests), ' successful fits out of 100.')
-    message('\nSaving in ', save.location, 'nbests2-', i, '.RData')
-    save(out, file = paste0(save.location, 'nbests2-', i, '.RData'))
+    message('\nSaving in ', save.location, 'nbests3-', i, '.RData')
+    save(out, file = paste0(save.location, 'nbests3-', i, '.RData'))
   }
 }
 
@@ -48,7 +48,7 @@ library(tidyverse)
 
 # Function to load one by one, rbind and store
 loader <- function(i){
-  load(paste0('~/Downloads/nbests2-',i,'.RData'))
+  load(paste0('~/Downloads/nbests3-',i,'.RData'))
   df <- as_tibble(out$ests) %>% pivot_longer(everything()) %>% mutate(a = as.character(i))
   message(i)
   df
@@ -91,35 +91,43 @@ glimpse(df)
 df %>% 
   filter(name == 'theta') %>% 
   separate(description, c('dummy', 'target'), sep = '\\=') %>% 
-  mutate(dummy = paste0(dummy, a)) %>% 
+  mutate(dummy = paste0('var', dummy, '[', a, ']')) %>% 
   ggplot(aes(x = value)) + 
   geom_vline(aes(xintercept = as.numeric(target)), lty = 3, colour = 'steelblue') + 
   geom_density() + 
-  facet_wrap(~dummy, scales = 'free') + 
-  theme_bw()
-
+  facet_wrap(~dummy, scales = 'free', labeller = label_parsed) + 
+  theme_bw() + 
+  theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 15)
+  )
+ggsave('~/Downloads/nb-ests-theta.png')
 
 # Comparing starting values to  final -------------------------------------
 
 loader2 <- function(i){
-  load(paste0('~/Downloads/nbests-',i,'.RData'))
+  load(paste0('~/Downloads/nbests3-',i,'.RData'))
   df <- as_tibble(out$inits) %>% pivot_longer(everything()) %>% mutate(a = as.character(i), b = 'Initial estimate')
   message(i)
   df
 }
 
 df.inits <- list()
-for(i in 1:3) df.inits[[i]] <- loader2(i)
+for(i in 1:6) df.inits[[i]] <- loader2(i)
 df.inits <- do.call(rbind, df.inits) %>% 
   as_tibble %>% 
   mutate(
     description = case_when(
-      a == '1' ~ 'ntms = 10',
-      a == '2' ~ 'ntms = 15',
-      a == '3' ~ 'ntms = 10, gamma = -1',
+      a == '1' ~ 'theta = 0.25',
+      a == '2' ~ 'theta = 0.50',
+      a == '3' ~ 'theta = 0.75',
+      a == '4' ~ 'theta = 1.00',
+      a == '5' ~ 'theta = 1.50',
+      a == '6' ~ 'theta = 2.00',
       T ~ 'AA'
     )
   ) 
+
 
 df$b <- 'aEM'
 df.all <- rbind(df, df.inits)
@@ -133,20 +141,58 @@ df.all %>%
   facet_wrap(~name, scales = 'free') + 
   labs(lty = NULL, colour = 'Profile', x = 'Estimate') +
   theme_bw()
-ggsave('~/Downloads/nb-vs-inits.png')
+ggsave('~/Downloads/nb3-vs-inits.png')
+
+# Thetas
+df.all %>% 
+  filter(grepl('theta', name) | name == 'V8') %>% 
+  separate(description, c('dummy', 'target'), '\\s\\=\\s') %>% 
+  mutate(
+    target = as.numeric(target),
+    dummy = paste0('var', dummy, '[', a, ']'),
+    name = ifelse(name == 'V8', 'theta', name)
+  ) %>% 
+  ggplot(aes(x = value, colour = as.factor(b))) + 
+  geom_vline(aes(xintercept = target), colour = 'steelblue', lty = 5) + 
+  geom_density() + 
+  facet_wrap(~dummy, scales = 'free', labeller = label_parsed) + 
+  theme_bw() + 
+  theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 15)
+  ) + 
+  labs(colour = NULL)
+ggsave('~/Downloads/nb3-vs-inits-theta.png')
 
 
 # Timings -----------------------------------------------------------------
+# reload the fits
+load('~/Downloads/nbfits2.RData')
 
-aa <- function(x) list(EM = x$EMtime, total = x$totaltime)
-ntms10 <- lapply(fits[[1]], aa)
-ntms15 <- lapply(fits[[2]], aa)
+EM <- as.data.frame(sapply(1:6, function(i) do.call(c, lapply(fits[[i]], '[[', 4))))
+tot <- as.data.frame(sapply(1:6, function(i) do.call(c, lapply(fits[[i]], '[[', 6))))
+iter <- as.data.frame(sapply(1:6, function(i) do.call(c, lapply(fits[[i]], '[[', 5))))
+all(EM < tot)
 
-EM <- data.frame(ntms10 = do.call(c, lapply(ntms10, '[[', 1)),
-                 ntms15 = do.call(c, lapply(ntms15, '[[', 1)))
-tot <- data.frame(ntms10 = do.call(c, lapply(ntms10, '[[', 2)),
-                  ntms15 = do.call(c, lapply(ntms15, '[[', 2)))
-par(mfrow = c(1,2))
-boxplot(EM)
-boxplot(tot)
-dev.off()
+EM$a <- 'EM'; tot$a <- 'Total'; iter$a <- 'Iterations'
+
+ets <- rbind(EM, tot, iter)
+names(ets)[1:6] <- paste0('vartheta[', 1:6, ']')
+
+ets %>% 
+  as_tibble %>% 
+  pivot_longer(`vartheta[1]`:`vartheta[6]`) %>% 
+  arrange(name) %>% 
+  ggplot(aes(x = fct_inorder(name), y = value)) + 
+  geom_boxplot(outlier.alpha = .250) + 
+  facet_wrap(~fct_inorder(a), scales = 'free') + 
+  scale_x_discrete(labels = ggplot2:::parse_safe) + 
+  scale_y_continuous(breaks = scales::pretty_breaks(10)) + 
+  theme_bw() + 
+  theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 12)
+  ) + 
+  labs(x = NULL, y = NULL)
+ggsave('~/Downloads/ETs.png')
+

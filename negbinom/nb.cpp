@@ -4,6 +4,15 @@
 using namespace Rcpp;
 using namespace arma;
 
+//[[Rcpp::export]]
+double negbin_ll(vec& Y, vec& mu, double theta){
+	vec out = vec(mu.size());
+	for(int i = 0; i < mu.size(); i++){
+		out[i] = R::dnbinom_mu(Y[i], theta, mu[i], 1);
+	}
+	return sum(out);
+}
+
 // dl(eta)/deta for negative binomial
 //[[Rcpp::export]]
 vec Score_eta(vec& b, mat& X, vec& Y, mat& Z, vec& beta, double theta){
@@ -12,24 +21,6 @@ vec Score_eta(vec& b, mat& X, vec& Y, mat& Z, vec& beta, double theta){
 }
 
 // Negative log-likelihood for joint density f(Y,T|b,...)
-// [[Rcpp::export]]
-double joint_density(vec& b, mat& X, vec& Y, mat& Z, vec& beta, double theta, mat& D,
-                     int Delta, rowvec& K, rowvec Fi, double l0i, 
-                     mat& KK, mat& Fu, rowvec& haz, double gamma, vec& eta){
-	vec this_eta = X * beta + Z * b;
-	vec mu = exp(this_eta);
-	mu.replace(datum::inf, 1e100); // failsafe
-	double temp = 0.0;
-	if(Delta == 1) temp = log(l0i);
-	// The log likelihood parts
-	double nb = as_scalar(
-		Y.t() * log(mu) - (theta + Y).t() * log(mu + theta) + sum(lgamma(theta + Y) - lgamma(theta) - lgamma(Y + 1.0)) +  theta * log(theta)
-	);
-	double RE = -b.size()/2.0 * log(2.0 * M_PI) - 0.5 * log(det(D)) - 0.5 * as_scalar(b.t() * D.i() * b);
-	double surv = temp + as_scalar(Delta * (K * eta + Fi * (gamma * b)) - haz * exp(KK * eta + Fu * (gamma * b)));
-	return -1.0 * (nb + RE + surv);
-}
-
 // [[Rcpp::export]]
 double joint2_density(vec& b, mat& X, vec& Y, mat& Z, vec& beta, double theta, mat& D,
                      int Delta, rowvec& K, rowvec Fi, double l0i, 
@@ -40,10 +31,7 @@ double joint2_density(vec& b, mat& X, vec& Y, mat& Z, vec& beta, double theta, m
 	double temp = 0.0;
 	if(Delta == 1) temp = log(l0i);
 	// The log likelihood parts
-	vec nb = vec(Y.size());
-	for(int i = 0; i < Y.size(); i++){
-		nb[i] = Y[i] * log(mu[i]) - (theta + Y[i]) * log(mu[i] + theta) + lgamma(theta + Y[i]) - lgamma(theta) - lgamma(Y[i] + 1.0) + theta * log(theta);
-	}
+	double nb = negbin_ll(Y, mu, theta);
 	double RE = -b.size()/2.0 * log(2.0 * M_PI) - 0.5 * log(det(D)) - 0.5 * as_scalar(b.t() * D.i() * b);
 	double surv = temp + as_scalar(Delta * (K * eta + Fi * (gamma * b)) - haz * exp(KK * eta + Fu * (gamma * b)));
 	return -1.0 * (sum(nb) + RE + surv);
@@ -112,17 +100,54 @@ double Stheta(double theta, vec& beta, mat& X, vec& Y, mat& Z, vec& b){
 	}
 	vec p1 = digtY - R::digamma(theta) + log(theta) + 1.0;
 	vec p2 = (theta + Y)/(exp(eta) + theta) + log(exp(eta) + theta);
-	return sum(p1-p2)	;
+	return sum(p1-p2);
+}
+
+// [[Rcpp::export]]
+double ll_theta_quad(double theta, vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S,
+				     vec& w, vec& v){
+	vec rhs = vec(Y.size());
+	vec tau = sqrt(diagvec(Z * S * Z.t()));
+	vec eta = X * beta + Z * b;
+	for(int l = 0; l < w.size(); l++){
+		vec this_eta = eta + v[l] * tau;
+		rhs += w[l] * log(exp(this_eta) + theta);
+	}
+	vec out = vec(Y.size());
+	for(int i = 0; i < Y.size(); i++){
+	   out[i] = lgamma(theta + Y[i]) - lgamma(theta) + theta * log(theta) - (theta + Y[i]) * rhs[i];
+	}
+	return sum(out);
+}
+
+// [[Rcpp::export]]
+double Stheta2(double theta, vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S,
+               vec& w, vec& v, double eps){
+	double theta1 = theta + eps;
+	double theta2 = theta - eps;
+	double l1 = ll_theta_quad(theta1, beta, X, Y, Z, b, S, w, v);
+	double l2 = ll_theta_quad(theta2, beta, X, Y, Z, b, S, w, v);
+	return (l1-l2)/(theta1-theta2);
 }
 
 // Function for Hessian of \theta
 // [[Rcpp::export]]
 double Htheta(double theta, vec& beta, mat& X, vec& Y, mat& Z, vec& b, double eps){
 	double f0 = Stheta(theta, beta, X, Y, Z, b);
-	double xi = std::max(theta, 1.0);
-	double tt = theta + (eps * xi);
+	double xi = eps * (abs(theta) + eps);
+	double tt = theta + xi;
 	double fdiff = Stheta(tt, beta, X, Y, Z, b) - f0;
 	return fdiff/(tt-theta);
+}
+
+// [[Rcpp::export]]
+double Htheta2(double theta, vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S,
+               vec& w, vec& v, double eps){
+	double f0 = Stheta2(theta, beta, X, Y, Z, b, S, w, v, eps);
+	double xi = eps * (abs(theta) + eps);
+	double tt = theta + xi;
+	double fdiff = Stheta2(tt, beta, X, Y, Z, b, S, w, v, eps) - f0;
+	return fdiff/(tt - theta);
 }
 
 //  Function for first derivative of logf(Y,T|...) w.r.t (gamma, eta).

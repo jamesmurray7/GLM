@@ -19,6 +19,8 @@ simData <- function(n = 250, ntms = 10, beta = c(1, 0.10, 0.33, -0.50),
   eta <- X %*% beta + rowSums(Z * b[df$id, ])
   
   df$Y <- MASS::rnegbin(n * ntms, mu = exp(eta), theta = rep(theta, n * ntms))
+  df$Y2 <- rnbinom(n * ntms, size = theta, mu = exp(eta))
+  df$eta <- eta
   df
 }
 
@@ -45,7 +47,8 @@ simData_joint <- function(n = 250, ntms = 10, beta = c(1, 0.10, 0.33, -0.50),
   #' Linear predictor & response generation ----
   b <- MASS::mvrnorm(n, mu = c(0, 0), Sigma = D)
   eta <- X %*% beta + rowSums(Z * b[df$id, ])
-  df$Y <- MASS::rnegbin(n * ntms, mu = exp(eta), theta = rep(thetaDisp, n * ntms))
+  # df$Y <- MASS::rnegbin(n * ntms, mu = exp(eta), theta = rep(thetaDisp, n * ntms))
+  df$Y <- rnbinom(n * ntms, size = thetaDisp, mu = exp(eta))
   
   #' Survival ----
   theta0 <- theta[1]; theta1 <- theta[2]

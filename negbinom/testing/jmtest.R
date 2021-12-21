@@ -111,8 +111,7 @@ Hge <- mapply(function(b, Delta, Fi, K, KK, Fu, l0u, S){
 # updates
 D.new <- Reduce('+', Drhs)/250
 beta.new <- beta - solve(Reduce('+', Hb), Reduce('+', Sb))
-theta.new <- theta-sum(do.call(c, St))/sum(do.call(c, Ht))
-theta2.new <- theta-sum(do.call(c, St2))/sum(do.call(c, Ht2))
+theta.new <- theta-sum(-do.call(c, St))/sum(do.call(c, Ht))
 gamma.eta.new <- c(gamma, eta) - solve(Reduce('+', Hge), rowSums(Sge))
 lambda <- lambdaUpdate(sv$surv.times, sv$ft, gamma, eta, K, Sigmai, b.hat, w, v)
 
@@ -126,4 +125,15 @@ l0i.new <- c()
 l0i.new[which(unlist(Delta) == 0)] <- 0 
 l0i.new[which(unlist(Delta) == 1)] <- l0.new[match(survdata[which(unlist(Delta)==1), 'survtime'], sv$ft)]
 l0i.new <- as.list(l0i.new)
+
+st <- function(theta, beta, X, Y, Z, b){
+  eta <- X %*% beta + Z %*% b
+  mu <- exp(eta)
+  mutheta <- mu + theta
+  ytheta <- Y + theta
+  p1 <- log(theta) + 1 - digamma(theta)
+  p2 <- digamma(ytheta)
+  p3 <- -log(mutheta) - ytheta/mutheta
+  (p1 + p2 + p3)
+}
 

@@ -53,14 +53,22 @@ EMupdate <- function(b, Y, X, Z,
   }, X = X, Y = Y, Z = Z, b = b.hat, SIMPLIFY = F)
   
   # Score and Hessian for \theta
-  St <- mapply(function(X, Y, Z, b){
-    Stheta(theta, beta, X, Y, Z, b)
-  }, X = X, Y = Y, Z = Z, b = b.hat, SIMPLIFY = F)
+  # St <- mapply(function(X, Y, Z, b){
+  #   Stheta(theta, beta, X, Y, Z, b)
+  # }, X = X, Y = Y, Z = Z, b = b.hat, SIMPLIFY = F)
+  
+  St <- mapply(function(X, Y, Z, b, S){
+    Stheta2(theta, beta, X, Y, Z, b, S, w, v, 1e-4)
+  }, X = X, Y = Y, Z = Z, b = b.hat, S = Sigmai, SIMPLIFY = F)
     
-  Ht <- mapply(function(X, Y, Z, b){
-    Htheta(theta, beta, X, Y, Z, b, 1e-4)
-  }, X = X, Y = Y, Z = Z, b = b.hat, SIMPLIFY = F)
+  # Ht <- mapply(function(X, Y, Z, b){
+  #   Htheta(theta, beta, X, Y, Z, b, 1e-4)
+  # }, X = X, Y = Y, Z = Z, b = b.hat, SIMPLIFY = F)
 
+  Ht <- mapply(function(X, Y, Z, b, S){
+    Htheta2(theta, beta, X, Y, Z, b, S, w, v, 1e-4)
+  }, X = X, Y = Y, Z = Z, b = b.hat, S = Sigmai, SIMPLIFY = F)
+  
   # Score and Hessian for (gamma, eta)
   Sge <- mapply(function(b, Delta, Fi, K, KK, Fu, l0u, S){
     Sgammaeta(c(gamma, eta), b, Delta, Fi, K, KK, Fu, l0u, S, w, v)
