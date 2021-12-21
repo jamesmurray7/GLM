@@ -51,14 +51,16 @@ pbc <- pbc %>%
 survdata <- distinct(pbc, id, survtime, status, cont, bin)
 
 pbcdata <- list(pbc = as.data.frame(pbc), survdata = as.data.frame(survdata))
-save(pbcdata, file = 'pbc2.RData')
+save(pbcdata, file = 'pbc-hepa.RData')
 
 
 # Fits
 source('EM.R')
 ph <- coxph(Surv(survtime, status) ~ cont + bin, pbcdata$survdata)
-my.fit3 <- EM(pbcdata$pbc, ph, pbcdata$survdata, gh = 3)
-save(my.fit3, file = 'myfit2.RData')
+my.fitP <- EM(pbcdata$pbc, ph, pbcdata$survdata, gh = 3, verbose = T, nb = F)
+my.fitN <- EM(pbcdata$pbc, ph, pbcdata$survdata, gh = 3, verbose = T, nb = T)
+myfits <- list(`Po` = my.fitP, `NB` = my.fitN)
+save(myfits, file = 'myfit-hepa.RData')
 
 # JMBayes
 library(glmmTMB)
@@ -73,28 +75,21 @@ m3 <- mixed_model(Y.3 ~ time + cont + bin, random = ~ time | id, data = pbcdata$
                   ))
 M <- list(m1, m2, m3)
 
-jmb.fit <- jm(ph, M, time_var = 'time', 
-              n_iter = 12000L, n_burnin = 2000L, n_thin = 5L)
+jmb.fitP <- jm(ph, M, time_var = 'time', 
+              n_iter = 12000L, n_burnin = 2000L, n_thin = 1L, cores = 1L, n_chains = 1L)
 
-# Comparing different GLMMs for Y.3
-library(bbmle)
-fit1 <- glmmTMB(Y.3 ~ time + cont + bin + (1 + time|id), data =pbcdata$pbc, family = poisson())
-fit2a <- glmmTMB(Y.3 ~ time + cont + bin + (1 + time|id), 
-                 dispformula = ~ 1 + time, data =pbcdata$pbc, family = glmmTMB::nbinom1())
-fit2b <- glmmTMB(Y.3 ~ time + cont + bin + (1 + time|id), 
-                 dispformula = ~ 1 + time, data =pbcdata$pbc, family = glmmTMB::nbinom2())
-fit3 <- glmmTMB(Y.3 ~ time + cont + bin + (1 + time|id), data =pbcdata$pbc, family = glmmTMB::compois())
+# Negative binomial parameterisation of Y.3
+fitglmmtmb <- glmmTMB(Y.3 ~ time + cont + bin + (1 + time|id), data =pbcdata$pbc, family = glmmTMB::nbinom2())
+m3 <- mixed_model(Y.3 ~ time + cont + bin, random = ~ time | id, data = pbcdata$pbc, 
+                  family = GLMMadaptive::negative.binomial(),
+                  initial_values = list(
+                    betas = c(fixef(fitglmmtmb)$cond),
+                    D = matrix(VarCorr(fitglmmtmb)$cond$id, 2, 2)
+                  ))
+M <- list(m1, m2, m3)
 
-AICtab(fit1, fit2a, fit2b)
+jmb.fitN <- jm(ph, M, time_var = 'time', 
+               n_iter = 12000L, n_burnin = 2000L, n_thin = 1L, cores = 1L, n_chains = 1L)
+jmfits <- list(`Po` = jmb.fitP, `NB` = jmb.fitN)
+save(jmfits, file = 'jmfit-hepa.RData')
 
-
-AIC(fit2b)
-
-# run
-
-# MCMC summary:
-#   chains: 1 
-# iterations per chain: 11000 
-# burn-in per chain: 1000 
-# thinning: 1 
-# 
