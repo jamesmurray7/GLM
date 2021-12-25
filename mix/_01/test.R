@@ -58,7 +58,7 @@ Delta <- as.list(sv$Di)
 b.hat <- mapply(function(b, X, Y, Z, V, Delta, K, Fi, l0i, KK, Fu, haz){
   ucminf::ucminf(b, joint_density, joint_density_ddb,
                  X = X, Z = Z, beta = beta, V = V, D = D,
-                 Y_1 = Y[, 1], Y_2 = Y[, 2], Y_3 = Y[, 3],
+                 Y_1 = Y[, 1], Y_2 = Y[, 2], Y_3 = Y[, 3], F, 0.0,
                  Delta = Delta, K = K, Fi = Fi, l0i = l0i, KK = KK, Fu = Fu,
                  haz = haz, gamma = rep(gamma, each = 2), eta = eta)$par
 }, b = b, X = X, Y = Y, Z = Z, V = V, Delta = Delta, K = K, Fi = Fi, l0i = l0i,
@@ -69,10 +69,10 @@ bsplit <- lapply(b.hat, function(y) lapply(split(seq(6), rep(seq(3), each = 2)),
 
 Sigmai <- mapply(function(b, X, Z, V, Y, Delta, K, Fi, l0i, KK, Fu, l0u){
   solve(joint_density_sdb(b = b, X = X, Z = Z, beta = beta, V = V, D = D,
-                          Y_1 = Y[,1], Y_2 = Y[,2], Y_3 = Y[,3],
+                          Y_1 = Y[,1], Y_2 = Y[,2], Y_3 = Y[,3], F, 0.0, 
                           Delta = Delta, K = K, Fi = Fi, l0i = l0i, KK = KK, Fu = Fu, 
                           haz = l0u, gamma = rep(gamma, each = 2), eta = eta, eps = 1e-3))
-}, b = b.hat3, X = X, Z = Z, V = V, Y = Y, Delta = Delta, K = K, Fi = Fi,
+}, b = b.hat, X = X, Z = Z, V = V, Y = Y, Delta = Delta, K = K, Fi = Fi,
    l0i= l0i, KK = KK, Fu = Fu, l0u = l0u, SIMPLIFY = F)
 # Split out into constituent block-diag pieces.
 SigmaiSplit <- lapply(Sigmai, function(y) lapply(split(seq(6), rep(seq(3), each = 2)), function(x) y[x,x]))
@@ -89,20 +89,30 @@ Drhs <- mapply(function(b, S){
 
 # beta
 Sb <- mapply(function(X, Y, Z, b, V){
-  Sbeta(beta, X, Y[,1], Y[,2], Y[,3], Z, b, V)
-}, X = X, Y = Y, Z = Z, b = b.hat3, V = V, SIMPLIFY = F)
+  Sbeta(beta, X, Y[,1], Y[,2], Y[,3], Z, b, V, F, 0)
+}, X = X, Y = Y, Z = Z, b = b.hat, V = V, SIMPLIFY = F)
 
 Hb <- mapply(function(X, Y, Z, b, V){
-  Hbeta(beta, X, Y[,1], Y[,2], Y[,3], Z, b, V, 1e-4)
-}, X = X, Y = Y, Z = Z, b = b.hat3, V = V, SIMPLIFY = F)
+  Hbeta(beta, X, Y[,1], Y[,2], Y[,3], Z, b, V, F, 0, 1e-4)
+}, X = X, Y = Y, Z = Z, b = b.hat, V = V, SIMPLIFY = F)
 
 # var.e (Gaussian submodel)
-var.e.update <- mapply(function(b, Y, X, Z){
-  out <- c()
-  out[1] <- crossprod(Y[,1] - X %*% beta[1:4] - Z %*% b[1:2])
+tau <- mapply(function(Z, S){
+  unname(sqrt(diag(tcrossprod(Z %*% S[[1]], Z))))
+}, Z = Z, S = SigmaiSplit, SIMPLIFY = F)
+
+var.e.update <- mapply(function(b, Y, X, Z, tau){
+  out <- numeric(2)
+  for(i in 1:9){
+    out[1] <- out[1] + (w[i] * crossprod(Y[,1] - X %*% beta[1:4] - Z %*% b[1:2] - tau * v[i]))
+  }
   out[2] <- length(Y[,1])
   out
-}, b = b.hat3, Y = Y, X = X, Z = Z)
+}, b = b.hat, Y = Y, X = X, Z = Z, tau = tau)
+
+var.e.update2 <- mapply(function(Y, X, Z, b, tau){
+  vare_update(Y[,1], X, Z, beta[1:4], b[[1]], tau, w, v)
+}, Y = Y, X = X, Z = Z, b = bsplit, tau = tau)
 
 # gamma and eta
 aa <- statmod::gauss.quad.prob(9, 'normal')
@@ -120,7 +130,7 @@ Hge <- mapply(function(b, S, K, KK, Fu, Fi, l0u, Delta){
 D.new <- Reduce('+', Drhs)/n
 beta.new <- beta - solve(Reduce('+', Hb), Reduce('+', Sb))
 # Residual variance for var.e
-var.e.update <- rowSums(var.e.update)
+var.e.update <- rowSums(var.e.update2)
 var.e.new <- var.e.update[1]/var.e.update[2]
 gamma.eta.new <- c(gamma, eta) - solve(Reduce('+', Hge), rowSums(Sge))
 lambda <- lambdaUpdate(sv$surv.times, sv$ft, gamma, eta, K, SigmaiSplit, bsplit, w, v)
