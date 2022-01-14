@@ -346,3 +346,15 @@ double Htheta(double theta, vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S,
 	return fdiff/(tt - theta);
 }
 
+// 8 Update for var.e
+// [[Rcpp::export]]
+vec vare_update(vec& Y, mat& X, mat& Z, vec& beta, vec& b, vec& tau, vec& w, vec& v){
+  vec out = vec(2);
+  int gh = w.size();
+  for(int l = 0; l < gh; l++){
+    vec resid = X * beta + Z * b + tau * v[l];
+    out[0] += w[l] * as_scalar((Y-resid).t() * (Y-resid));
+  }
+  out[1] = Y.size();
+  return out;
+}
