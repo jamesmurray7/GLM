@@ -1,29 +1,45 @@
 #' #######
 #' Simulates data under a multivariate negative binomial model which is then linked with a 
 #' survival sub-model by its random effects, which are assumed to be Gaussian.
+#' ----
+#' Bespoke functions to find pmf of and then simulate random deviates from a
+#' mean-parameterised specification of the Conway-Maxwell Poisson Distn.
 #' #######
+sourceCpp('test.cpp')
 
-n <- 250
-ntms <- 10
-df <- data.frame(
-  id = rep(1:n, each = ntms),
-  time = rep(0:(ntms-1), n),
-  cont = rep(rnorm(n), each = ntms),
-  bin = rep(rbinom(n, 1, 0.5), each = ntms)
-) 
+.rcomp <- function(lambda, nu, summax){
+  x <- vector('numeric', length(lambda))
+  U <- runif(length(lambda))
+  warn <- F
+  for(i in 1:length(lambda)){
+    if (lambda[i] == 0) {
+      x[i] <- 0
+    } else if (lambda[i] < 0 | nu[i] <= 0) {
+      x[i] <- NA
+      warn <- TRUE
+    } else {
+      y <- 0
+      dc <- cmp_pmf_scalar(0:(summax+1), lambda[i], nu[i], summax)
+      py <- dc[y + 1]
+      while (py <= U[i]) {
+        y <- y + 1
+        py <- py + dc[y + 1]; 
+      }
+      x[i] <- y
+    }
+  }
+  if (warn) {
+    warning("NAs produced")
+  }
+  return(x)
+}
 
-X <- model.matrix(~time+cont+bin,df)
-Z <- model.matrix(~time,df)
-
-delta <- c(0.05, -0.25)
-
-eta <- X %*% beta+rowSums(Z * b[df$id])
-nu <- exp(-Z %*% delta)
-
-df$Y <- mpcmp::rcomp(n = (n * ntms), mu = exp(eta), nu = nu)
-
-simData <- function(n = 250, ntms = 10, beta = c(1, 0.10, 0.33, -0.50),
-                    D = matrix(c(0.5, 0, 0, 0.1), 2, 2), theta = 1.5){
+simData <- function(n = 250, ntms = 10, summax = 100,
+                    beta = c(1, 0.10, 0.33, -0.50),           # Coeffs FE lin. pred
+                    delta = c(-0.6, -0.1),                    # Coeffs FE Dispersion
+                    D = matrix(c(0.25, 0, 0, 0.04), 2, 2)){   # RE covariance matrix.
+  
+  N <- n * ntms
   b <- MASS::mvrnorm(n, mu=c(0, 0), Sigma = D)
   
   df <- data.frame(
@@ -34,16 +50,45 @@ simData <- function(n = 250, ntms = 10, beta = c(1, 0.10, 0.33, -0.50),
   ) 
   
   X <- model.matrix(~time+cont+bin, df)
-  Z <- model.matrix(~time, df)
-  eta <- X %*% beta + rowSums(Z * b[df$id, ])
+  Z <- G <- model.matrix(~time, df)
+  eta <- X %*% beta + rowSums(Z * b[df$id, ]) # Linear predictor
+  nu <- exp(G %*% delta)
   
-  df$Y <- MASS::rnegbin(n * ntms, mu = exp(eta), theta = rep(theta, n * ntms))
-  df$Y2 <- rnbinom(n * ntms, size = theta, mu = exp(eta))
-  df$eta <- eta
+  mu <- exp(eta) # Define the mean parameterisation
+  
+  # Working out lambda, the rate parameter from mu
+  # i. An approximation 
+  loglambdas.appx <- suppressWarnings(
+    nu * log(mu + (nu - 1) / (2 * nu))
+  )
+  lambdas.appx <- exp(loglambdas.appx)
+  
+  # ii. Find solutions to mean constraint (Huang (2017)) and clean so NaN/Infs/NAs not in output.
+  lambdas <- sapply(1:nrow(eta), function(i){
+    out <- tryCatch(uniroot(mu_lambdaZ_eq, interval = c(1e-6, 1e3), mu = exp(eta[i]), nu = nu[i],
+                            summax = summax)$root,
+                    error = function(e) NA)
+    # If uniroot fails to find a root, set it as the approximation above
+    if((is.na(out) | is.nan(out)) & (!is.nan(lambdas.appx[i]) & !is.na(lambdas.appx[i]))) out <- lambdas.appx[i]
+    # And if this still NA/NaN/Inf, simply set as mean
+    if(is.na(out)) out <- mu[i]
+    out
+  })
+  
+  # Print how many rate parameters simply used the mean.
+  sprintf('%.2f%% values used mean', length(which(lambdas == mu))/N * 100)
+  
+  sf <- 1
+  Y <- try(.rcomp(lambdas, nu, summax), silent = T)
+  while('try-error' %in% class(Y)){
+    sf <- sf * .90
+    cat(sprintf("Attempting with new scale factor: %.1f\n", sf * summax))
+    Y <- try(.rcomp(lambdas, nu, summax * sf), silent = T)
+  }
+  df$Y <- Y
   df
 }
 
-# test <- simData()
 # fit <- glmmTMB::glmmTMB(Y~time+cont+bin+(1+time|id), data=test, family = glmmTMB::nbinom2, dispformula = ~1)
 
 simData_joint <- function(n = 250, ntms = 10, beta = c(1, 0.10, 0.33, -0.50),
@@ -101,20 +146,3 @@ simData_joint <- function(n = 250, ntms = 10, beta = c(1, 0.10, 0.33, -0.50),
   list(data =  out.data, 
        surv.data =  dplyr::distinct(out.data, id, survtime, status, cont, bin))
 }
-
-
-
-microbenchmark::microbenchmark(
-  `R` = seq(100),
-  `CPP-1` = SEQ(0, 100, 101),
-  `CPP-2` = SEQ_Z(100),
-  times = 5000
-) -> bench
-
-
-microbenchmark::microbenchmark(
-  `mpcmp` = aa <- mpcmp:::logZ_c(eta, nu, 100),
-  `me` = bb <- logZ(eta, nu, 100),
-  times = 15
-)
-
