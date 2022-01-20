@@ -91,8 +91,10 @@ simData <- function(n = 250, ntms = 10, summax = 100,
 
 # fit <- glmmTMB::glmmTMB(Y~time+cont+bin+(1+time|id), data=test, family = glmmTMB::nbinom2, dispformula = ~1)
 
-simData_joint <- function(n = 250, ntms = 10, beta = c(1, 0.10, 0.33, -0.50),
-                          D = matrix(c(0.5, 0, 0, 0.1), 2, 2), thetaDisp = 1.5,
+simData_joint <- function(n = 250, ntms = 10, summax = 100,
+                          beta = c(1, 0.10, 0.33, -0.50),           # Coeffs FE lin. pred
+                          delta = c(-0.6, -0.1),     
+                          D = matrix(c(0.5^2, 0, 0, 0.2^2), 2, 2), 
                           gamma = 0.5, surv.eta = c(0.05, -0.30), theta = c(-4, 0.2),
                           cens.rate = exp(-3.5)){
   #' Necessary parameters & data generation ----
@@ -104,16 +106,7 @@ simData_joint <- function(n = 250, ntms = 10, beta = c(1, 0.10, 0.33, -0.50),
                    cont = rep(cont, each = ntms),
                    bin = rep(bin, each = ntms))
   
-  #' Design matrices ----
-  X <- model.matrix(~ time + cont + bin, data = df)
-  Z <- model.matrix(~ 1 + time, data = df)
-  
-  #' Linear predictor & response generation ----
-  b <- MASS::mvrnorm(n, mu = c(0, 0), Sigma = D)
-  eta <- X %*% beta + rowSums(Z * b[df$id, ])
-  # df$Y <- MASS::rnegbin(n * ntms, mu = exp(eta), theta = rep(thetaDisp, n * ntms))
-  df$Y <- rnbinom(n * ntms, size = thetaDisp, mu = exp(eta))
-  
+  b <- MASS::mvrnorm(n, mu=c(0, 0), Sigma = D)
   #' Survival ----
   theta0 <- theta[1]; theta1 <- theta[2]
   Keta <- cbind(cont, bin) %*% surv.eta
@@ -125,7 +118,7 @@ simData_joint <- function(n = 250, ntms = 10, beta = c(1, 0.10, 0.33, -0.50),
   t <- suppressWarnings(log(1-rhs)/denom)
   t[is.nan(t)] <- tau
   
-  # Collect survival times, and generate cenors times.
+  # Collect survival times, and generate censor times.
   cens.time <- rexp(n, cens.rate)
   survtime <- pmin(t, cens.time)
   survtime[survtime >= tau] <- tau
@@ -135,14 +128,57 @@ simData_joint <- function(n = 250, ntms = 10, beta = c(1, 0.10, 0.33, -0.50),
   is.censored <- cens.time < survtime
   status[which(survtime == tau | is.censored | survtime == cens.time)] <- 0 # Failure flag
   
-  #' Output Dataframes ----
+  #' Join onto Longtudinal part and truncate ----
   surv.data <- data.frame(id = 1:n, survtime, status)
-  long.data <- df
   
-  out.data <- dplyr::left_join(df, surv.data, by = 'id')
-  out.data <- out.data[out.data$time < out.data$survtime, ]
+  df <- dplyr::left_join(df, surv.data, by = 'id')
+  df <- df[df$time < df$survtime, ]
+  
+  # Design matrices 
+  X <- model.matrix(~ time + cont + bin, data = df)
+  G <- Z <- model.matrix(~ time, data = df)
+  
+  #' Simulate CMP response //
+  eta <- X %*% beta + rowSums(Z * b[df$id, ]) # Linear predictor
+  nu <- exp(G %*% delta)
+  
+  mu <- exp(eta) # Define the mean parameterisation
+  
+  # Working out lambda, the rate parameter from mu
+  # i. An approximation 
+  loglambdas.appx <- suppressWarnings(
+    nu * log(mu + (nu - 1) / (2 * nu))
+  )
+  lambdas.appx <- exp(loglambdas.appx)
+  
+  # ii. Find solutions to mean constraint (Huang (2017)) and clean so NaN/Infs/NAs not in output.
+  lambdas <- sapply(1:nrow(eta), function(i){
+    out <- tryCatch(uniroot(mu_lambdaZ_eq, interval = c(1e-6, 1e3), mu = mu[i], nu = nu[i],
+                            summax = summax)$root,
+                    error = function(e) NA)
+    # If uniroot fails to find a root, set it as the approximation above
+    if((is.na(out) | is.nan(out)) & (!is.nan(lambdas.appx[i]) & !is.na(lambdas.appx[i]))) out <- lambdas.appx[i]
+    # And if this still NA/NaN/Inf, simply set as mean
+    if(is.na(out)) out <- mu[i]
+    out
+  })
+  
+  # Print how many rate parameters simply used the mean.
+  sprintf('%.2f%% values used mean', length(which(lambdas == mu))/length(lambdas) * 100)
+  
+  sf <- 1
+  Y <- try(.rcomp(lambdas, nu, summax), silent = T)
+  while('try-error' %in% class(Y)){
+    sf <- sf * .90
+    cat(sprintf("Attempting with new scale factor: %.1f\n", sf * summax))
+    Y <- try(.rcomp(lambdas, nu, summax * sf), silent = T)
+  }
+  df$Y <- Y
+  df
+  
   message(round(100 * sum(surv.data$status)/n), '% failure rate')
   
-  list(data =  out.data, 
-       surv.data =  dplyr::distinct(out.data, id, survtime, status, cont, bin))
+  list(data = df, 
+       surv.data =  dplyr::distinct(df, id, survtime, status, cont, bin))
 }
+
