@@ -2,10 +2,10 @@
 #' Simulates data under a multivariate negative binomial model which is then linked with a 
 #' survival sub-model by its random effects, which are assumed to be Gaussian.
 #' ----
-#' Bespoke functions to find pmf of and then simulate random deviates from a
+#' Bespoke functions to find pmf of, and then simulate random deviates from a
 #' mean-parameterised specification of the Conway-Maxwell Poisson Distn.
 #' #######
-sourceCpp('test.cpp')
+suppressWarnings(sourceCpp('test.cpp'))
 
 .rcomp <- function(lambda, nu, summax){
   x <- vector('numeric', length(lambda))

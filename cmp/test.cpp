@@ -78,52 +78,6 @@ vec cmp_pmf_scalar(vec& Y, double lambda, double nu, int summax){
   L.replace(datum::inf, 1e100);
   return L;
 }
-// vec dCMP(vec& Y, )
 
-// rcomp from mpcmp package
-//for (i in 1:n) {
-//if (mu[i] == 0 | lambda[i] == 0) {
-//x[i] <- 0
-//} else if (mu[i] < 0 | lambda[i] < 0 | nu[i] <= 0) {
-//x[i] <- NA
-//warn <- TRUE
-//} else {
-//y <- 0
-//dc <- dcomp(0:summax, nu = nu[i], lambda = lambda[i], summax = summax)
-//py <- dc[y + 1]
-//while (py <= unif[i]) {
-//y <- y + 1
-//py <- py + dc[y + 1]
-//}
-//x[i] <- y
-//}
-//}
 
-// dcomp from mpcmp package...
-//pmf <- rep(0, length(x))
-//for (i in 1:length(x)) {
-//if ((mu[i] == 0 || lambda[i] == 0) && x[i] == 0) {
-//pmf[i] <- 0 # log(1), 1 as the distribution is degenerated at 0
-//} else if (mu[i] < 0 | lambda[i] < 0 | nu[i] <= 0) {
-//pmf[i] <- NaN
-//warn <- TRUE
-//} else {
-//if (!is.wholenumber(x[i])) {
-//warning(paste("non-integer x =", x[i]))
-//pmf[i] <- -Inf # log(0)
-//} else {
-//if (x[i] < 0) {
-//pmf[i] <- -Inf
-//} else { # log(0)
-//# pmf <- log(density)
-//pmf[i] <- x[i] * log(lambda[i]) - (nu[i] * lfactorial(x[i])) -
-//logZ(log(lambda[i]), nu[i], summax)
-//}
-//}
-//}
-//}
-//if (!log.p) {
-//pmf <- exp(pmf)
-//}
-//return(pmf)
 
