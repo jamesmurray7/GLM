@@ -25,7 +25,7 @@ vec calcZ(vec& lambda, vec& nu, int summax){
   vec js = SEQ_Z(summax);
   for(int i = 0; i < out.size(); i++){
     for(int j = 0; j < js.size(); j++){
-      out[i] += pow(lambda[i], js[j])/pow(gamma(js[j] + 1.0), nu[i]);
+      out[i] += pow(lambda[i], js[j])/pow(tgamma(js[j] + 1.0), nu[i]);
     }
   }
   return out;
@@ -36,7 +36,7 @@ double calcZ_scalar(double lambda, double nu, int summax){
   double out = 0.0;
   vec js = SEQ_Z(summax);
   for(int j = 0; j < js.size(); j++){
-    out += pow(lambda, js[j])/pow(gamma(js[j] + 1.0), nu);
+    out += pow(lambda, js[j])/pow(tgamma(js[j] + 1.0), nu);
   }
   return out;
 }
@@ -46,7 +46,7 @@ double mu_lambda_eq(double lambda, double mu, double nu, int summax){
   vec js = SEQ_Z(summax);
   double out = 0.0;
   for(int j = 0; j < js.size(); j++){
-    out += ((js[j] - mu) * pow(lambda, js[j]))/pow(gamma(js[j] + 1.0), nu);
+    out += ((js[j] - mu) * pow(lambda, js[j]))/pow(tgamma(js[j] + 1.0), nu);
   }
   return out;
 }
@@ -57,7 +57,7 @@ double mu_lambdaZ_eq(double lambda, double mu, double nu, int summax){
   double Z = calcZ_scalar(lambda, nu, summax);
   double rhs = 0.0;
   for(int j = 0; j < js.size(); j++){
-    rhs += (js[j] * pow(lambda, js[j])) / (pow(gamma(js[j] + 1.0), nu) * Z);
+    rhs += (js[j] * pow(lambda, js[j])) / (pow(tgamma(js[j] + 1.0), nu) * Z);
   }
   return mu - rhs;
 }

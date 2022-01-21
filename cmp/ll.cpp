@@ -40,7 +40,7 @@ double calcZ_scalar(double lambda, double nu, int summax){
   double out = 0.0;
   vec js = SEQ_Z(summax);
   for(int j = 0; j < js.size(); j++){
-    out += pow(lambda, js[j])/pow(gamma(js[j] + 1.0), nu);
+    out += pow(lambda, js[j])/pow(tgamma(js[j] + 1.0), nu);
   }
   return out;
 }
@@ -51,7 +51,7 @@ vec calcZ(vec& lambda, vec& nu, int summax){
   vec js = SEQ_Z(summax);
   for(int i = 0; i < out.size(); i++){
     for(int j = 0; j < js.size(); j++){
-      out[i] += pow(lambda[i], js[j])/pow(gamma(js[j] + 1.0), nu[i]);
+      out[i] += pow(lambda[i], js[j])/pow(tgamma(js[j] + 1.0), nu[i]);
     }
   }
   return out;
@@ -65,7 +65,7 @@ double mu_lambdaZ_eq(double lambda, double mu, double nu, int summax){
   double Z = calcZ_scalar(lambda, nu, summax);
   double rhs = 0.0;
   for(int j = 0; j < js.size(); j++){
-    rhs += (js[j] * pow(lambda, js[j])) / (pow(gamma(js[j] + 1.0), nu) * Z);
+    rhs += (js[j] * pow(lambda, js[j])) / (pow(tgamma(js[j] + 1.0), nu) * Z);
   }
   return mu - rhs;
 }
@@ -88,3 +88,37 @@ double ll_b(vec& b, mat& D){
 		-q/2.0 * log(2.0 * M_PI) - 0.5 * log(det(D)) - 0.5 * b.t() * D.i() * b
 	);
 }
+
+// And the first derivative wrt b
+// [[Rcpp::export]]
+vec S_ll_b(vec& b, mat& D){
+  return -1.0 * D.i() * b;
+}
+
+// Score on \beta ------------------------------------------------------
+// Variance V(\mu, Y) 
+
+// [[Rcpp::export]]
+double V_scalar(double mu, double lambda, double nu, int summax){
+	double out = 0.0;
+	double Z = calcZ_scalar(lambda, nu, summax);
+	vec js = SEQ_Z(summax);
+	for(int j = 0; j < summax; j++){
+	  out += pow(js[j] - mu, 2.0) * pow(lambda, js[j]) / (pow(tgamma(js[j] + 1.0), nu) * Z);
+	}
+	return out;
+}
+
+// A wrapper that uses the above V_scalar and calculates Score(\mu).
+
+// [[Rcpp::export]]
+vec Smu(vec& mu, vec& lambda, vec& nu, vec& Y, int summax){
+  vec V  = vec(lambda.size());
+  for(int v = 0; v < V.size(); v++){
+    V[v] = V_scalar(mu[v], lambda[v], nu[v], summax);
+  }
+  return (Y - mu) / V; 
+}
+
+
+// =====================================================================
