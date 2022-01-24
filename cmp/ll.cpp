@@ -120,5 +120,12 @@ vec Smu(vec& mu, vec& lambda, vec& nu, vec& Y, int summax){
   return (Y - mu) / V; 
 }
 
+// Score on \nu --------------------------------------------------------
+vec Snu(vec& mu, vec& lambda, vec& nu, vec& Y, vec& lY, int summax){
+  vec V  = vec(lambda.size());
+  for(int v = 0; v < V.size(); v++){
+    V[v] = V_scalar(mu[v], lambda[v], nu[v], summax);
+  }
+  return lY.t() * (Y - mu) * 
+}
 
-// =====================================================================

@@ -54,17 +54,15 @@ Score_b <- function(X, Y, Z, G,
   -(crossprod(Z, S) + S_ll_b(b, D))
 }
 
-
 # b.hat ----
 .bfits <- mapply(function(b, X, Y, Z, G){
   u <- ucminf::ucminf(b, .ll, Score_b,
-                      X = X, Y = Y, Z = Z, G = G, beta = beta, delta = delta, D = D, summax = 10,
-                      control = list(xtol = 1e-4, grtol = 1e-6))
+                      X = X, Y = Y, Z = Z, G = G, beta = beta, delta = delta, D = D, summax = 5)
   list(u$par, u$invhessian.lt)
 }, b = bl, X = X, Y = Y, Z = Z, G = G, SIMPLIFY = F)
 
-b.hat <- lapply(.bfits2, el, 1)
-Sigmai <- lapply(lapply(.bfits2, el, 2), vech2mat, 2)
+b.hat <- lapply(.bfits, el, 1)
+Sigmai <- lapply(lapply(.bfits, el, 2), vech2mat, 2)
 
 
 # D update ----
