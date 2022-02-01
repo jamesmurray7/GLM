@@ -52,10 +52,10 @@ double joint_density(vec& b, mat& X, vec& Y, mat& Z, vec& beta, mat& V,
 vec joint_density_db(vec& b, mat& X, vec& Y, mat& Z, vec& beta, mat& V,
 				     mat& D, rowvec& K, mat& KK, rowvec& Fi, mat& Fu,
 		             rowvec& l0u, double l0i, int Delta, vec& gamma, vec& eta){
-	vec resid = Y - X * beta + Z * b;
+	vec resid = Y - (X * beta + Z * b);
 	vec Score_Y_db = Z.t() * (V.i() * resid);
 	vec Score_R_db = -1.0 * D.i() * b;
-	vec Score_T_db = Delta * (Fi.t() * gamma) - gamma % (repmat(Fu, 1, 3).t() * (l0u.t() % exp(KK * eta + repmat(Fu, 1, 3) * (gamma % b))));
+	vec Score_T_db = Delta * (Fi.t() % gamma) - gamma % (repmat(Fu, 1, 3).t() * (l0u.t() % exp(KK * eta + repmat(Fu, 1, 3) * (gamma % b))));
 	
 	return -1.0 * (Score_Y_db + Score_R_db + Score_T_db);
 }

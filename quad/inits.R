@@ -5,9 +5,8 @@
 #' Longitudinal then undergoes MVLME fit
 #' ####
 
-if(!'nlme'%in%loadedNamespaces()) library(nlme)
-if(!'dplyr'%in%loadedNamespaces()) library(dplyr)
-
+library(nlme)
+library(dplyr)
 
 # var.e, beta, D inits using lme4 -----------------------------------------
 Longit.inits <- function(K, data){
@@ -63,13 +62,9 @@ Ranefs <- function(longfits){
     ranefK[[k]] <- as.matrix(ranef(fits[[k]]))
     colnames(ranefK[[k]]) <- paste0(c("intercept_", "slope_", "quad_"), k)
   }
-
-  REs <- as.data.frame(do.call(cbind, ranefK))
-  REs$id <- 1:nrow(REs)
-  REs
+  # collate and return
+  as.matrix(do.call(cbind, ranefK))
 }
-
-# REs <- Ranefs(inits.long)
 
 # Survival Inits ----------------------------------------------------------
 
@@ -96,6 +91,7 @@ TimeVarCox <- function(data, REs, df = 3, fixef.surv = c('cont', 'bin'),
                        survtime = 'survtime', status = 'status'){
   # Prepare data
   ss <- ToStartStop(data)
+  REs <- as.data.frame(REs); REs$id <- 1:nrow(REs)
   ss2 <- dplyr::left_join(ss, REs, 'id')
   ss2 <- dplyr::distinct(dplyr::left_join(ss2, data[, c('id', fixef.surv, survtime, status)], 'id'))
   
