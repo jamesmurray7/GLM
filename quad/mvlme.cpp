@@ -47,18 +47,16 @@ NumericVector Ee(const Rcpp::List Y, const Rcpp::List X, const Rcpp::List Z,
 	for(int i = 0; i < ids; i++){
 	  mat Yi = as<mat>(Y[i]);
 	  mat bi = as<mat>(b[i]);
-	  Rcpp::List Xi = X[i];
-	  Rcpp::List Zi = Z[i];
+	  mat Xi = X[i];
+	  mat Zi = Z[i];
 	  Rcpp::List bbTi = bbT[i];
 		for(int k = 0; k < K; k++){
 		  colvec Yik = Yi.col(k);
-		  mat Xik = as<mat>(Xi[k]);
-		  mat Zik = as<mat>(Zi[k]);
 		  mat bbTik = as<mat>(bbTi[k]);
-		  colvec Resid = Yik - Xik * beta.row(k).t();
-		  colvec temp = Yik - (Xik * beta.row(k).t() + Zik * bi.row(k).t());
+		  colvec Resid = Yik - Xi * beta.row(k).t();
+		  colvec temp = Yik - (Xi * beta.row(k).t() + Zi * bi.row(k).t());
      	  M(i,k) = as_scalar(
-			Resid.t() * (Resid - 2.0 * (Zik * bi.row(k).t())) + trace(Zik.t() * Zik * bbTik)
+			Resid.t() * (Resid - 2.0 * (Zi * bi.row(k).t())) + trace(Zi.t() * Zi * bbTik)
 		  );
 		}
 	}

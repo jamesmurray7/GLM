@@ -8,7 +8,9 @@ library(RcppArmadillo)
 source('simData.R')
 source('inits.R')
 source('survFns.R')
+source('MVLME.R')
 sourceCpp('quad.cpp')
+sourceCpp('mvlme.cpp')
 vech <- function(x) x[lower.tri(x, diag = T)]
 
 EMupdate <- function(b, Y, X, XtX, Z, V, m,        # for beta update and minimisation (X and Z are BLOCK matrices)
@@ -120,7 +122,7 @@ EMupdate <- function(b, Y, X, XtX, Z, V, m,        # for beta update and minimis
   ))
 }
 
-EM <- function(data, ph, survdata, gh = 3, tol = 0.01, nK = 3, verbose = F){
+EM <- function(data, ph, survdata, gh = 3, tol = 0.01, nK = 3, MVLME = T, verbose = F){
   start <- proc.time()[3]
   n <- nrow(survdata)
   # Get data matrices
@@ -145,15 +147,29 @@ EM <- function(data, ph, survdata, gh = 3, tol = 0.01, nK = 3, verbose = F){
   
   # initial conditions
   inits.long <- Longit.inits(nK, data)
-  b <- Ranefs(inits.long)
-  beta <- inits.long$beta.init
-  var.e <- inits.long$var.e.init
-  V <- lapply(m, function(iii) {
-    diag(x = rep(var.e, iii), ncol = sum(iii))
-  })
-  D <- inits.long$D.init
-  inits.surv <- TimeVarCox(data, b)
-  b <- lapply(1:n, function(i) b[i, ])
+  inits.surv <- TimeVarCox(data, Ranefs(inits.long))
+  
+  # Get initial conditions from additional MVLME step, or just from univariate LME fits?
+  if(MVLME){
+    mvlme.inits <- mvlme(data, Y, Xblock, Zblock, Ymat, X, Z, m, inits.long, nK)
+    b <- do.call(rbind, lapply(mvlme.inits$b, c))
+    beta <- c(mvlme.inits$beta); names(beta) <- names(inits.long$beta.init)
+    var.e <- mvlme.inits$var.e; names(var.e) <- names(inits.long$var.e.init)
+    V <- lapply(m, function(iii) {
+      diag(x = rep(var.e, iii), ncol = sum(iii))
+    })
+    D <- mvlme.inits$D
+    b <- lapply(1:n, function(i) b[i, ])
+  }else{
+    b <- Ranefs(inits.long)
+    beta <- inits.long$beta.init
+    var.e <- inits.long$var.e.init
+    V <- lapply(m, function(iii) {
+      diag(x = rep(var.e, iii), ncol = sum(iii))
+    })
+    D <- inits.long$D.init
+    b <- lapply(1:n, function(i) b[i, ])
+  }
   
   sv <- surv.mod(ph, data, inits.surv$l0.init)
   Delta <- as.list(sv$Di)
