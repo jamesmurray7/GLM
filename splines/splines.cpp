@@ -136,7 +136,7 @@ mat Hgammaeta(vec& gammaeta, mat& bmat, List S,
 // 6. Update for baseline hazard, lambda -------------------------------
 
 // Function for the update to the baseline hazard, \lambda_0(u)
-//     (adapted from my implementation in Bernhardt work)...
+//     This is only difference in this program from quad.cpp!
 // [[Rcpp::export]]
  mat lambdaUpdate(List survtimes, vec& ft, mat& basis,
  				          vec& gamma, vec& eta, List K, List S, List b, 
