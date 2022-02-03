@@ -1,10 +1,12 @@
 #' ####
-#' Testing quadratic setup
+#' Testing spline model fit
 #' ####
 
-# setwd('~/Documents/GLMM/quad/')
+# setwd('~/Documents/GLMM/splines/')
 source('simData.R')
- 
+source('survFns.R')
+
+# Stick with quadratic for means of testing 
 vech <- function(x) x[lower.tri(x, diag = T)]
 beta <- rbind(c(1, -0.2, 0.01, 0.33, -0.50),
               c(0, -0.5, 0.05, -0.33, 0.50),
@@ -12,8 +14,7 @@ beta <- rbind(c(1, -0.2, 0.01, 0.33, -0.50),
 
 D <- as.matrix(Matrix::bdiag(replicate(3, diag(c(0.5^2, .2^2, .05^2)), simplify = F)))
 
-data <- quad.simData(n = 250, ntms = 10, beta = beta, D = D, eta = c(0.05, -0.3), gamma = c(0.50, -0.25, 0.40),
-                     theta0 = -5)
+data <- poly.simData(n = 250, ntms = 10, beta = beta, D = D, theta0 = -4.5)
 
 # plot to see if it looks decently quadratic...
 # library(tidyverse)
@@ -33,27 +34,33 @@ nlme::lme(fixed = Y.1 ~ time + I(time^2) + cont + bin,
           method = "ML",
           control = nlme::lmeControl(opt = "optim", msTol = 1e-3))
 
+nlme::lme(fixed = Y.1 ~ bs(time, degree = 2) + cont + bin,
+          random = ~ bs(time, degree = 2) | id,
+          data = data$dat,
+          method = "ML",
+          control = nlme::lmeControl(opt = "optim", msTol = 1e-3))
+
 # Data matrices -----------------------------------------------------------
 dat <- data$dat
 sda <- data$survdat
 library(survival)
 ph <- coxph(Surv(survtime, status) ~ cont + bin, sda)
 
+basis <- surv.mod(ph, dat, degree = 3)$basis
+
 n <- nrow(sda)
 # Get data matrices
 nK <- 3
-m <- Y <- Ymat <- X <- Z <- K <- list()
+Z <- getZfromsurvbasis(basis, dat)
+m <- Y <- Ymat <- X <- K <- list()
 for(i in 1:n){
   i.dat <- dat[dat$id == i, ]
   m[[i]] <- rep(nrow(i.dat), 3)
   Y[[i]] <- c(i.dat$Y.1, i.dat$Y.2, i.dat$Y.3)
   Ymat[[i]] <- cbind(i.dat$Y.1, i.dat$Y.2, i.dat$Y.3)
-  X[[i]] <- structure(model.matrix(~time + I(time^2) + cont + bin, i.dat),
-                      dimnames = list(as.character(1:nrow(i.dat)),
-                                      c('(Intercept)', 'time', 'time^2', 'cont', 'bin')))
-  Z[[i]] <- structure(model.matrix(~time + I(time^2), i.dat),
-                      dimnames = list(as.character(1:nrow(i.dat)),
-                                      c('(Intercept)', 'time', 'time^2')))
+  colnames(Ymat[[i]]) <- paste0('Y.', 1:nK)
+  X[[i]] <- cbind(Z[[i]], i.dat$cont, i.dat$bin)
+  colnames(X[[i]])[(degree + 2):ncol(X[[i]])] <- c('cont', 'bin')
   K[[i]] <- unname(cbind(unique(i.dat$cont), unique(i.dat$bin)))
 }
 
@@ -62,8 +69,23 @@ Xblock <- lapply(X, function(x) as.matrix(Matrix::bdiag(replicate(nK, x, simplif
 Zblock <- lapply(Z, function(x) as.matrix(Matrix::bdiag(replicate(nK, x, simplify = F))))
 XtX <- lapply(Xblock, crossprod)
 
+df.basis <- as.data.frame(cbind(id = do.call(c, lapply(1:n, function(i) rep(i, m[[i]][1]))), do.call(rbind, Ymat), do.call(rbind, X)))
+
+lme(Y.1 ~ basis1 + basis2 + basis3 + cont + bin,
+    random = ~ basis1 + basis2 + basis3|id,
+    data = df.basis,
+    method = 'ML',
+    control = nlme::lmeControl(opt = "optim", msTol = 1e-3)) -> manual.basislme
+
+lme(Y.1 ~ bs(time, degree = 3) + cont + bin,
+    random = ~ bs(time, degree = 3) | id,
+    data = dat,
+    method = 'ML',
+    control = nlme::lmeControl(opt = "optim", msTol = 1e-3)) -> auto.basislme
+
+
 source('inits.R')
-inits.long <- Longit.inits(nK, dat)
+inits.long <- Longit.inits(nK, df.basis, degree = 3, basis = 'survival')
 b <- Ranefs(inits.long)
 beta <- inits.long$beta.init
 var.e <- inits.long$var.e.init
@@ -71,7 +93,7 @@ V <- lapply(m, function(iii) {
   diag(x = rep(var.e, iii), ncol = sum(iii))
 })
 D <- inits.long$D.init
-inits.surv <- TimeVarCox(dat, b)
+inits.surv <- TimeVarCox2(dat, b, basis, nK = 3)
 b <- lapply(1:n, function(i) b[i, ])
 
 # Survival objects
@@ -122,26 +144,26 @@ b.hat <- mapply(function(b, X, Y, Z, V, Delta, K, Fi, l0i, KK, Fu, l0u){
   ucminf::ucminf(b, joint_density, joint_density_db,
                  X = X, Y = Y, Z = Z, beta = beta, V = V, D = D,
                  K = K, KK = KK, Fi = Fi, Fu = Fu, l0u = l0u, l0i = l0i,
-                 Delta = Delta, gamma = rep(gamma, each = 3), eta = eta)$par
+                 Delta = Delta, gamma = rep(gamma, each = (degree + 1)), eta = eta)$par
 }, b = b, X = Xblock, Y = Y, Z = Zblock, V = V, Delta = Delta, K = K, Fi = Fi, l0i = l0i,
 KK = KK, Fu = Fu, l0u = l0u, SIMPLIFY = F)
 
 # Split out into response-oriented objects.
-bmat <- lapply(b.hat, matrix, nc = 3, byr = T)
-bsplit <- lapply(b.hat, function(y) lapply(split(seq(nK * 3), rep(seq(nK), each = 3)), function(x) y[x]))
+bmat <- lapply(b.hat, matrix, nc = (degree + 1), byr = T)
+bsplit <- lapply(b.hat, function(y) lapply(split(seq(nK * (degree + 1)), rep(seq(nK), each = (degree + 1))), function(x) y[x]))
 
 # Posterior variance
 Sigmai <- mapply(function(b, X, Y, Z, V, Delta, K, Fi, l0i, KK, Fu, l0u){
  solve(joint_density_sdb(b=b, X = X, Y = Y, Z = Z, beta = beta, V = V, D = D,
                    K = K, KK = KK, Fi = Fi, Fu = Fu, l0u = l0u, l0i = l0i,
-                   Delta = Delta, gamma = rep(gamma, each = 3), eta = eta))
+                   Delta = Delta, gamma = rep(gamma, each = (degree + 1)), eta = eta))
 }, b = b.hat, X = Xblock, Y = Y, Z = Zblock, V = V, Delta = Delta, K = K, Fi = Fi, l0i = l0i,
 KK = KK, Fu = Fu, l0u = l0u, SIMPLIFY = F)
 
 do.call(rbind, lapply(Sigmai, diag)) # check for any negative variances
 
 # Split into nK constituent sub-matrices
-S <- lapply(Sigmai, function(y) lapply(split(seq(nK * 3), rep(seq(nK), each = 3)), function(x) y[x, x]))
+S <- lapply(Sigmai, function(y) lapply(split(seq(nK * (degree + 1)), rep(seq(nK), each = (degree + 1))), function(x) y[x, x]))
 
 #' Step to update D -----
 Drhs <- mapply(function(S, b) S + tcrossprod(b), S  = Sigmai, b = b.hat, SIMPLIFY = F)
@@ -181,12 +203,12 @@ Esigma <- mapply(function(Y, mu, tau){
 
 #' Step to update (gamma, eta)
 Sge <- mapply(function(bmat, S, K, KK, Fu, Fi, l0u, Delta){
-  Sgammaeta(c(gamma, eta), bmat = bmat, S = S, K = K, KK = KK, Fu = Fu, Fi = Fi[1:3], haz = l0u,
+  Sgammaeta(c(gamma, eta), bmat = bmat, S = S, K = K, KK = KK, Fu = Fu, Fi = Fi[1:(degree + 1)], haz = l0u,
             Delta = Delta, w = w, v = v, eps = 1e-4)
 }, bmat = bmat, S = S, K = K, KK = KK, Fu = Fu, Fi = Fi, l0u = l0u, Delta = Delta)
 
 Hge <- mapply(function(bmat, S, K, KK, Fu, Fi, l0u, Delta){
-  Hgammaeta(c(gamma, eta), bmat = bmat, S = S, K = K, KK = KK, Fu = Fu, Fi = Fi[1:3], haz = l0u,
+  Hgammaeta(c(gamma, eta), bmat = bmat, S = S, K = K, KK = KK, Fu = Fu, Fi = Fi[1:(degree + 1)], haz = l0u,
             Delta = Delta, w = w, v = v, eps = 1e-4)
 }, bmat = bmat, S = S, K = K, KK = KK, Fu = Fu, Fi = Fi, l0u = l0u, Delta = Delta, SIMPLIFY = F)
 
@@ -200,9 +222,12 @@ var.e.update <- rowSums(Esigma) / colSums(do.call(rbind, m))
 gammaeta.update <- c(gamma, eta) - solve(Reduce('+', Hge), rowSums(Sge))
 
 # baseline hazard
-lambda <- lambdaUpdate(sv$surv.times, sv$ft, gamma, eta, K, S, bsplit, w, v)
+
+# create a matrix which has basis for each possible failure time
+basis.ft <- cbind(1, sv$basisdf[match(sv$ft, sv$basisdf[, 1]), -1])
+
+lambda <- lambdaUpdate(sv$surv.times, sv$ft, basis.ft, gamma, eta, K, S, bsplit, w, v)
 # Baseline hazard objects
-l0 <- sv$nev/rowSums(lambda)
 l0.new <- sv$nev/rowSums(lambda)
 l0u.new <- lapply(l0u, function(x){
   ll <- length(x); l0.new[1:ll]

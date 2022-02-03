@@ -49,7 +49,9 @@ surv.mod <- function(cph, data, l0.init = NULL, degree = 3){
     # This subject's Fi: (1, Ti) structure
     Fi[i,] <- c(1, survbasis[which(.Tis == survtime), ])
     # This subject's design matrix Fu on all (ordered failure) times survived.
-    Fu[[i]] <- cbind(1, as.matrix(survbasis[match(.ft[which(.ft <= survtime)], .Tis), ]))
+    Fu[[i]] <- cbind(rep(1, length(match(.ft[which(.ft <= survtime)], .Tis))),
+                     survbasis[match(.ft[which(.ft <= survtime)], .Tis), ,drop = F])
+    if(length(match(.ft[which(.ft <= survtime)], .Tis)) == 1) Fu[[i]] <- matrix(c(1, survbasis[match(.ft[which(.ft <= survtime)], .Tis), , drop = F]), nc = degree + 1)
     # This subject's hazard vector
     l0u[[i]] <- l0[which(sf$time <= survtime)]
     # The individual hazard \lambda(Ti) at failure time; zero if censored
@@ -78,9 +80,28 @@ surv.mod <- function(cph, data, l0.init = NULL, degree = 3){
     Fi = Fi,
     Fu = Fu,
     l0u = l0u,
-    basis = structure(cbind(.Tis, survbasis),
+    basisdf = structure(cbind(.Tis, survbasis),
                       dimnames = list(as.character(1:nrow(survbasis)),
                                       c('Ti', paste0('basis', 1:degree)))
-                      )
+                      ),
+    basis = survbasis
   ))
 }
+
+getZfromsurvbasis <- function(survbasis, data){ # verbose function exploiting static RE structure to obtain Z based on above basis on survival times.
+  if(!'bs'%in%class(survbasis)) stop('Need to use bs(...) basis')
+  predbasis <- suppressWarnings( # Warnings thrown up as 0 outside range of failure times, ignore for now.
+    as.data.frame(cbind(id = data$id, time = data$time, predict(survbasis, data$time)))  
+  )
+  print(head(predbasis))
+  n <- length(unique(data$id)); out <- vector('list', length = n)
+  for(i in 1:n){
+    i.dat <- predbasis[predbasis$id == i, ]
+    out[[i]] <- structure(as.matrix(cbind(1, i.dat[, 3:ncol(predbasis)])),
+                          dimnames = list(as.character(1:nrow(i.dat)),
+                                          c('(Intercept)', paste0('basis', 1:ncol(survbasis))))
+    )
+  }
+  out
+}
+

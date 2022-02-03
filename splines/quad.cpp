@@ -56,7 +56,6 @@ vec joint_density_db(vec& b, mat& X, vec& Y, mat& Z, vec& beta, mat& V,
 	vec Score_Y_db = Z.t() * (V.i() * resid);
 	vec Score_R_db = -1.0 * D.i() * b;
 	vec Score_T_db = Delta * (Fi.t() % gamma) - gamma % (repmat(Fu, 1, 3).t() * (l0u.t() % exp(KK * eta + repmat(Fu, 1, 3) * (gamma % b))));
-	
 	return -1.0 * (Score_Y_db + Score_R_db + Score_T_db);
 }
 
@@ -139,9 +138,9 @@ mat Hgammaeta(vec& gammaeta, mat& bmat, List S,
 // Function for the update to the baseline hazard, \lambda_0(u)
 //     (adapted from my implementation in Bernhardt work)...
 // [[Rcpp::export]]
- mat lambdaUpdate(List survtimes, vec& ft,
- 				  vec& gamma, vec& eta, List K, List S, List b, 
- 				  vec& w, vec& v){
+ mat lambdaUpdate(List survtimes, vec& ft, mat& basis,
+ 				          vec& gamma, vec& eta, List K, List S, List b, 
+ 				          vec& w, vec& v){
 	int gh = w.size();
 	int id = b.size();
 	mat store = zeros<mat>(ft.size(), id); // Initialise the matrix
@@ -152,9 +151,9 @@ mat Hgammaeta(vec& gammaeta, mat& bmat, List S,
  		List bi = b[i];
  		rowvec Ki = K[i];                  // Start loop over subject i's j survived times     
  		for(int j = 0; j < survtimes_i.size(); j++){
- 			rowvec Fst = NumericVector::create(1.0, ft[j], pow(ft[j], 2.0));
+ 			rowvec Fst = basis.row(j);
  			double tau = 0.0;
- 			vec rhs = NumericVector::create(0.0, 0.0, 0.0);
+ 			vec rhs = vec(basis.n_cols);
 			// Loop over the K responses 
  			for(int k = 0; k < bi.size(); k++){
 				mat Sik = Si[k];
