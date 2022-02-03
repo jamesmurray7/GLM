@@ -33,7 +33,7 @@ surv.mod <- function(cph, data, l0.init = NULL, degree = 3){
   }
   
   # Define basis
-  .Tis <- unique(data[, 'survtime'])
+  .Tis <- sort(unique(data[, 'survtime']))
   .ft <- unique(data[data$status == 1, 'survtime'])
   survbasis <- bs(.Tis, degree = degree)
   
@@ -93,7 +93,6 @@ getZfromsurvbasis <- function(survbasis, data){ # verbose function exploiting st
   predbasis <- suppressWarnings( # Warnings thrown up as 0 outside range of failure times, ignore for now.
     as.data.frame(cbind(id = data$id, time = data$time, predict(survbasis, data$time)))  
   )
-  print(head(predbasis))
   n <- length(unique(data$id)); out <- vector('list', length = n)
   for(i in 1:n){
     i.dat <- predbasis[predbasis$id == i, ]
@@ -105,3 +104,7 @@ getZfromsurvbasis <- function(survbasis, data){ # verbose function exploiting st
   out
 }
 
+
+getsurvbasis <- function(data, degree){
+  bs(unique(data[, 'survtime']), degree = degree)
+}

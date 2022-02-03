@@ -9,7 +9,7 @@ source('simData.R')
 source('inits.R')
 source('survFns.R')
 source('MVLME.R')
-sourceCpp('quad.cpp')
+sourceCpp('splines.cpp')
 sourceCpp('mvlme.cpp')
 vech <- function(x) x[lower.tri(x, diag = T)]
 
@@ -17,7 +17,7 @@ EMupdate <- function(b, Y, X, XtX, Z, V, m,        # for beta update and minimis
                      Ymat, X_single, Z_single,     # for var.e update                 (X, Z design matrices on single outcomes)
                      D, beta, var.e, gamma, eta,   # parameters
                      Delta, l0i, l0u, Fi, Fu, K, KK, 
-                     survdata, sv, w, v, nK, beta.inds){
+                     survdata, sv, w, v, nK, beta.inds, degree, basis){
   n <- length(b)
   gh <- length(w)
   #' ### ------
@@ -27,24 +27,24 @@ EMupdate <- function(b, Y, X, XtX, Z, V, m,        # for beta update and minimis
     ucminf::ucminf(b, joint_density, joint_density_db,
                    X = X, Y = Y, Z = Z, beta = beta, V = V, D = D,
                    K = K, KK = KK, Fi = Fi, Fu = Fu, l0u = l0u, l0i = l0i,
-                   Delta = Delta, gamma = rep(gamma, each = 3), eta = eta,
+                   Delta = Delta, gamma = rep(gamma, each = (degree + 1)), eta = eta,
                    control = list(xtol = 1e-4, grtol = 1e-5), hessian = 0)$par
   }, b = b, X = X, Y = Y, Z = Z, V = V, Delta = Delta, K = K, Fi = Fi, l0i = l0i,
   KK = KK, Fu = Fu, l0u = l0u, SIMPLIFY = F)
   # Split out into response-oriented objects.
-  bmat <- lapply(b.hat, matrix, nc = 3, byr = T)
-  bsplit <- lapply(b.hat, function(y) lapply(split(seq(nK * 3), rep(seq(nK), each = 3)), function(x) y[x]))
+  bmat <- lapply(b.hat, matrix, nc = (degree + 1), byr = T)
+  bsplit <- lapply(b.hat, function(y) lapply(split(seq(nK * (degree + 1)), rep(seq(nK), each = (degree + 1))), function(x) y[x]))
   
   # Posterior variance
   Sigmai <- mapply(function(b, X, Y, Z, V, Delta, K, Fi, l0i, KK, Fu, l0u){
     solve(joint_density_sdb(b=b, X = X, Y = Y, Z = Z, beta = beta, V = V, D = D,
                             K = K, KK = KK, Fi = Fi, Fu = Fu, l0u = l0u, l0i = l0i,
-                            Delta = Delta, gamma = rep(gamma, each = 3), eta = eta))
+                            Delta = Delta, gamma = rep(gamma, each = (degree + 1)), eta = eta))
   }, b = b.hat, X = X, Y = Y, Z = Z, V = V, Delta = Delta, K = K, Fi = Fi, l0i = l0i,
   KK = KK, Fu = Fu, l0u = l0u, SIMPLIFY = F)
   
   # Split into nK constituent sub-matrices
-  S <- lapply(Sigmai, function(y) lapply(split(seq(nK * 3), rep(seq(nK), each = 3)), function(x) y[x, x]))
+  S <- lapply(Sigmai, function(y) lapply(split(seq(nK * (degree + 1)), rep(seq(nK), each = (degree + 1))), function(x) y[x, x]))
   
   #' Step to update D -----
   Drhs <- mapply(function(S, b) S + tcrossprod(b), S  = Sigmai, b = b.hat, SIMPLIFY = F)
@@ -84,12 +84,12 @@ EMupdate <- function(b, Y, X, XtX, Z, V, m,        # for beta update and minimis
   
   #' Step to update (gamma, eta) ------
   Sge <- mapply(function(bmat, S, K, KK, Fu, Fi, l0u, Delta){
-    Sgammaeta(c(gamma, eta), bmat = bmat, S = S, K = K, KK = KK, Fu = Fu, Fi = Fi[1:3], haz = l0u,
+    Sgammaeta(c(gamma, eta), bmat = bmat, S = S, K = K, KK = KK, Fu = Fu, Fi = Fi[1:(degree + 1)], haz = l0u,
               Delta = Delta, w = w, v = v, eps = 1e-4)
   }, bmat = bmat, S = S, K = K, KK = KK, Fu = Fu, Fi = Fi, l0u = l0u, Delta = Delta)
   
   Hge <- mapply(function(bmat, S, K, KK, Fu, Fi, l0u, Delta){
-    Hgammaeta(c(gamma, eta), bmat = bmat, S = S, K = K, KK = KK, Fu = Fu, Fi = Fi[1:3], haz = l0u,
+    Hgammaeta(c(gamma, eta), bmat = bmat, S = S, K = K, KK = KK, Fu = Fu, Fi = Fi[1:(degree + 1)], haz = l0u,
               Delta = Delta, w = w, v = v, eps = 1e-4)
   }, bmat = bmat, S = S, K = K, KK = KK, Fu = Fu, Fi = Fi, l0u = l0u, Delta = Delta, SIMPLIFY = F)
   
@@ -103,7 +103,7 @@ EMupdate <- function(b, Y, X, XtX, Z, V, m,        # for beta update and minimis
   gammaeta.new <- c(gamma, eta) - solve(Reduce('+', Hge), rowSums(Sge))
   
   # baseline hazard
-  lambda <- lambdaUpdate(sv$surv.times, sv$ft, gamma, eta, K, S, bsplit, w, v)
+  lambda <- lambdaUpdate(sv$surv.times, sv$ft, basis, gamma, eta, K, S, bsplit, w, v)
   # Baseline hazard objects
   l0 <- sv$nev/rowSums(lambda)
   l0.new <- sv$nev/rowSums(lambda)
@@ -122,22 +122,21 @@ EMupdate <- function(b, Y, X, XtX, Z, V, m,        # for beta update and minimis
   ))
 }
 
-EM <- function(data, ph, survdata, gh = 3, tol = 0.01, nK = 3, MVLME = T, verbose = F){
+EM <- function(data, ph, survdata, gh = 3, tol = 0.01, nK = 3, degree = 3, MVLME = T, tol.mvlme = 1e-2, verbose = F){
   start <- proc.time()[3]
   n <- nrow(survdata)
+  basis <- getsurvbasis(data, degree)
   # Get data matrices
-  m <- Y <- Ymat <- X <- Z <- K <- list()
+  Z <- getZfromsurvbasis(basis, dat)
+  m <- Y <- Ymat <- X <- K <- list()
   for(i in 1:n){
-    i.dat <- data[data$id == i, ]
+    i.dat <- dat[dat$id == i, ]
     m[[i]] <- rep(nrow(i.dat), 3)
     Y[[i]] <- c(i.dat$Y.1, i.dat$Y.2, i.dat$Y.3)
     Ymat[[i]] <- cbind(i.dat$Y.1, i.dat$Y.2, i.dat$Y.3)
-    X[[i]] <- structure(model.matrix(~time + I(time^2) + cont + bin, i.dat),
-                        dimnames = list(as.character(1:nrow(i.dat)),
-                                        c('(Intercept)', 'time', 'time^2', 'cont', 'bin')))
-    Z[[i]] <- structure(model.matrix(~time + I(time^2), i.dat),
-                        dimnames = list(as.character(1:nrow(i.dat)),
-                                        c('(Intercept)', 'time', 'time^2')))
+    colnames(Ymat[[i]]) <- paste0('Y.', 1:nK)
+    X[[i]] <- cbind(Z[[i]], i.dat$cont, i.dat$bin)
+    colnames(X[[i]])[(degree + 2):ncol(X[[i]])] <- c('cont', 'bin')
     K[[i]] <- unname(cbind(unique(i.dat$cont), unique(i.dat$bin)))
   }
   # Block matrices
@@ -146,12 +145,15 @@ EM <- function(data, ph, survdata, gh = 3, tol = 0.01, nK = 3, MVLME = T, verbos
   XtX <- lapply(Xblock, crossprod)
   
   # initial conditions
-  inits.long <- Longit.inits(nK, data)
-  inits.surv <- TimeVarCox(data, Ranefs(inits.long))
+  message('Getting initial conditions')
+  df.basis <- as.data.frame(cbind(id = do.call(c, lapply(1:n, function(i) rep(i, m[[i]][1]))), do.call(rbind, Ymat), do.call(rbind, X)))
+  inits.long <- Longit.inits(nK, df.basis, degree)
+  # TO DO: Add methods for doing this 'auto' way and add option to EM call.
+  inits.surv <- TimeVarCox2(data, Ranefs(inits.long), basis, nK = nK)
   
   # Get initial conditions from additional MVLME step, or just from univariate LME fits?
   if(MVLME){
-    mvlme.inits <- mvlme(data, Y, Xblock, Zblock, Ymat, X, Z, m, inits.long, nK)
+    mvlme.inits <- mvlme(data, Y, Xblock, Zblock, Ymat, X, Z, m, inits.long, nK, degree, tol.mvlme = tol.mvlme)
     b <- do.call(rbind, lapply(mvlme.inits$b, c))
     beta <- c(mvlme.inits$beta); names(beta) <- names(inits.long$beta.init)
     var.e <- mvlme.inits$var.e; names(var.e) <- names(inits.long$var.e.init)
@@ -171,7 +173,7 @@ EM <- function(data, ph, survdata, gh = 3, tol = 0.01, nK = 3, MVLME = T, verbos
     b <- lapply(1:n, function(i) b[i, ])
   }
   
-  sv <- surv.mod(ph, data, inits.surv$l0.init)
+  sv <- surv.mod(ph, data, inits.surv$l0.init, degree = degree)
   Delta <- as.list(sv$Di)
   l0i <- as.list(sv$l0i)
   l0u <- sv$l0u
@@ -184,6 +186,8 @@ EM <- function(data, ph, survdata, gh = 3, tol = 0.01, nK = 3, MVLME = T, verbos
   })
   gamma <- inits.surv$inits[3:length(inits.surv$inits)]
   eta <- inits.surv$inits[1:2]
+  # basis on just failure times, for update to \lambda
+  basis.ft <- cbind(1, sv$basisdf[match(sv$ft, sv$basisdf[, 1]), -1])
   
   # Quadrature //
   aa <- statmod::gauss.quad.prob(gh, 'normal')
@@ -199,13 +203,14 @@ EM <- function(data, ph, survdata, gh = 3, tol = 0.01, nK = 3, MVLME = T, verbos
     which(grepl(paste0('^beta', k, '_'), names(beta)))
   }) 
   
+  message('Done!\nStarting EM...\n')
   EMstart <- proc.time()[3]
   diff <- 100; iter <- 0
   while(diff > tol){
     update <- EMupdate(b, Y, Xblock, XtX, Zblock, V, m, 
                        Ymat, X, Z, 
                        D, beta, var.e, gamma, eta, 
-                       Delta, l0i, l0u, Fi, Fu, K, KK, survdata, sv, w, v, nK, beta.inds)
+                       Delta, l0i, l0u, Fi, Fu, K, KK, survdata, sv, w, v, nK, beta.inds, degree, basis.ft)
     params.new <- c(vech(update$D.new), update$beta.new, update$var.e.new, update$gamma.new, update$eta.new)
     names(params.new) <- names(params)
     if(verbose) print(sapply(params.new, round, 4))

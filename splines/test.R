@@ -43,10 +43,11 @@ nlme::lme(fixed = Y.1 ~ bs(time, degree = 2) + cont + bin,
 # Data matrices -----------------------------------------------------------
 dat <- data$dat
 sda <- data$survdat
+degree <- 6
 library(survival)
 ph <- coxph(Surv(survtime, status) ~ cont + bin, sda)
 
-basis <- surv.mod(ph, dat, degree = 3)$basis
+basis <- getsurvbasis(dat, degree)
 
 n <- nrow(sda)
 # Get data matrices
@@ -71,8 +72,8 @@ XtX <- lapply(Xblock, crossprod)
 
 df.basis <- as.data.frame(cbind(id = do.call(c, lapply(1:n, function(i) rep(i, m[[i]][1]))), do.call(rbind, Ymat), do.call(rbind, X)))
 
-lme(Y.1 ~ basis1 + basis2 + basis3 + cont + bin,
-    random = ~ basis1 + basis2 + basis3|id,
+lme(Y.1 ~ basis1 + basis2 + basis3 + basis4 + basis5 + basis6 + cont + bin,
+    random = ~ basis1 + basis2 + basis3 + basis4 + basis5 + basis6|id,
     data = df.basis,
     method = 'ML',
     control = nlme::lmeControl(opt = "optim", msTol = 1e-3)) -> manual.basislme

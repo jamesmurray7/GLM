@@ -10,18 +10,18 @@
 
 if(!"vech"%in%ls()) vech <- function(x) x[lower.tri(x, diag = T)]
 
-splitbbT <- function(bbT, nK){
+splitbbT <- function(bbT, nK, degree){
   uids <- length(bbT)
   out <- list()
   for(i in 1:uids){
-    out[[i]] <- lapply(split(seq(nK * 3), rep(1:nK, each = 3)), function(x) bbT[[i]][x, x])
+    out[[i]] <- lapply(split(seq(nK * (degree + 1)), rep(1:nK, each = (degree + 1))), function(x) bbT[[i]][x, x])
   }
   out
 }
 
 mvlme <- function(d, Y, X, Z, # BLOCK MATRICES
                   Yk, Xk, Zk, m, # Single matrices
-                  inits.long, nK,
+                  inits.long, nK, degree, 
                   tol.mvlme = 5e-3){
   # Data
   diff <- 100; iter <- 0;
@@ -49,14 +49,14 @@ mvlme <- function(d, Y, X, Z, # BLOCK MATRICES
     #' E-step -------------------
     # E[b]
     b <- Eb(Y, X, Z, V, D, beta, n)
-    bmat <- lapply(b, function(x) matrix(x, nc = 3, byrow = T))
+    bmat <- lapply(b, function(x) matrix(x, nc = (degree + 1), byrow = T))
     
     # Sigmai
     Sigmai <- covb(Z, V, solve(D), n)
     
     # E[bbT]
     bbT <- EbbT(b, Sigmai, n)
-    bbTk <- splitbbT(bbT, nK)
+    bbTk <- splitbbT(bbT, nK, degree)
     
     #' M-step -------------------
     
