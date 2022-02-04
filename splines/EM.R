@@ -127,10 +127,10 @@ EM <- function(data, ph, survdata, gh = 3, tol = 0.01, nK = 3, degree = 3, MVLME
   n <- nrow(survdata)
   basis <- getsurvbasis(data, degree)
   # Get data matrices
-  Z <- getZfromsurvbasis(basis, dat)
+  Z <- getZfromsurvbasis(basis, data)
   m <- Y <- Ymat <- X <- K <- list()
   for(i in 1:n){
-    i.dat <- dat[dat$id == i, ]
+    i.dat <- data[data$id == i, ]
     m[[i]] <- rep(nrow(i.dat), 3)
     Y[[i]] <- c(i.dat$Y.1, i.dat$Y.2, i.dat$Y.3)
     Ymat[[i]] <- cbind(i.dat$Y.1, i.dat$Y.2, i.dat$Y.3)
