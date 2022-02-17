@@ -1,4 +1,4 @@
-#' ####    negbinom/
+#' ####    MIXTURE/
 #' Approximate EM for joint model of negative-binomial (gamma-poisson deviate) x survival response.
 #' ####
 library(dplyr)
@@ -9,6 +9,7 @@ library(RcppArmadillo)
 source('simData.R')
 source('inits.R')
 source('survFns.R')
+source('vcov.R')
 sourceCpp('mix.cpp')
 vech <- function(x) x[lower.tri(x, diag = T)]
 
@@ -17,6 +18,7 @@ EMupdate <- function(b, Y, X, Z, V,
                      Delta, l0i, l0u, Fi, Fu, K, KK, survdata, sv, w, v){
   n <- length(b)
   if(!nb) theta <- 0.0;
+  
   #' ### ------
   #' E step
   #' ### ------
@@ -99,7 +101,7 @@ EMupdate <- function(b, Y, X, Z, V,
   var.e.update <- rowSums(var.e.update)
   var.e.new <- var.e.update[1]/var.e.update[2]
   # theta
-  if(nb) theta.new <- theta - sum(do.call(c, St))/sum(do.call(c, Ht)) else theta.new <- NULL
+  if(nb) theta.new <- theta - sum(do.call(c, St))/sum(do.call(c, Ht)) else theta.new <- 0.0
   # (gamma, eta)
   gammaeta.new <- c(gamma, eta) - solve(Reduce('+', Hge), rowSums(Sge))
   # baseline hazard
@@ -122,7 +124,7 @@ EMupdate <- function(b, Y, X, Z, V,
   ))
 }
 
-EM <- function(data, ph, survdata, gh = 9, tol = 0.01, verbose = F, nb = F){
+EM <- function(data, ph, survdata, gh = 9, tol = 0.01, verbose = F, nb = F, post.process = T){
   start <- proc.time()[3]
   n <- nrow(survdata)
   # Get data matrices
@@ -142,7 +144,7 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, verbose = F, nb = F){
   beta <- inits.long$beta.init
   var.e <- inits.long$var.e.init
   V <- lapply(m, function(x) diag(x = var.e, nr = x, nc = x))
-  if(nb) theta <- inits.long$theta.init else theta <- NULL
+  if(nb) theta <- inits.long$theta.init else theta <- 0.0
   D <- inits.long$D.init
   inits.surv <- TimeVarCox(data, b)
   b <- lapply(1:n, function(i) b[i, ])
@@ -167,11 +169,16 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, verbose = F, nb = F){
   aa <- statmod::gauss.quad.prob(gh, 'normal')
   w <- aa$w; v <- aa$n
   
+  # Collect parameters
   vD <- vech(D);
   names(vD) <- paste0('D[', apply(which(lower.tri(D, T), arr.ind = T), 1, paste0, collapse = ','),']')
   params <- c(vD, beta, var.e, gamma, eta)
   if(nb) params <- c(params, theta)
   
+  # Collect data objects
+  data.mat <- list(Y = Y, X = X, Z = Z, m = m,                          # Longit.
+                   K = K, KK = KK, Fi = Fi, Fu = Fu, Deltai = Delta)   # Survival
+
   EMstart <- proc.time()[3]
   diff <- 100; iter <- 0
   while(diff > tol){
@@ -205,5 +212,36 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, verbose = F, nb = F){
               EMtime = EMend-EMstart,
               iter = iter,
               totaltime = proc.time()[3] - start)
+  if(post.process){
+    message('\nCalculating SEs...')
+    start.time <- proc.time()[3]
+    #' hat{b} at MLEs
+    b <- mapply(function(b, X, Y, Z, V, Delta, K, Fi, l0i, KK, Fu, haz){
+      ucminf::ucminf(b, joint_density, joint_density_ddb,
+                     X = X, Z = Z, beta = beta, V = V, D = D,
+                     Y_1 = Y[, 1], Y_2 = Y[, 2], Y_3 = Y[, 3], nb, theta,
+                     Delta = Delta, K = K, Fi = Fi, l0i = l0i, KK = KK, Fu = Fu,
+                     haz = haz, gamma = rep(gamma, each = 2), eta = eta)$par
+    }, b = b, X = X, Y = Y, Z = Z, V = V, Delta = Delta, K = K, Fi = Fi, l0i = l0i,
+    KK = KK, Fu = Fu, haz = l0u, SIMPLIFY = F)
+    bmat <- lapply(b, matrix, nc = 2, byr = T)
+    bsplit <- lapply(b, function(y) lapply(split(seq(6), rep(seq(3), each = 2)), function(x) y[x]))
+    # And its covariance matrix
+    Sigmai <- mapply(function(b, X, Z, V, Y, Delta, K, Fi, l0i, KK, Fu, l0u){
+      solve(joint_density_sdb(b = b, X = X, Z = Z, beta = beta, V = V, D = D,
+                              Y_1 = Y[,1], Y_2 = Y[,2], Y_3 = Y[,3], nb, theta,
+                              Delta = Delta, K = K, Fi = Fi, l0i = l0i, KK = KK, Fu = Fu, 
+                              haz = l0u, gamma = rep(gamma, each = 2), eta = eta, eps = 1e-3))
+    }, b = b, X = X, Z = Z, V = V, Y = Y, Delta = Delta, K = K, Fi = Fi,
+    l0i= l0i, KK = KK, Fu = Fu, l0u = l0u, SIMPLIFY = F)
+    # Split out into constituent block-diag pieces.
+    SigmaiSplit <- lapply(Sigmai, function(y) lapply(split(seq(6), rep(seq(3), each = 2)), function(x) y[x,x]))
+    
+    # Calculate Standard Errors
+    SE <- hessian(coeffs, data.mat, V, b, bsplit, bmat, Sigmai, SigmaiSplit, l0u, gh, nb, n)
+    names(SE) <- names(params)
+    out$SE <- SE
+    out$postprocess.time <- round(proc.time()[3]-start.time, 2)
+  }
   out
 }
