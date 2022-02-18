@@ -9,7 +9,7 @@ rm(list=ls())
 source('EM.R')
 
 # One fit...
-dd <- simData_joint(thetaDisp = 1)
+dd <- simData_joint(thetaDisp = 1.5)
 ph <- coxph(Surv(survtime, status) ~ cont + bin, dd$surv.data)
 fit1 <- EM(dd$data, ph, dd$surv.data, verbose = T)
 

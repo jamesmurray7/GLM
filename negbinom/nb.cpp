@@ -90,109 +90,86 @@ mat Hbeta(vec& beta, mat& X, vec& Y, mat& Z, vec& b, double theta, double eps){
 	return 0.5 * (out + out.t());
 }
 
-// Function for Score of \theta
-// [[Rcpp::export]]
-double Stheta(double theta, vec& beta, mat& X, vec& Y, mat& Z, vec& b){
-	vec eta = X * beta + Z * b;
-	vec digtY = vec(Y.size()); // digamma t(heta) + Y
-	for(int i = 0; i < Y.size(); i++){
-		digtY[i] = R::digamma(theta + Y[i]);
-	}
-	vec p1 = digtY - R::digamma(theta) + log(theta) + 1.0;
-	vec p2 = (theta + Y)/(exp(eta) + theta) + log(exp(eta) + theta);
-	return sum(p1-p2);
-}
-
-// [[Rcpp::export]]
+// Update to dispersion parameter, theta
 double ll_theta_quad(double theta, vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S,
-				     vec& w, vec& v){
-	vec rhs = vec(Y.size());
-	vec tau = sqrt(diagvec(Z * S * Z.t()));
-	vec eta = X * beta + Z * b;
-	for(int l = 0; l < w.size(); l++){
-		vec this_eta = eta + v[l] * tau;
-		rhs += w[l] * log(exp(this_eta) + theta);
-	}
-	vec out = vec(Y.size());
-	for(int i = 0; i < Y.size(); i++){
-	   out[i] = lgamma(theta + Y[i]) - lgamma(theta) + theta * log(theta) - (theta + Y[i]) * rhs[i];
-	}
-	return sum(out);
+                     vec& w, vec& v){
+  vec rhs = vec(Y.size());
+  vec tau = sqrt(diagvec(Z * S * Z.t()));
+  vec eta = X * beta + Z * b;
+  for(int l = 0; l < w.size(); l++){
+    vec this_eta = eta + v[l] * tau;
+    rhs += w[l] * log(exp(this_eta) + theta);
+  }
+  vec out = vec(Y.size());
+  for(int i = 0; i < Y.size(); i++){
+    out[i] = lgamma(theta + Y[i]) - lgamma(theta) + theta * log(theta) - (theta + Y[i]) * rhs[i];
+  }
+  return sum(out);
 }
 
 // [[Rcpp::export]]
-double Stheta2(double theta, vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S,
-               vec& w, vec& v, double eps){
-	double theta1 = theta + eps;
-	double theta2 = theta - eps;
-	double l1 = ll_theta_quad(theta1, beta, X, Y, Z, b, S, w, v);
-	double l2 = ll_theta_quad(theta2, beta, X, Y, Z, b, S, w, v);
-	return (l1-l2)/(theta1-theta2);
-}
-
-// Function for Hessian of \theta
-// [[Rcpp::export]]
-double Htheta(double theta, vec& beta, mat& X, vec& Y, mat& Z, vec& b, double eps){
-	double f0 = Stheta(theta, beta, X, Y, Z, b);
-	double xi = eps * (abs(theta) + eps);
-	double tt = theta + xi;
-	double fdiff = Stheta(tt, beta, X, Y, Z, b) - f0;
-	return fdiff/(tt-theta);
+double Stheta(double theta, vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S,
+              vec& w, vec& v, double eps){
+  double theta1 = theta + eps;
+  double theta2 = theta - eps;
+  double l1 = ll_theta_quad(theta1, beta, X, Y, Z, b, S, w, v);
+  double l2 = ll_theta_quad(theta2, beta, X, Y, Z, b, S, w, v);
+  return (l1-l2)/(theta1-theta2);
 }
 
 // [[Rcpp::export]]
-double Htheta2(double theta, vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S,
-               vec& w, vec& v, double eps){
-	double f0 = Stheta2(theta, beta, X, Y, Z, b, S, w, v, eps);
-	double xi = eps * (abs(theta) + eps);
-	double tt = theta + xi;
-	double fdiff = Stheta2(tt, beta, X, Y, Z, b, S, w, v, eps) - f0;
-	return fdiff/(tt - theta);
+double Htheta(double theta, vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S,
+              vec& w, vec& v, double eps){
+  double f0 = Stheta(theta, beta, X, Y, Z, b, S, w, v, eps);
+  double xi = eps * (abs(theta) + eps);
+  double tt = theta + xi;
+  double fdiff = Stheta(tt, beta, X, Y, Z, b, S, w, v, eps) - f0;
+  return fdiff/(tt - theta);
 }
 
-//  Function for first derivative of logf(Y,T|...) w.r.t (gamma, eta).
+// Functions for derivatives of logf(Y,T|...) w.r.t (gamma, eta).
+// Define the conditional expectation and then take Score AND Hessian via forward differencing
 // [[Rcpp::export]]
-vec Sgammaeta(vec gammaeta, vec& b, int Delta, rowvec& Fi, 
-		      vec& K, mat& KK, mat& Fu, vec& haz, mat& S, 
-		      vec& w, vec& v){
-	vec out = vec(gammaeta.size());
-	int gh = w.size();
-	vec eta = gammaeta.tail(2);
-	double gamma = as_scalar(gammaeta.head(1));
-	vec tau = diagvec(Fu * S * Fu.t());
-	uvec zzz = find(tau == 0.0);
-	vec tau2 = pow(pow(gamma, 2.0) * tau, -0.5);
-	tau2.elem(zzz).zeros();
-	double gamma_rhs = 0.0;
-	vec eta_rhs = vec(eta.size());
-	for(int l = 0; l < gh; l++){
-		vec xi = haz % exp(KK * eta + gamma * Fu * b + pow(pow(gamma, 2.0) * tau, 0.5) * v[l]);
-		gamma_rhs += as_scalar(w[l] * xi.t() * (Fu * b) + gamma * w[l] * v[l] * (xi % tau2).t() * tau);
-		eta_rhs += w[l] * KK.t() * xi;
-	}
-	out.head(1) = as_scalar(Delta * Fi * b) - gamma_rhs;
-	out.tail(2) = Delta * K - eta_rhs;
-	return out;
+double Egammaeta(vec& gammaeta, vec& b, mat& S,
+                 rowvec& K, mat& KK, mat& Fu, rowvec& Fi, vec& haz, int Delta, vec& w, vec& v){
+  double g = as_scalar(gammaeta.head(1));
+  vec e = gammaeta.tail(2);
+  vec tau = pow(g, 2.0) * diagvec(Fu * S * Fu.t());
+  double rhs = 0.0;
+  for(int l = 0; l < w.size(); l++){
+    rhs += w[l] * as_scalar(haz.t() * exp(KK * e + Fu * (g * b) + v[l] * pow(tau, 0.5)));
+  }
+  return as_scalar(Delta * (K * e + Fi * (g * b)) - rhs);
+}
+// [[Rcpp::export]]
+vec Sgammaeta(vec& gammaeta, vec& b, mat& S,
+              rowvec& K, mat& KK, mat& Fu, rowvec& Fi, vec& haz, int Delta, vec& w, vec& v, double eps){
+  vec out = vec(gammaeta.size());
+  double f0 = Egammaeta(gammaeta, b, S, K, KK, Fu, Fi, haz, Delta, w, v);
+  for(int i = 0; i < gammaeta.size(); i++){
+    vec ge = gammaeta;
+    double xi = std::max(ge[i], 1.0);
+    ge[i] = gammaeta[i] + xi * eps;
+    double fdiff = Egammaeta(ge, b, S, K, KK, Fu, Fi, haz, Delta, w, v)-f0;
+    out[i] = fdiff/(ge[i]-gammaeta[i]);
+  }
+  return out;
+}
+// [[Rcpp::export]]
+mat Hgammaeta(vec& gammaeta, vec& b, mat& S,
+              rowvec& K, mat& KK, mat& Fu, rowvec& Fi, vec& haz, int Delta, vec& w, vec& v, double eps){
+  mat out = zeros<mat>(gammaeta.size(), gammaeta.size());
+  vec f0 = Sgammaeta(gammaeta, b, S, K, KK, Fu, Fi, haz, Delta, w, v, eps);
+  for(int i = 0; i < gammaeta.size(); i++){
+    vec ge = gammaeta;
+    double xi = std::max(ge[i], 1.0);
+    ge[i] = gammaeta[i] + xi * eps;
+    vec fdiff = Sgammaeta(ge, b, S, K, KK, Fu, Fi, haz, Delta, w, v, eps) - f0;
+    out.col(i) = fdiff/(ge[i]-gammaeta[i]);
+  }
+  return 0.5 * (out + out.t());
 }
 
-// Function for second derivative of logf(Y,T|...) w.r.t (gamma, eta).
-// done via forward differencing.
-// [[Rcpp::export]]
-mat Hgammaeta(vec gammaeta, vec& b, int Delta, rowvec& Fi, 
-		      vec& K, mat& KK, mat& Fu, vec& haz, mat& S, 
-		      vec& w, vec& v, double eps){
-	int n = gammaeta.size();
-	mat out = zeros<mat>(n, n);
-	vec f0 = Sgammaeta(gammaeta, b, Delta, Fi, K, KK, Fu, haz, S, w, v);
-	for (int i = 0; i < n; i++){
-		vec ge = gammaeta;
-		double xi = std::max(gammaeta[i], 1.0);
-		ge[i] = gammaeta[i] + (eps * xi);
-		vec fdiff = Sgammaeta(ge, b, Delta, Fi, K, KK, Fu, haz, S, w, v) - f0;
-		out.col(i) = fdiff/(ge[i]-gammaeta[i]);
-	}
-	return 0.5 * (out + out.t());
-}
 
 // Function for the update to the baseline hazard, \lambda_0(u)
 //     (adapted from my implementation in Bernhardt work)...
