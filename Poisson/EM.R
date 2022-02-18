@@ -9,6 +9,7 @@ library(RcppArmadillo)
 source('simData.R')
 source('inits.R')
 source('survFns.R')
+source('vcov.R')
 sourceCpp('po.cpp')
 vech <- function(x) x[lower.tri(x, diag = T)]
 
@@ -48,13 +49,15 @@ EMupdate <- function(b, Y, X, Z,
     Hbeta(beta, X, Y, Z, b, 1e-4)
   }, X = X, Y = Y, Z = Z, b = b.hat, SIMPLIFY = F)
   
+  Egammaeta(c(gamma, eta), b.hat[[1]], Sigmai[[1]], K[[1]], KK[[1]], Fu[[1]], Fi[[1]], l0u[[1]], Delta[[1]], w, v)
+  
   # Score and Hessian for (gamma, eta)
   Sge <- mapply(function(b, Delta, Fi, K, KK, Fu, l0u, S){
-    Sgammaeta(c(gamma, eta), b, Delta, Fi, K, KK, Fu, l0u, S, w, v)
+    Sgammaeta(c(gamma, eta), b, S, K, KK, Fu, Fi, l0u, Delta, w, v, 1e-4)
   }, b = b.hat, Delta = Delta, Fi = Fi, K = K, KK = KK, Fu = Fu, l0u = l0u, S = Sigmai)
   
   Hge <- mapply(function(b, Delta, Fi, K, KK, Fu, l0u, S){
-    Hgammaeta(c(gamma, eta), b, Delta, Fi, K, KK, Fu, l0u, S, w, v, 1e-4)
+    Hgammaeta(c(gamma, eta), b, S, K, KK, Fu, Fi, l0u, Delta, w, v, 1e-4)
   }, b = b.hat, Delta = Delta, Fi = Fi, K = K, KK = KK, Fu = Fu, l0u = l0u, S = Sigmai, SIMPLIFY = F)
   
   #' ### ------
@@ -83,7 +86,7 @@ EMupdate <- function(b, Y, X, Z,
   ))
 }
 
-EM <- function(data, ph, survdata, gh = 9, tol = 0.01, verbose = F){
+EM <- function(data, ph, survdata, gh = 9, tol = 0.01, post.process = T, verbose = F){
   start <- proc.time()[3]
   inits.long <- Longit.inits(data)
   beta <- inits.long$beta.init
@@ -103,6 +106,7 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, verbose = F){
     Z[[i]] <- model.matrix(~time, i.dat)
     K[[i]] <- unname(cbind(unique(i.dat$cont), unique(i.dat$bin)))
   }   
+  m <- lapply(Y, length)
   
   # Survival objects
   sv <- surv.mod(ph, data, inits.surv$l0.init)
@@ -120,11 +124,18 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, verbose = F){
   # Quadrature //
   aa <- statmod::gauss.quad.prob(gh, 'normal')
   w <- aa$w; v <- aa$n
-  EMstart <- proc.time()[3]
+  
+  # Collect parameters
   vD <- vech(D);
   names(vD) <- paste0('D[', apply(which(lower.tri(D, T), arr.ind = T), 1, paste0, collapse = ','),']')
   params <- c(vD, beta, gamma, eta)
+  
+  # Collect data objects
+  data.mat <- list(Y = Y, X = X, Z = Z, m = m, K = K, KK = KK, Fi = Fi, Fu = Fu, Delta = Delta)
+  
+  # Start EM
   diff <- 100; iter <- 0
+  EMstart <- proc.time()[3]
   while(diff > tol){
     update <- EMupdate(b, Y, X, Z, D, beta, gamma, eta, Delta, l0i, l0u, Fi, Fu, K, KK, survdata, sv, w, v)
     params.new <- c(vech(update$D.new), update$beta.new, update$gamma.new, update$eta.new)
@@ -152,5 +163,29 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, verbose = F){
               EMtime = EMend-EMstart,
               iter = iter,
               totaltime = proc.time()[3] - start)
+  
+  # Post Processing
+  if(post.process){
+    message('\nCalculating SEs...')
+    start.time <- proc.time()[3]
+    #' b and Sigmai at MLEs
+    b <- mapply(function(b, X, Y, Z, Delta, K, Fi, l0i, KK, Fu, haz){
+      ucminf::ucminf(b, joint_density, joint_density_ddb,
+                     X = X, Y = Y, Z = Z, beta = beta, D = D,
+                     Delta = Delta, K = K, Fi = Fi, l0i = l0i, KK = KK, Fu = Fu,
+                     haz = haz, gamma = gamma, eta = eta)$par
+    }, b = b, X = X, Y = Y, Z = Z, Delta = Delta, K = K, Fi = Fi, l0i = l0i,
+    KK = KK, Fu = Fu, haz = l0u, SIMPLIFY = F)
+    Sigmai <- mapply(function(b, X, Y, Z, Delta, K, Fi, l0i, KK, Fu, haz){
+      solve(joint_density_sdb(b, X, Y, Z, beta, D, Delta, K, Fi, l0i, KK, Fu, haz, gamma, eta, eps = 1e-4))
+    }, b = b, X = X, Y = Y, Z = Z, Delta = Delta, K = K, Fi = Fi, l0i = l0i,
+    KK = KK, Fu = Fu, haz = l0u, SIMPLIFY = F)
+   
+    SE <- vcov(coeffs, data.mat, b, Sigmai, l0u, gh, n)
+    names(SE) <- names(params)
+    out$SE <- SE
+    out$SE <- SE
+    out$postprocess.time <- round(proc.time()[3]-start.time, 2)
+  }
   out
 }

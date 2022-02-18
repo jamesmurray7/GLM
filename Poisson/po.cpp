@@ -88,49 +88,49 @@ mat joint_density_sdb(vec& b, mat& X, vec& Y, mat& Z, vec& beta, mat& D,        
 	return 0.5 * (out + out.t());
 }
 
-// 7. Function for first derivative of logf(Y,T|...) w.r.t (gamma, eta).
+// 7. Updates to (gamma, eta)
+// Define the conditional expectation and then take Score AND Hessian via forward differencing
 // [[Rcpp::export]]
-vec Sgammaeta(vec gammaeta, vec& b, int Delta, rowvec& Fi, 
-		      vec& K, mat& KK, mat& Fu, vec& haz, mat& S, 
-		      vec& w, vec& v){
-	vec out = vec(gammaeta.size());
-	int gh = w.size();
-	vec eta = gammaeta.tail(2);
-	double gamma = as_scalar(gammaeta.head(1));
-	vec tau = diagvec(Fu * S * Fu.t());
-	uvec zzz = find(tau == 0.0);
-	vec tau2 = pow(pow(gamma, 2.0) * tau, -0.5);
-	tau2.elem(zzz).zeros();
-	double gamma_rhs = 0.0;
-	vec eta_rhs = vec(eta.size());
-	for(int l = 0; l < gh; l++){
-		vec xi = haz % exp(KK * eta + gamma * Fu * b + pow(pow(gamma, 2.0) * tau, 0.5) * v[l]);
-		gamma_rhs += as_scalar(w[l] * xi.t() * (Fu * b) + gamma * w[l] * v[l] * (xi % tau2).t() * tau);
-		eta_rhs += w[l] * KK.t() * xi;
+double Egammaeta(vec& gammaeta, vec& b, mat& S,
+				rowvec& K, mat& KK, mat& Fu, rowvec& Fi, vec& haz, int Delta, vec& w, vec& v){
+	double g = as_scalar(gammaeta.head(1));
+	vec e = gammaeta.tail(2);
+	vec tau = pow(g, 2.0) * diagvec(Fu * S * Fu.t());
+	double rhs = 0.0;
+	for(int l = 0; l < w.size(); l++){
+		rhs += w[l] * as_scalar(haz.t() * exp(KK * e + Fu * (g * b) + v[l] * pow(tau, 0.5)));
 	}
-	out.head(1) = as_scalar(Delta * Fi * b) - gamma_rhs;
-	out.tail(2) = Delta * K - eta_rhs;
+	return as_scalar(Delta * (K * e + Fi * (g * b)) - rhs);
+}
+// [[Rcpp::export]]
+vec Sgammaeta(vec& gammaeta, vec& b, mat& S,
+				rowvec& K, mat& KK, mat& Fu, rowvec& Fi, vec& haz, int Delta, vec& w, vec& v, double eps){
+	vec out = vec(gammaeta.size());
+	double f0 = Egammaeta(gammaeta, b, S, K, KK, Fu, Fi, haz, Delta, w, v);
+	for(int i = 0; i < gammaeta.size(); i++){
+		vec ge = gammaeta;
+		double xi = std::max(ge[i], 1.0);
+		ge[i] = gammaeta[i] + xi * eps;
+		double fdiff = Egammaeta(ge, b, S, K, KK, Fu, Fi, haz, Delta, w, v)-f0;
+		out[i] = fdiff/(ge[i]-gammaeta[i]);
+	}
 	return out;
 }
-
-// Function for second derivative of logf(Y,T|...) w.r.t (gamma, eta).
-// This is done via forward differencing.
 // [[Rcpp::export]]
-mat Hgammaeta(vec gammaeta, vec& b, int Delta, rowvec& Fi, 
-		      vec& K, mat& KK, mat& Fu, vec& haz, mat& S, 
-		      vec& w, vec& v, double eps){
-	int n = gammaeta.size();
-	mat out = zeros<mat>(n, n);
-	vec f0 = Sgammaeta(gammaeta, b, Delta, Fi, K, KK, Fu, haz, S, w, v);
-	for (int i = 0; i < n; i++){
+mat Hgammaeta(vec& gammaeta, vec& b, mat& S,
+			  rowvec& K, mat& KK, mat& Fu, rowvec& Fi, vec& haz, int Delta, vec& w, vec& v, double eps){
+	mat out = zeros<mat>(gammaeta.size(), gammaeta.size());
+	vec f0 = Sgammaeta(gammaeta, b, S, K, KK, Fu, Fi, haz, Delta, w, v, eps);
+	for(int i = 0; i < gammaeta.size(); i++){
 		vec ge = gammaeta;
-		double xi = std::max(gammaeta[i], 1.0);
-		ge[i] = gammaeta[i] + (eps * xi);
-		vec fdiff = Sgammaeta(ge, b, Delta, Fi, K, KK, Fu, haz, S, w, v) - f0;
+		double xi = std::max(ge[i], 1.0);
+		ge[i] = gammaeta[i] + xi * eps;
+		vec fdiff = Sgammaeta(ge, b, S, K, KK, Fu, Fi, haz, Delta, w, v, eps) - f0;
 		out.col(i) = fdiff/(ge[i]-gammaeta[i]);
 	}
 	return 0.5 * (out + out.t());
 }
+
 
 // Function for the update to the baseline hazard, \lambda_0(u)
 //     (adapted from my implementation in Bernhardt work)...
