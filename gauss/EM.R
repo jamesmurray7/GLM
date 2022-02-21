@@ -1,5 +1,5 @@
-#' ####    Poisson/
-#' Approximate EM for joint model of negative-binomial (gamma-poisson deviate) x survival response.
+#' ####    Gaussian/
+#' Approximate EM for joint model of normal continuous x survival response.
 #' ####
 library(dplyr)
 library(survival)
@@ -10,11 +10,11 @@ source('simData.R')
 source('inits.R')
 source('survFns.R')
 source('vcov.R')
-sourceCpp('po.cpp')
+sourceCpp('gauss.cpp')
 vech <- function(x) x[lower.tri(x, diag = T)]
 
-EMupdate <- function(b, Y, X, Z, 
-                     D, beta, gamma, eta,
+EMupdate <- function(b, Y, X, Z, XtX, m,
+                     D, beta, var.e, gamma, eta,
                      Delta, l0i, l0u, Fi, Fu, K, KK, survdata, sv, w, v){
   n <- length(b)
   
@@ -24,14 +24,14 @@ EMupdate <- function(b, Y, X, Z,
   
   b.hat <- mapply(function(b, X, Y, Z, Delta, K, Fi, l0i, KK, Fu, haz){
     ucminf::ucminf(b, joint_density, joint_density_ddb,
-                   X = X, Y = Y, Z = Z, beta = beta, D = D,
+                   X = X, Y = Y, Z = Z, beta = beta, vare = var.e, D = D,
                    Delta = Delta, K = K, Fi = Fi, l0i = l0i, KK = KK, Fu = Fu,
                    haz = haz, gamma = gamma, eta = eta)$par
   }, b = b, X = X, Y = Y, Z = Z, Delta = Delta, K = K, Fi = Fi, l0i = l0i,
   KK = KK, Fu = Fu, haz = l0u, SIMPLIFY = F)
   
   Sigmai <- mapply(function(b, X, Y, Z, Delta, K, Fi, l0i, KK, Fu, haz){
-    solve(joint_density_sdb(b, X, Y, Z, beta, D, Delta, K, Fi, l0i, KK, Fu, haz, gamma, eta, eps = 1e-4))
+    solve(joint_density_sdb(b, X, Y, Z, beta, var.e,  D, Delta, K, Fi, l0i, KK, Fu, haz, gamma, eta, eps = 1e-4))
   }, b = b.hat, X = X, Y = Y, Z = Z, Delta = Delta, K = K, Fi = Fi, l0i = l0i,
   KK = KK, Fu = Fu, haz = l0u, SIMPLIFY = F)
   
@@ -40,16 +40,24 @@ EMupdate <- function(b, Y, X, Z,
     S + tcrossprod(b)
   }, S = Sigmai, b = b.hat, SIMPLIFY = F)
   
-  # Score and Hessian for \beta
-  Sb <- mapply(function(X, Y, Z, b){
-    Sbeta(beta, X, Y, Z, b)
-  }, X = X, Y = Y, Z = Z, b = b.hat, SIMPLIFY = F)
+  # Update for \beta and resid variance term
+  EZb <- mapply(function(Z, b) Z %*% b, Z = Z, b = b.hat)
+  EXb <- mapply(function(X, Z, b) X %*% beta + Z %*% b, X = X, Z = Z, b = b.hat)
+  tau <- mapply(function(Z, S) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), Z = Z, S = Sigmai)
   
-  Hb <- mapply(function(X, Y, Z, b){
-    Hbeta(beta, X, Y, Z, b, 1e-4)
-  }, X = X, Y = Y, Z = Z, b = b.hat, SIMPLIFY = F)
+  beta.rhs <- mapply(function(X, Y, mu, tau){
+    rhs <- 0
+    for(l in 1:length(w)) rhs <- rhs + w[l] * tau * v[l]
+    crossprod(X, Y - mu - rhs)
+  }, X = X, Y = Y, mu = EZb, tau = tau, SIMPLIFY = F)
   
-  Egammaeta(c(gamma, eta), b.hat[[1]], Sigmai[[1]], K[[1]], KK[[1]], Fu[[1]], Fi[[1]], l0u[[1]], Delta[[1]], w, v)
+  Ee <- mapply(function(Y, mu, tau){
+    temp <- numeric(length(w))
+    for(l in 1:length(w)){
+      temp[l] <- w[l] * crossprod(Y - mu - tau * v[l])
+    }
+    sum(temp)
+  }, Y = Y, mu = EXb, tau = tau, SIMPLIFY = F)
   
   # Score and Hessian for (gamma, eta)
   Sge <- mapply(function(b, Delta, Fi, K, KK, Fu, l0u, S){
@@ -65,7 +73,8 @@ EMupdate <- function(b, Y, X, Z,
   #' ### ------
   
   D.new <- Reduce('+', Drhs)/n
-  beta.new <- beta - solve(Reduce('+', Hb), Reduce('+', Sb))
+  beta.new <- solve(Reduce('+', XtX)) %*% Reduce('+', beta.rhs)
+  var.e.new <- sum(do.call(c, Ee))/sum(do.call(c, m))
   gammaeta.new <- c(gamma, eta) - solve(Reduce('+', Hge), rowSums(Sge))
   lambda <- lambdaUpdate(sv$surv.times, sv$ft, gamma, eta, K, Sigmai, b.hat, w, v)
   # Baseline hazard
@@ -80,18 +89,19 @@ EMupdate <- function(b, Y, X, Z,
   l0i.new <- as.list(l0i.new)
   
   return(list(
-    D.new = D.new, beta.new = beta.new, 
+    D.new = D.new, beta.new = beta.new, var.e.new = var.e.new,
     gamma.new = gammaeta.new[1], eta.new = gammaeta.new[2:3], 
     b.hat = b.hat, l0 = l0.new, l0i.new = l0i.new, l0u.new = l0u.new
   ))
 }
 
-EM <- function(data, ph, survdata, gh = 9, tol = 0.01, post.process = T, verbose = F){
+EM <- function(data, ph, survdata, gh = 3, tol = 0.01, post.process = T, verbose = F){
   start <- proc.time()[3]
   inits.long <- Longit.inits(data)
   beta <- inits.long$beta.init
   D <- inits.long$D.init
   b <- Ranefs(inits.long); n <- nrow(b)
+  var.e <- inits.long$var.e.init
   inits.surv <- TimeVarCox(data, b)
   gamma <- inits.surv$inits[3]
   eta <- inits.surv$inits[1:2]
@@ -107,6 +117,7 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, post.process = T, verbose
     K[[i]] <- unname(cbind(unique(i.dat$cont), unique(i.dat$bin)))
   }   
   m <- lapply(Y, length)
+  XtX <- lapply(X, crossprod)
   
   # Survival objects
   sv <- surv.mod(ph, data, inits.surv$l0.init)
@@ -128,7 +139,7 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, post.process = T, verbose
   # Collect parameters
   vD <- vech(D);
   names(vD) <- paste0('D[', apply(which(lower.tri(D, T), arr.ind = T), 1, paste0, collapse = ','),']')
-  params <- c(vD, beta, gamma, eta)
+  params <- c(vD, beta, var.e, gamma, eta)
   
   # Collect data objects
   data.mat <- list(Y = Y, X = X, Z = Z, m = m, K = K, KK = KK, Fi = Fi, Fu = Fu, Delta = Delta)
@@ -137,8 +148,8 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, post.process = T, verbose
   diff <- 100; iter <- 0
   EMstart <- proc.time()[3]
   while(diff > tol){
-    update <- EMupdate(b, Y, X, Z, D, beta, gamma, eta, Delta, l0i, l0u, Fi, Fu, K, KK, survdata, sv, w, v)
-    params.new <- c(vech(update$D.new), update$beta.new, update$gamma.new, update$eta.new)
+    update <- EMupdate(b, Y, X, Z, XtX, m, D, beta, var.e, gamma, eta, Delta, l0i, l0u, Fi, Fu, K, KK, survdata, sv, w, v)
+    params.new <- c(vech(update$D.new), update$beta.new, update$var.e.new, update$gamma.new, update$eta.new)
     names(params.new) <- names(params)
     if(verbose) print(sapply(params.new, round, 4))
     diff <- max(
@@ -149,6 +160,7 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, post.process = T, verbose
     b <- update$b.hat
     D <- update$D.new
     beta <- update$beta.new
+    var.e <- update$var.e.new
     gamma <- update$gamma.new
     eta <- update$eta.new
     l0 <- update$l0.new; l0u <- update$l0u.new; l0i <- update$l0i.new
@@ -156,7 +168,7 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, post.process = T, verbose
     iter <- iter + 1
   }
   EMend <- proc.time()[3]
-  coeffs <- list(D = D, beta = beta, gamma = gamma, eta = eta)
+  coeffs <- list(D = D, beta = beta, var.e = var.e, gamma = gamma, eta = eta)
   out <- list(coeffs = coeffs,
               RE = do.call(rbind, b),
               inits = inits.long,
@@ -171,20 +183,22 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, post.process = T, verbose
     #' b and Sigmai at MLEs
     b <- mapply(function(b, X, Y, Z, Delta, K, Fi, l0i, KK, Fu, haz){
       ucminf::ucminf(b, joint_density, joint_density_ddb,
-                     X = X, Y = Y, Z = Z, beta = beta, D = D,
+                     X = X, Y = Y, Z = Z, beta = beta, vare = var.e, D = D,
                      Delta = Delta, K = K, Fi = Fi, l0i = l0i, KK = KK, Fu = Fu,
                      haz = haz, gamma = gamma, eta = eta)$par
     }, b = b, X = X, Y = Y, Z = Z, Delta = Delta, K = K, Fi = Fi, l0i = l0i,
     KK = KK, Fu = Fu, haz = l0u, SIMPLIFY = F)
     Sigmai <- mapply(function(b, X, Y, Z, Delta, K, Fi, l0i, KK, Fu, haz){
-      solve(joint_density_sdb(b, X, Y, Z, beta, D, Delta, K, Fi, l0i, KK, Fu, haz, gamma, eta, eps = 1e-4))
+      solve(joint_density_sdb(b, X, Y, Z, beta, vare = var.e, D, Delta, K, Fi, l0i, KK, Fu, haz, gamma, eta, eps = 1e-4))
     }, b = b, X = X, Y = Y, Z = Z, Delta = Delta, K = K, Fi = Fi, l0i = l0i,
     KK = KK, Fu = Fu, haz = l0u, SIMPLIFY = F)
    
-    SE <- vcov(coeffs, data.mat, b, Sigmai, l0u, gh, n)
-    names(SE) <- names(params)
-    out$SE <- SE
-    out$SE <- SE
+    I <- structure(vcov(coeffs, data.mat, b, Sigmai, l0u, gh, n),
+                   dimnames = list(names(params), names(params)))
+    out$SE <- sqrt(diag(solve(I)))
+    out$vcov <- I
+    out$bhat <- b
+    out$S <- Sigmai
     out$postprocess.time <- round(proc.time()[3]-start.time, 2)
   }
   out
