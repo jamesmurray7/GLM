@@ -78,7 +78,6 @@ EMupdate <- function(b, Y, X, Z, XtX, m,
   gammaeta.new <- c(gamma, eta) - solve(Reduce('+', Hge), rowSums(Sge))
   lambda <- lambdaUpdate(sv$surv.times, sv$ft, gamma, eta, K, Sigmai, b.hat, w, v)
   # Baseline hazard
-  l0 <- sv$nev/rowSums(lambda)
   l0.new <- sv$nev/rowSums(lambda)
   l0u.new <- lapply(l0u, function(x){
     ll <- length(x); l0.new[1:ll]
@@ -91,7 +90,7 @@ EMupdate <- function(b, Y, X, Z, XtX, m,
   return(list(
     D.new = D.new, beta.new = beta.new, var.e.new = var.e.new,
     gamma.new = gammaeta.new[1], eta.new = gammaeta.new[2:3], 
-    b.hat = b.hat, l0 = l0.new, l0i.new = l0i.new, l0u.new = l0u.new
+    b.hat = b.hat, l0.new = l0.new, l0i.new = l0i.new, l0u.new = l0u.new
   ))
 }
 
@@ -175,6 +174,7 @@ EM <- function(data, ph, survdata, gh = 3, tol = 0.01, post.process = T, verbose
               EMtime = EMend-EMstart,
               iter = iter,
               totaltime = proc.time()[3] - start)
+  out$hazard <- cbind(ft = sv$ft, haz = l0)
   
   # Post Processing
   if(post.process){
@@ -197,8 +197,6 @@ EM <- function(data, ph, survdata, gh = 3, tol = 0.01, post.process = T, verbose
                    dimnames = list(names(params), names(params)))
     out$SE <- sqrt(diag(solve(I)))
     out$vcov <- I
-    out$bhat <- b
-    out$S <- Sigmai
     out$postprocess.time <- round(proc.time()[3]-start.time, 2)
   }
   out
