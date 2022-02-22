@@ -2,7 +2,7 @@
 #' Calculating the observed emprical information matrix (-ve Hessian)
 #' ####
 
-hessian <- function(Omega, data.mat, V, b, bsplit, bmat, Sigmai, SigmaiSplit, l0u, gh.nodes, nb, n){
+vcov <- function(Omega, data.mat, V, b, bsplit, bmat, Sigmai, SigmaiSplit, l0u, gh.nodes, nb, n){
   #' Unpack Omega ----
   D <- Omega$D
   beta <- c(Omega$beta)
@@ -98,5 +98,5 @@ hessian <- function(Omega, data.mat, V, b, bsplit, bmat, Sigmai, SigmaiSplit, l0
   SS <- rowSums(S) # sum S
   I <- Reduce('+', lapply(1:n, function(i) tcrossprod(S[, i]))) - tcrossprod(SS)/n
   # ^ observed empirical information matrix (Mclachlan and Krishnan, 2008).
-  sqrt(diag(solve(I)))
+  I
 }

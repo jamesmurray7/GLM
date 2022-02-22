@@ -35,9 +35,7 @@ summary.mix <- function(fit, ci = 95){
     c('Coefficient', 'SE', lower.name, upper.name, 'z-value', 'p-value')
   )
   
-  cat(print(longpart))
-  
   # Survival Part
   
-  
+  list(longpart)
 }

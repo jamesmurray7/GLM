@@ -197,6 +197,7 @@ EM <- function(data, ph, survdata, gh = 3, tol = 0.01, post.process = T, verbose
                    dimnames = list(names(params), names(params)))
     out$SE <- sqrt(diag(solve(I)))
     out$vcov <- I
+    out$RE <- do.call(rbind, b)
     out$postprocess.time <- round(proc.time()[3]-start.time, 2)
   }
   out

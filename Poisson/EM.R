@@ -69,7 +69,6 @@ EMupdate <- function(b, Y, X, Z,
   gammaeta.new <- c(gamma, eta) - solve(Reduce('+', Hge), rowSums(Sge))
   lambda <- lambdaUpdate(sv$surv.times, sv$ft, gamma, eta, K, Sigmai, b.hat, w, v)
   # Baseline hazard
-  l0 <- sv$nev/rowSums(lambda)
   l0.new <- sv$nev/rowSums(lambda)
   l0u.new <- lapply(l0u, function(x){
     ll <- length(x); l0.new[1:ll]
@@ -82,7 +81,7 @@ EMupdate <- function(b, Y, X, Z,
   return(list(
     D.new = D.new, beta.new = beta.new, 
     gamma.new = gammaeta.new[1], eta.new = gammaeta.new[2:3], 
-    b.hat = b.hat, l0 = l0.new, l0i.new = l0i.new, l0u.new = l0u.new
+    b.hat = b.hat, l0.new = l0.new, l0i.new = l0i.new, l0u.new = l0u.new
   ))
 }
 
@@ -163,6 +162,8 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, post.process = T, verbose
               EMtime = EMend-EMstart,
               iter = iter,
               totaltime = proc.time()[3] - start)
+  out$hazard <- cbind(ft = sv$ft, haz = l0)
+  
   
   # Post Processing
   if(post.process){
@@ -181,11 +182,12 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, post.process = T, verbose
     }, b = b, X = X, Y = Y, Z = Z, Delta = Delta, K = K, Fi = Fi, l0i = l0i,
     KK = KK, Fu = Fu, haz = l0u, SIMPLIFY = F)
    
-    SE <- vcov(coeffs, data.mat, b, Sigmai, l0u, gh, n)
-    names(SE) <- names(params)
-    out$SE <- SE
-    out$SE <- SE
+    I <- structure(vcov(coeffs, data.mat, b, Sigmai, l0u, gh, n),
+                   dimnames = list(names(params), names(params)))
+    out$vcov <- I
+    out$SE <- sqrt(diag(solve(I)))
     out$postprocess.time <- round(proc.time()[3]-start.time, 2)
+    out$RE <- do.call(rbind, b)
   }
   out
 }

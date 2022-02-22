@@ -75,6 +75,6 @@ vcov <- function(Omega, data.mat, b, Sigmai, l0u, gh.nodes, n){
   SS <- rowSums(S) # sum S
   I <- Reduce('+', lapply(1:n, function(i) tcrossprod(S[, i]))) - tcrossprod(SS)/n
   # ^ observed empirical information matrix (Mclachlan and Krishnan, 2008).
-  sqrt(diag(solve(I)))
+  I
 }
   

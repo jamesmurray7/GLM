@@ -107,7 +107,6 @@ EMupdate <- function(b, Y, X, Z, V,
   # baseline hazard
   lambda <- lambdaUpdate(sv$surv.times, sv$ft, gamma, eta, K, SigmaiSplit, bsplit, w, v)
   # Baseline hazard objects
-  l0 <- sv$nev/rowSums(lambda)
   l0.new <- sv$nev/rowSums(lambda)
   l0u.new <- lapply(l0u, function(x){
     ll <- length(x); l0.new[1:ll]
@@ -120,7 +119,7 @@ EMupdate <- function(b, Y, X, Z, V,
   return(list(
     D.new = D.new, beta.new = beta.new, var.e.new = var.e.new, theta.new = theta.new, 
     gamma.new = gammaeta.new[1:3], eta.new = gammaeta.new[4:5], 
-    b.hat = b.hat, l0 = l0.new, l0i.new = l0i.new, l0u.new = l0u.new
+    b.hat = b.hat, l0.new = l0.new, l0i.new = l0i.new, l0u.new = l0u.new
   ))
 }
 
@@ -212,6 +211,8 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, verbose = F, nb = F, post
               EMtime = EMend-EMstart,
               iter = iter,
               totaltime = proc.time()[3] - start)
+  out$hazard <- cbind(ft = sv$ft, haz = l0)
+  
   if(post.process){
     message('\nCalculating SEs...')
     start.time <- proc.time()[3]
@@ -238,9 +239,11 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, verbose = F, nb = F, post
     SigmaiSplit <- lapply(Sigmai, function(y) lapply(split(seq(6), rep(seq(3), each = 2)), function(x) y[x,x]))
     
     # Calculate Standard Errors
-    SE <- hessian(coeffs, data.mat, V, b, bsplit, bmat, Sigmai, SigmaiSplit, l0u, gh, nb, n)
-    names(SE) <- names(params)
-    out$SE <- SE
+    I <- structure(vcov(coeffs, data.mat, V, b, bsplit, bmat, Sigmai, SigmaiSplit, l0u, gh, nb, n),
+                   dimnames = list(names(params), names(params)))
+    out$SE <- sqrt(diag(solve(I)))
+    out$vcov <- I
+    out$RE <- do.call(rbind, b)
     out$postprocess.time <- round(proc.time()[3]-start.time, 2)
   }
   out
