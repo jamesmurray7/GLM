@@ -36,12 +36,19 @@ dynSurv <- function(fit, data, id, u = NULL, b.method = 'normal', nsim = 200){
                     pt$surv$Delta, pt$surv$K, pt$surv$Fi, pt$surv$l0i, pt$surv$KK.t,
                     pt$surv$Fu.t, pt$surv$l0u.t, O$gamma, O$eta),
                     error = function(e) NA)
-        error.flag <- any(is.na(b))
+        error.flag.b <- any(is.na(b))
+        if(!error.flag.b){
+          b <- b$b
+          
+          pi.store[i] <- S(b, O, pu$surv) / S(b, O, pt$surv)
+          error.flag.pi <- is.nan(pi.store[i])
+        }
+        error.flag <- any(error.flag.b, error.flag.pi)
       }
       
-      b <- b$b
-      
-      pi.store[i] <- S(b, O, pu$surv) / S(b, O, pt$surv)
+      # b <- b$b
+      # 
+      # pi.store[i] <- S(b, O, pu$surv) / S(b, O, pt$surv)
       utils::setTxtProgressBar(pb, i)
       
     }
