@@ -18,12 +18,14 @@ prep.surv <- function(data, l0, u = NULL){
   # Failure-time design objects
   Fi <- do.call(c, replicate(3, c(1, survtime), simplify = F))
   Fu.t <- cbind(1, l0[ft <= max(data$time), 1])
+  if(length(which(ft <= max(data$time))) == 0) Fu.t <- cbind(1, 0)
   if(!is.null(u)){
     Fu.t <- cbind(1, l0[ft <= u, 1])
     # Fu.u <- cbind(1, l0[ft <= u, 1])
   }
   
   l0u.t <- l0[ft <= max(data$time), 2]
+  if(length(which(ft <= max(data$time))) == 0) l0u.t <- 0
   if(!is.null(u)){
     l0u.t <- l0[ft <= u, 2]
     # l0u.u <- l0[ft <= u, 2]
@@ -96,6 +98,7 @@ prepdata <- function(data, id, u = NULL, fit){
   }
   
   if(is.null(u)){
+    
     V <- diag(fit$coeffs$var.e, nrow = nrow(long$Y), ncol = nrow(long$Y)) # Create matrix of residual variance
     S <- solve(joint_density_sdb(
       b, long$Xt, long$Zt, fit$coeffs$beta, V, fit$coeffs$D,
