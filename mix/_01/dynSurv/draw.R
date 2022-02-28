@@ -39,7 +39,7 @@ Omega.draw <- function(fit){
 }
 
 # Draw b ------------------------------------------------------------------
-b.draw <- function(b0, X, Y, Z, beta, var.e, theta, D, Delta, K, Fi, l0i, KK, Fu, haz, gamma, eta){
+b.draw <- function(b0, X, Y, Z, beta, var.e, theta, D, Delta, K, Fi, l0i, KK, Fu, haz, gamma, eta, Sigma0){
   
   # work out if count was fit by NB
   if(length(theta) == 0){
@@ -54,6 +54,15 @@ b.draw <- function(b0, X, Y, Z, beta, var.e, theta, D, Delta, K, Fi, l0i, KK, Fu
                           joint_density, joint_density_ddb,
                           X, Z, beta, V, D, Y[, 1], Y[, 2], Y[, 3],
                           nb, theta, Delta, K, Fi, l0i, KK, Fu, haz, rep(gamma, each = 2), eta)$par
+  
+  # pp <- prod(pnorm(b.hat, b0, sqrt(diag(Sigma0)), lower.tail = F))
+  # pp2 <- mvtnorm::pmvnorm(lower = -Inf, upper = b.hat, mean = b0, sigma = Sigma0, algorithm = mvtnorm::Miwa())
+  # print(b0)
+  # print(b.hat)
+  # print(pp)
+  # print(pp2)
+  
+  
   Sigmai <- solve(joint_density_sdb(b.hat, X, Z, beta, V, D, 
                                     Y[, 1], Y[, 2], Y[, 3], nb, theta, 
                                     Delta, K, Fi, l0i,
