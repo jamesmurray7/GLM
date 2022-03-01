@@ -9,7 +9,7 @@ prep.surv <- function(data, l0, u = NULL){
   # l0: final baseline hazard from fitted model (matrix, second column is hazard, first is fts)
   # u: if not null, then outputs both objects for u and t <= u for the subject.
   #    if null (default) then this is same as surv.mod with reduced output.
-  
+
   udat <- dplyr::distinct(data[,c('cont', 'bin', 'survtime', 'status')])
   Delta <- unique(data$status)
   survtime <- unique(data$survtime)
@@ -21,6 +21,7 @@ prep.surv <- function(data, l0, u = NULL){
   if(length(which(ft <= max(data$time))) == 0) Fu.t <- cbind(1, 0)
   if(!is.null(u)){
     Fu.t <- cbind(1, l0[ft <= u, 1])
+    # if(length(which(ft <= u)) == 0) Fu.t <- cbind(1, 0)
     # Fu.u <- cbind(1, l0[ft <= u, 1])
   }
   
