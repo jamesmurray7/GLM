@@ -4,7 +4,7 @@
 
 
 # Prepare survival objects ------------------------------------------------
-prep.surv <- function(data, l0, u = NULL){
+prep.surv <- function(data, l0, u = NULL, smoothed = F){
   # data: i.dat-type object (i.e. just one subject)
   # l0: final baseline hazard from fitted model (matrix, second column is hazard, first is fts)
   # u: if not null, then outputs both objects for u and t <= u for the subject.
@@ -14,6 +14,8 @@ prep.surv <- function(data, l0, u = NULL){
   Delta <- unique(data$status)
   survtime <- unique(data$survtime)
   ft <- l0[,1]
+  
+  if(smoothed) l0 <- predict(lm(l0 ~ splines::bs(ft, df = 4)))
   
   # Failure-time design objects
   Fi <- do.call(c, replicate(3, c(1, survtime), simplify = F))
@@ -79,7 +81,7 @@ prep.long <- function(data, u = NULL){
 
 
 # Prepare data ------------------------------------------------------------
-prepdata <- function(data, id, u = NULL, fit){
+prepdata <- function(data, id, u = NULL, fit, smoothed = F){
   # data = dataset containing ALL items
   # id = id of subject we want to get dynamic predictions for
   # u = candidate time we want dynpreds for
@@ -87,7 +89,7 @@ prepdata <- function(data, id, u = NULL, fit){
   i.dat <- data#[data$id == id, ]
   
   long <- prep.long(i.dat, u)
-  surv <- prep.surv(i.dat, fit$hazard, u)
+  surv <- prep.surv(i.dat, fit$hazard, u, smoothed)
   
   b <- fit$RE[id, ] # think of a better way to do this !
   

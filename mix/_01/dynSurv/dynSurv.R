@@ -2,7 +2,7 @@
 #' Dynamic survival predictions
 #' #####
 
-dynSurv <- function(fit, data, id, u = NULL, b.method = 'normal', nsim = 200, progress = T){
+dynSurv <- function(fit, data, id, u = NULL, b.method = 'normal', nsim = 200, smoothed = F, progress = T){
   # Checks
   if(!b.method %in% c('normal', 'MH')) stop('\nb.method should be either normal or MH.\n')
   tmax <- max(unique(data[data$status == 1, 'survtime']))
@@ -100,7 +100,7 @@ ROC <- function(fit, data, Tstart, Delta, what = 'lowest', ...){
   
   # Obtaining conditional probabilities for sample alive at Tstart
   infodf <- lapply(alive.ids, function(x){
-    p <- as.data.frame(probs[[paste0('id ', deparse(x))]])
+    p <- as.data.frame(probs[[paste0('id ', x)]])
     p$id <- x
     p
   })
@@ -170,7 +170,7 @@ AUC <- function(ROC){
 
 # Dynamic Plots -----------------------------------------------------------
 
-dynPreds <- function(fit, data, id, centiles = 4, u.override = NULL, nsim = 100){
+dynPreds <- function(fit, data, id, centiles = 4, u.override = NULL, nsim = 100, smoothed = F){
   # Given the data and fit, choose an ID and produce a string of plots of the dynamic predictions
   # across ALL future follow-up times and animate it (at some point)
   
@@ -191,7 +191,7 @@ dynPreds <- function(fit, data, id, centiles = 4, u.override = NULL, nsim = 100)
       u <- c(t[tt], ft[ft > t[tt]])
     }
     
-    if(!is.null(u.override)) u <- u.override
+    if(!is.null(u.override)) u <- c(t[tt], u.override[u.override > t[tt]])
     
     ds <- dynSurv(fit, data, id = id, u = u, b.method = 'normal', nsim = nsim, progress = F)
     tlist[[tt]] <- list(
@@ -277,7 +277,7 @@ dynPlot <- function(dynfit, longit = F){
   }
   
   dev.off()
-  
+  par(mfrow=c(1,1))
   invisible()
   
 }
