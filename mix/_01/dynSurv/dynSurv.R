@@ -41,8 +41,7 @@ dynSurv <- function(fit, data, id, u = NULL, b.method = 'normal', nsim = 200, pr
         error.flag.b <- any(is.na(b))
         if(!error.flag.b){
           b <- b$b
-          
-          pi.store[i] <- S(b, O, pu$surv) / S(b, O, pt$surv)
+          pi.store[i] <- S_Cpp2(pt$surv, pu$surv, rep(O$gamma, each = 2), O$eta, b)
           error.flag.pi <- is.nan(pi.store[i])
         }
         error.flag <- any(error.flag.b, error.flag.pi)
@@ -54,14 +53,14 @@ dynSurv <- function(fit, data, id, u = NULL, b.method = 'normal', nsim = 200, pr
       if(progress) utils::setTxtProgressBar(pb, i)
       
     }
-
     pi[[uu]] <- pi.store
   }
-  cat('\n\n')
+  # cat('\n\n')
   return(lapply(pi, quantile, probs = c(0.500, 0.025, 0.975), na.rm = T))
-  
 }
 
+
+# ROC and AUC -------------------------------------------------------------
 ROC <- function(fit, data, Tstart, Delta, what = 'lowest', ...){
   # fit: Fitted object
   # data: Full data
@@ -162,7 +161,6 @@ plotROC <- function(ROC, cutoff = F, legend = F){
 
 AUC <- function(ROC){
   TPR <- ROC$metrics$TPR; FPR <- ROC$metrics$FPR;
-  TPR <- ROC$metrics.reduced$TPR; FPR <- ROC$metrics.reduced$FPR;
   auc <- sum(0.5 * diff(FPR) * (TPR[-1] + TPR[-length(TPR)]), na.rm = TRUE)
   auc
 }
