@@ -24,7 +24,7 @@ set$bin <- ifelse(set$APOE4 >= 1, 1, 0)
 
 set2 <- set %>% 
   mutate(Y.1 = c(scale(MidTemp)),
-         Y.2 = ifelse(RAVLT.perc.forgetting >= 100, 1, 0),
+         Y.2 = ifelse(RAVLT.perc.forgetting >= 80, 1, 0),
          Y.3 = floor(ADAS13),
          time = Year,
          status = cens,
@@ -37,7 +37,17 @@ ph <- coxph(Surv(survtime, status) ~ cont + bin, survdata)
 
 set3 <- left_join(set2, survdata %>% select(RID, id, cont), 'RID')
 
-data <- set3 %>% select(id, cont, bin, survtime, status, time, Y.1, Y.2, Y.3)
+data <- set3 %>% select(id, cont, bin, survtime, status, time, Y.1, Y.2, Y.3) 
+
+# Make sure there's a period of time between final t and T.
+data <- data %>% group_by(id) %>% mutate(tempflag = any(time == survtime)) %>% 
+  ungroup %>% mutate(survtime = ifelse(tempflag, survtime +  1e-2, survtime)) %>% 
+  select(-tempflag)
+# Ensuring no times are duplicated: Staggering by some small time 1e-1.
+data <- data %>% group_by(id) %>% mutate(ltime = lag(time)) %>% 
+  mutate(time2 = ifelse(time == ltime, time + 1e-1, time),
+         time = ifelse(!is.na(time2), time2, time)) %>% ungroup %>% select(-time2, -ltime)
+
 survdata <- data %>% distinct(id, cont, bin, survtime, status)  
 ph <- coxph(Surv(survtime, status) ~ cont + bin, survdata)
 
@@ -46,5 +56,4 @@ ADNI <- list(
   survdata = survdata,
   ph = ph
 )
-save(ADNI, file = 'ADNI100.RData')
-
+save(ADNI, file = 'ADNI80.RData')
