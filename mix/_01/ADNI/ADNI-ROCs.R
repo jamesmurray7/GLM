@@ -1,6 +1,6 @@
 #' #########
 #' ADNI-ROCs
-#' Comparing ROC curve EM/JMbayes2.
+#' Comparing ROC curve EM/JMbayes2. WD: mix/_01
 #' #########
 
 rm(list=ls())
@@ -34,3 +34,30 @@ par(mfrow = c(2, 1))
 plotROC(ROC100, legend = T)
 plotROC(ROC100.2, legend = T)
 plot(jmROC100); JMbayes2::tvAUC(jmROC100)
+
+
+# Rolling windows for Delta = 2 -------------------------------------------
+# >= 80%
+data <- data[!data$id %in% c(286, 333), ]
+mine <- JMB <- list(); p <- 1
+for(t in c(2, 4, 5, 7)){
+  # Stick with one draw?
+  myROCt <- ROC(fit80, data, Tstart = t, Delta = 2, nsim = 1, what = 'last')
+  jmROCt <- tvROC(jm80, data, Tstart = t, Dt = 2)
+  JMB[[p]] <- jmROCt; mine[[p]] <- myROCt
+  p <- p + 1
+}
+
+pdf('~/Downloads/cc.pdf', paper ='a4r', width = 144, height = 60)
+par(mfrow = c(2, 4))
+lapply(mine, plotROC, legend = T)
+lapply(JMB, function(x){
+  plot(x)
+  legend('bottomright', paste('AUC', round(tvAUC(x)$auc, 3)))
+})
+dev.off()
+
+
+
+
+

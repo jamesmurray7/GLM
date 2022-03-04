@@ -14,7 +14,7 @@ prep.surv <- function(data, l0, u = NULL, smoothed = F){
   Delta <- unique(data$status)
   survtime <- unique(data$survtime)
   ft <- l0[,1]
-  
+  # print(c(Delta, survtime))
   if(smoothed) l0 <- predict(lm(l0 ~ splines::bs(ft, df = 4)))
   
   # Failure-time design objects
@@ -26,7 +26,7 @@ prep.surv <- function(data, l0, u = NULL, smoothed = F){
     # if(length(which(ft <= u)) == 0) Fu.t <- cbind(1, 0)
     # Fu.u <- cbind(1, l0[ft <= u, 1])
   }
-  
+  #print(survtime) 
   l0u.t <- l0[ft <= max(data$time), 2]
   if(length(which(ft <= max(data$time))) == 0) l0u.t <- 0
   if(!is.null(u)){

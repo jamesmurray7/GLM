@@ -71,11 +71,11 @@ ROC <- function(fit, data, Tstart, Delta, what = 'lowest', ...){
   if(!what%in%c('last', 'lowest')) stop("'What' should be either 'last' or 'lowest'.")
   tmax <- max(data[data$status == 1, 'survtime'])
   # Set-out new data
-  newdata <- data[data$survtime >= Tstart, ] # people ALIVE AND IN STUDY at Tstart
+  newdata <- data[data$survtime > Tstart, ] # people ALIVE AND IN STUDY at Tstart
   alive.ids <- unique(newdata$id)
   n.alive <- length(alive.ids)
   # Failure times to sample from and sampling window
-  fts <- sort(unique(newdata[newdata$status == 1, 'survtime']))
+  fts <- sort(unique(newdata[newdata$status == 1, 'survtime', drop = T]))
   window <- c(Tstart + 1e-6, Tstart + 1e-6 + Delta)
   if(window[2] > tmax) window[2] <- tmax
   # Candidate failure times
@@ -85,8 +85,11 @@ ROC <- function(fit, data, Tstart, Delta, what = 'lowest', ...){
   # Loop over ids and failure times
   pb <- utils::txtProgressBar(max = length(alive.ids), style = 3)
   for(i in seq_along(alive.ids)){
-    ds <- dynSurv(fit, newdata, id = alive.ids[i], u = candidate.u, progress = F, ...)
-    probs[[i]] <- do.call(rbind, ds)[-1, ] 
+    # print(alive.ids[i])
+    # message(alive.ids[i]) 
+    # print(newdata[newdata$id == alive.ids[i], ])
+    ds <- dynSurv(fit, newdata, id = alive.ids[i], u = candidate.u, progress = F,  ...)
+    probs[[i]] <- do.call(rbind, ds)#[-1, ] 
     utils::setTxtProgressBar(pb, i)
   }
   close(pb)
@@ -102,7 +105,7 @@ ROC <- function(fit, data, Tstart, Delta, what = 'lowest', ...){
   infodf <- lapply(alive.ids, function(x){
     p <- as.data.frame(probs[[paste0('id ', x)]])
     p$id <- x
-    p
+    p 
   })
   # pi(u|t)
   if(what == 'last') pi <- with(do.call(rbind, infodf), tapply(`50%`, id, tail, 1))
@@ -155,7 +158,7 @@ plotROC <- function(ROC, cutoff = F, legend = F){
     legend('bottomright', 
            paste0(length(ROC$num.ids), ' at risk; ', ROC$num.events, ' failures in interval.\n',
                   'AUC: ', round(AUC(ROC), 3)),
-           bty = 'n')
+           bty = 'n', cex = .75)
   }
   invisible()
 }
@@ -175,7 +178,7 @@ dynPreds <- function(fit, data, id, centiles = 4, u.override = NULL, nsim = 100,
   # across ALL future follow-up times and animate it (at some point)
   
   # Unique failure times
-  ft <- sort(unique(data[data$status == 1, 'survtime']))
+  ft <- sort(unique(data[data$status == 1, 'survtime', drop = T]))
   
   # Reduce down to this failure time
   newdata <- data[data$id == id, ]
@@ -245,7 +248,7 @@ dynPlot <- function(dynfit, longit = F){
     this.u <- fits[[x]]$u
     this.pi <- fits[[x]][[1]]
     pi <- this.pi[, 1]; lb <- this.pi[, 2]; ub <- this.pi[, 3]
-    p.long[[x]] <- this.data
+    p.long[[x]] <- as.data.frame(this.data)
     p.surv[[x]] <- list(
       pi = pi, lb = lb, ub = ub, u = this.u
     )
