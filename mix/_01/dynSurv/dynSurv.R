@@ -85,9 +85,6 @@ ROC <- function(fit, data, Tstart, Delta, what = 'lowest', ...){
   # Loop over ids and failure times
   pb <- utils::txtProgressBar(max = length(alive.ids), style = 3)
   for(i in seq_along(alive.ids)){
-    # print(alive.ids[i])
-    # message(alive.ids[i]) 
-    # print(newdata[newdata$id == alive.ids[i], ])
     ds <- dynSurv(fit, newdata, id = alive.ids[i], u = candidate.u, progress = F,  ...)
     probs[[i]] <- do.call(rbind, ds)#[-1, ] 
     utils::setTxtProgressBar(pb, i)
@@ -127,17 +124,22 @@ ROC <- function(fit, data, Tstart, Delta, what = 'lowest', ...){
   if(!identical(TPR, TP/sum(event))) stop('Something wrong: TP + FN != sum(event)')
   if(!identical(FP / (FP + TN)  , FP/(sum(!event)))) stop('Something wrong: FP + TN != sum(!event)')
   
-  # Deriving cutoff
-  cutoff <- t[which.max(TPR - FPR)]
-  
   # Making nice data.frame
   out.df <- data.frame(threshold = t,
                        TP = TP, TN = TN, FP = FP, FN = FN,
                        TPR = TPR, FPR = FPR)
   
+  # Removing duplicated rows
+  flip.out.df <- out.df[match(out.df$threshold, sort(out.df$threshold, decreasing = T)), ]
+  metrics.full <- out.df
+  metrics <- flip.out.df[rowSums(apply(flip.out.df[, c('TPR', 'FPR')], 2, duplicated))!=2,]
+  
+  # Deriving cutoff
+  cutoff <- with(metrics, which.max(TPR-FPR))
+  
   return(list(
-    metrics = out.df,
-    # metrics.reduced = out.df[!duplicated.data.frame(out.df[, -1]), ],
+    metrics = metrics,
+    metrics.full = metrics.full,
     num.events = sum(events),
     num.ids = alive.ids,
     Tstart = Tstart, Delta = Delta,
@@ -153,7 +155,7 @@ plotROC <- function(ROC, cutoff = F, legend = F){
        main = paste0('ROC curve for interval (', ROC$Tstart, ', ', ROC$Tstart + ROC$Delta, ']'),
        type = 'l')
   abline(0, 1, lty = 3)
-  if(cutoff) abline(v = ROC$metrics[ROC$metrics$threshold == ROC$cutoff, 'FPR'], lty = 3, col = 'red')
+  if(cutoff) abline(v = ROC$metrics[ROC$cutoff, 'FPR'], lty = 3, col = 'red')
   if(legend){
     legend('bottomright', 
            paste0(length(ROC$num.ids), ' at risk; ', ROC$num.events, ' failures in interval.\n',
@@ -165,7 +167,7 @@ plotROC <- function(ROC, cutoff = F, legend = F){
 
 # Determining area under the ROC curve.
 AUC <- function(ROC){
-  TPR <- ROC$metrics$TPR; FPR <- ROC$metrics$FPR;
+  TPR <- rev(ROC$metrics$TPR); FPR <- rev(ROC$metrics$FPR);
   auc <- sum(0.5 * diff(FPR) * (TPR[-1] + TPR[-length(TPR)]), na.rm = TRUE)
   auc
 }
