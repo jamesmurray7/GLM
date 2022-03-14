@@ -11,8 +11,7 @@ Omega.draw <- function(fit){
     c(fit$coeffs$beta),
     fit$coeffs$var.e,
     fit$coeffs$gamma,
-    fit$coeffs$eta,
-    fit$coeffs$theta
+    fit$coeffs$eta
   ), names(fit$SE))
   
   Omega.vcov <- fit$vcov
@@ -20,7 +19,7 @@ Omega.draw <- function(fit){
   draw <- MASS::mvrnorm(1, Omega.mean, solve(Omega.vcov))
   
   Dinds <- grepl('^D\\[', names(draw))
-  binds <- grepl('^G\\_|^B\\_|^P\\_|^NB\\_', names(draw))
+  binds <- grepl('^G\\d?\\_|^B\\_', names(draw))
   sinds <- grepl('var.e', names(draw))
   ginds <- grepl('gamma', names(draw))
   einds <- grepl('^cont|^bin', names(draw))
@@ -31,25 +30,15 @@ Omega.draw <- function(fit){
   var.e <- draw[sinds]
   gamma <- draw[ginds]
   eta <- draw[einds]
-  theta <- draw[tinds]
   
   return(list(
-    D = D, beta = beta, var.e = var.e, gamma = gamma, eta = eta, theta = theta
+    D = D, beta = beta, var.e = var.e, gamma = gamma, eta = eta
   ))
 }
 
 # Draw b ------------------------------------------------------------------
-b.draw <- function(b0, X, Y, Z, beta, var.e, theta, D, Delta, K, Fi, l0i, KK, Fu, haz, gamma, eta, Sigma0){
+b.draw <- function(b0, X, Y, Z, beta, var.e, D, Delta, K, Fi, l0i, KK, Fu, haz, gamma, eta, Sigma0){
   
-  # work out if count was fit by NB
-  if(length(theta) == 0){
-    nb <- F; theta <- 0
-  }else{
-    nb <- T; theta <- theta
-  }
-  
-  # Create residual variance matrix, V
-  V <- diag(x = var.e, nrow = nrow(Y), ncol = nrow(Y))
   b.hat <- ucminf::ucminf(b0,
                           joint_density, joint_density_ddb,
                           X, Z, beta, var.e, D, Y[, 1], Y[, 2], Y[, 3],

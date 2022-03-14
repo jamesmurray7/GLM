@@ -101,12 +101,9 @@ prepdata <- function(data, id, u = NULL, fit, smoothed = F){
   }
   
   if(is.null(u)){
-    
-    V <- diag(fit$coeffs$var.e, nrow = nrow(long$Y), ncol = nrow(long$Y)) # Create matrix of residual variance
     S <- solve(joint_density_sdb(
-      b, long$Xt, long$Zt, fit$coeffs$beta, V, fit$coeffs$D,
+      b, long$Xt, long$Zt, fit$coeffs$beta, fit$coeff$var.e, fit$coeffs$D,
       long$Yt[, 1], long$Yt[, 2], long$Yt[, 3],
-      nb, theta, 
       surv$Delta, surv$K, surv$Fi, surv$l0i, surv$KK.t, surv$Fu.t,
       surv$l0u.t, rep(fit$coeffs$gamma, each = 2), fit$coeffs$eta, 1e-3
     ))
