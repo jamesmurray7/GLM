@@ -18,8 +18,8 @@ Longit.inits <- function(data){
     if(i == 2){f = binomial; prefix = 'B'}
     if(i == 3){f = gaussian; prefix = 'G2'}
     fits[[i]] <- glmmTMB(as.formula(paste0('c(Y.', i, ') ~ time + cont + bin + (1 + time|id)')),
-                         family = f, data = data,
-                         control = glmmTMBControl(optCtrl = list(rel.tol = 1e-3)))
+                         family = f, data = data)
+                       #  control = glmmTMBControl(optCtrl = list(rel.tol = 1e-3)))
     pf[[i]] <- prefix
   }
   
