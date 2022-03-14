@@ -116,7 +116,7 @@ EMupdate <- function(b, Y, X, Z, V,
   ))
 }
 
-EM <- function(data, ph, survdata, gh = 9, tol = 0.01, verbose = F, post.process = T){
+EM <- function(data, ph, survdata, gh = 9, tol = 0.01, verbose = F, post.process = T, prepopulateD = T){
   start <- proc.time()[3]
   n <- nrow(survdata)
   # Get data matrices
@@ -142,24 +142,25 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, verbose = F, post.process
   
   # Populate off-block-diagonal elements (i.e. between responses) of D?
   # I think comment this out and see if it speeds up convergence / reduces number iterations?
-  b.inds <- split(seq(1:6), rep(1:3, each = 2))
-  temp <- cov(do.call(rbind, b))
-  DD <- D
-  for(i in 1:3){
-    for(j in 1:3){
-      if(i == j){
-        break
-      }else{
-        bi <- b.inds[[i]]; bj <- b.inds[[j]]
-        DD[bi, bj] <- temp[bi, bj]
-        DD[bj, bi] <- t(temp[bi, bj])
+  if(prepopulateD){
+    b.inds <- split(seq(1:6), rep(1:3, each = 2))
+    temp <- cov(do.call(rbind, b))
+    DD <- D
+    for(i in 1:3){
+      for(j in 1:3){
+        if(i == j){
+          break
+        }else{
+          bi <- b.inds[[i]]; bj <- b.inds[[j]]
+          DD[bi, bj] <- temp[bi, bj]
+          DD[bj, bi] <- t(temp[bi, bj])
+        }
       }
     }
+    
+    if(any(eigen(DD)$values < 0) || det(DD) <= 0) DD <- as.matrix(Matrix::nearPD(DD, keepDiag = T)$mat)
+    D <- DD
   }
-
-  if(any(eigen(DD)$values < 0) || det(DD) <= 0) DD <- as.matrix(Matrix::nearPD(DD, keepDiag = T)$mat)
-  D <- DD
-  
   
   # Survival objects
   sv <- surv.mod(ph, data, inits.surv$l0.init)
@@ -225,29 +226,31 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, verbose = F, post.process
     message('\nCalculating SEs...')
     start.time <- proc.time()[3]
     #' hat{b} at MLEs
-    b <- mapply(function(b, X, Y, Z, V, Delta, K, Fi, l0i, KK, Fu, haz){
+    b.hat <- mapply(function(b, X, Y, Z, Delta, K, Fi, l0i, KK, Fu, haz){
       ucminf::ucminf(b, joint_density, joint_density_ddb,
-                     X = X, Z = Z, beta = beta, V = V, D = D,
-                     Y_1 = Y[, 1], Y_2 = Y[, 2], Y_3 = Y[, 3], nb, theta,
+                     X = X, Z = Z, beta = beta, vars = var.e, D = D,
+                     Y_1 = Y[, 1], Y_2 = Y[, 2], Y_3 = Y[, 3],
                      Delta = Delta, K = K, Fi = Fi, l0i = l0i, KK = KK, Fu = Fu,
                      haz = haz, gamma = rep(gamma, each = 2), eta = eta)$par
-    }, b = b, X = X, Y = Y, Z = Z, V = V, Delta = Delta, K = K, Fi = Fi, l0i = l0i,
+    }, b = b, X = X, Y = Y, Z = Z, Delta = Delta, K = K, Fi = Fi, l0i = l0i,
     KK = KK, Fu = Fu, haz = l0u, SIMPLIFY = F)
-    bmat <- lapply(b, matrix, nc = 2, byr = T)
-    bsplit <- lapply(b, function(y) lapply(split(seq(6), rep(seq(3), each = 2)), function(x) y[x]))
+    
+    bmat <- lapply(b.hat, matrix, nc = 2, byr = T)
+    bsplit <- lapply(b.hat, function(y) lapply(split(seq(6), rep(seq(3), each = 2)), function(x) y[x]))
+
     # And its covariance matrix
-    Sigmai <- mapply(function(b, X, Z, V, Y, Delta, K, Fi, l0i, KK, Fu, l0u){
-      solve(joint_density_sdb(b = b, X = X, Z = Z, beta = beta, V = V, D = D,
-                              Y_1 = Y[,1], Y_2 = Y[,2], Y_3 = Y[,3], nb, theta,
+    Sigmai <- mapply(function(b, X, Z, Y, Delta, K, Fi, l0i, KK, Fu, l0u){
+      solve(joint_density_sdb(b = b, X = X, Z = Z, beta = beta, vars = var.e, D = D,
+                              Y_1 = Y[,1], Y_2 = Y[,2], Y_3 = Y[,3],
                               Delta = Delta, K = K, Fi = Fi, l0i = l0i, KK = KK, Fu = Fu, 
                               haz = l0u, gamma = rep(gamma, each = 2), eta = eta, eps = 1e-3))
-    }, b = b, X = X, Z = Z, V = V, Y = Y, Delta = Delta, K = K, Fi = Fi,
+    }, b = b.hat, X = X, Z = Z, Y = Y, Delta = Delta, K = K, Fi = Fi,
     l0i= l0i, KK = KK, Fu = Fu, l0u = l0u, SIMPLIFY = F)
     # Split out into constituent block-diag pieces.
     SigmaiSplit <- lapply(Sigmai, function(y) lapply(split(seq(6), rep(seq(3), each = 2)), function(x) y[x,x]))
     
     # Calculate Standard Errors
-    I <- structure(vcov(coeffs, data.mat, V, b, bsplit, bmat, Sigmai, SigmaiSplit, l0u, gh, nb, n),
+    I <- structure(vcov(coeffs, data.mat, b, bsplit, bmat, Sigmai, SigmaiSplit, l0u, gh, n),
                    dimnames = list(names(params), names(params)))
     out$SE <- sqrt(diag(solve(I)))
     out$vcov <- I

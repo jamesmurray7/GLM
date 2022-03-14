@@ -2,14 +2,13 @@
 #' Calculating the observed emprical information matrix (-ve Hessian)
 #' ####
 
-vcov <- function(Omega, data.mat, V, b, bsplit, bmat, Sigmai, SigmaiSplit, l0u, gh.nodes, nb, n){
+vcov <- function(Omega, data.mat, b, bsplit, bmat, Sigmai, SigmaiSplit, l0u, gh.nodes, n){
   #' Unpack Omega ----
   D <- Omega$D
   beta <- c(Omega$beta)
   var.e <- Omega$var.e
   gamma <- c(Omega$gamma)
   eta <- c(Omega$eta)
-  if(nb) theta <- Omega$theta else theta <- 0.0
   
   #' Extract data objects ----
   #' Longitudinal //
@@ -57,19 +56,29 @@ vcov <- function(Omega, data.mat, V, b, bsplit, bmat, Sigmai, SigmaiSplit, l0u, 
   sD <- lapply(1:nrow(sD), function(x) sD[x, ]) # Cast to list
  
   #' beta
-  Sb <- mapply(function(X, Y, Z, b, V){
-    Sbeta(beta, X, Y[,1], Y[,2], Y[,3], Z, b, V, nb, theta)
-  }, X = X, Y = Y, Z = Z, b = b, V = V, SIMPLIFY = F)
+  Sb <- mapply(function(X, Y, Z, b){
+    Sbeta(beta, X, Y[,1], Y[,2], Y[,3], Z, b, var.e)
+  }, X = X, Y = Y, Z = Z, b = b, SIMPLIFY = F)
   
   #' Residual variance for the Gaussian response
+  binds <- c(1, 3)
+  betainds <- list(`1` = 1:4,
+                   `2` = 9:12)
   tau.long <- mapply(function(Z, S){
-    sqrt(diag(Z %*% S[[1]] %*% t(Z))) # just the first block is associated w/ Gaussian response
+    out <- vector('list', 2)
+    out[[1]] <- sqrt(diag(Z %*% S[[1]] %*% t(Z))) 
+    out[[2]] <- sqrt(diag(Z %*% S[[3]] %*% t(Z)))
+    out
   }, Z = Z, S = SigmaiSplit, SIMPLIFY = F)
   
   Ss <- mapply(function(X, Y, Z, b, m, tau){
-    rhs <- 0
-    for(l in 1:gh.nodes) rhs <- rhs + w[l] * crossprod(Y[,1] - X %*% beta[1:4] - Z %*% b[[1]] - v[l] * tau)
-    -m/(2*var.e) + 1/(2 * var.e^2) * rhs
+    out <- numeric(2)
+    for(i in 1:2){
+      rhs <- 0
+      for(l in 1:gh.nodes) rhs <- rhs + w[l] * crossprod(Y[, binds[i]] - X %*% beta[betainds[[i]]] - Z %*% b[[binds[i]]] - v[l] * tau[[i]])
+      out[i] <- -m/(2*var.e[i]) + 1/(2 * var.e[i]^2) * rhs
+    }
+    out
   }, X = X, Y = Y, Z = Z, b = bsplit, m = m, tau = tau.long, SIMPLIFY = F)
  
   #' (gamma, eta)
@@ -83,8 +92,6 @@ vcov <- function(Omega, data.mat, V, b, bsplit, bmat, Sigmai, SigmaiSplit, l0u, 
   S <- mapply(function(sD, Sb, Ss, Sge){
     c(sD, c(Sb), Ss, Sge)
   }, sD = sD, Sb = Sb, Ss = Ss, Sge = Sge)
-
-  if(nb) S <- rbind(S, St)
   
   SS <- rowSums(S) # sum S
   I <- Reduce('+', lapply(1:n, function(i) tcrossprod(S[, i]))) - tcrossprod(SS)/n
