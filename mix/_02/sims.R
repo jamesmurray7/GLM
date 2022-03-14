@@ -5,21 +5,6 @@
 rm(list=ls())
 source('EM.R')
 
-#' ####
-#' 23/2/22
-#' --------
-#' Simulating 50 sets for comparison across univariate GLMM fits and multivariate ones
-#' ####
-
-simdata <- replicate(50, simData_joint(), simplify = F)
-save(simdata, file = 'simdata.RData')
-
-#' #####
-#' 23/2/22 
-#' -----
-#' END
-#' #####
-
 # One fit...
 dd <- simData_joint()
 data <- dd$data
