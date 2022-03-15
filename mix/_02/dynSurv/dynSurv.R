@@ -31,6 +31,7 @@ dynSurv <- function(fit, data, id, u = NULL, b.method = 'normal', nsim = 200, sm
       
       error.flag <- T
       while(error.flag){
+        error.flag.pi <- T
         O <- Omega.draw(fit)
         b <- tryCatch(b.draw(pt$b, 
                     pt$long$Xt, pt$long$Yt, pt$long$Zt,
