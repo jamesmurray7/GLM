@@ -5,7 +5,7 @@
 #'         [1,]    0 1.00 0.50 -0.25   // Gauss
 #'         [2,]    1 0.10 0.33 -0.50   // bin
 #'         [3,]    0 0.05 0.01  0.30   // count
-#'  diag(D) = 0.25 0.06 0.60 0.10 0.25 0.05
+#'  diag(D) = 0.25 0.06 0.50 0.04 0.25 0.05
 #'  gamma = 0.5, -0.25, 0.40,
 #'  eta = 0.05, -0.3,
 #'  var.e = 0.25, 
@@ -38,12 +38,16 @@ fitNB <- EM(dd$data, ph, dd$surv.data, verbose = T, gh =3, nb = T)
 # Many fits...
 rm(list=ls())
 source('EM.R')
+diag(true.D) <- c(.25, .06, .50, .04, .25, .05)
+true.D <- as.matrix(Matrix::nearPD(true.D)$mat)
 # Simulate some different datasets
-data1 <- replicate(100, simData_joint(), simplify = F)
-data2 <- replicate(100, simData_joint(ntms = 15), simplify = F)
-data3 <- replicate(100, simData_joint(ntms = 15, theta = c(-6, 0.25)), simplify = F)
+data1 <- replicate(100, simData_joint(n = 250), simplify = F)
+data2 <- replicate(100, simData_joint(n = 500), simplify = F)
+data3 <- replicate(100, simData_joint(n = 1000), simplify = F)
+# data3 <- replicate(100, simData_joint(thetaDisp = 2), simplify = F)
+# data3 <- replicate(100, simData_joint(ntms = 15, theta = c(-6, 0.25)), simplify = F)
 
-fits1 <- fits2 <- fits3 <- fits4 <- fits5 <- fits6 <- list()
+fits1 <- fits2 <- fits3 <- list() # fits4 <- fits5 <- fits6 <- list()
 pb <- utils::txtProgressBar(max = 100, style = 3)
 for(i in 1:100){
   ph1 <- coxph(Surv(survtime, status) ~ cont + bin, data1[[i]]$surv.data)
@@ -67,4 +71,4 @@ for(i in 1:100){
   utils::setTxtProgressBar(pb, i)
 }
 fits <- list(fits1, fits2, fits3)#, fits4, fits5, fits6)
-save(fits, file = '~/Downloads/mixfits.RData')
+save(fits, file = '~/Downloads/mixfits-2.RData')
