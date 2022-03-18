@@ -2,9 +2,6 @@
 #' Functions for taking 'draws' from \Omega ~ N(\hat{Omega}, I(\Omega)^{-1}) and f(\b|...; \Omega).
 #' ####
 
-sourceCpp('helper.cpp')
-
-
 # Draw from \Omega ~ N(\hat{Omega}, I(\Omega)^{-1}) -----------------------
 Omega.draw <- function(fit){
   Omega.mean <- setNames(c(
@@ -45,6 +42,10 @@ b.draw <- function(b0, X, Y, Z, beta, var.e, D, Delta, K, Fi, l0i, KK, Fu, haz, 
                                     K, Fi, l0i,
                                     KK, Fu, haz, gamma, eta, 1e-3))
   
+  # Check Sigmai positive semi-def
+  if(any(eigen(Sigmai)$value < 0) || det(Sigmai) == 0){
+    Sigmai <- as.matrix(Matrix::nearPD(Sigmai, maxit = 1e4)$mat)
+  }
   
   # mvtnorm::rmvnorm(1, b.hat, Sigmai)
   list(
@@ -53,35 +54,6 @@ b.draw <- function(b0, X, Y, Z, beta, var.e, D, Delta, K, Fi, l0i, KK, Fu, haz, 
   )
   
 }
-
-# Metropolis-Hastings scheme, this from joineRML and geared towards a N(m,S) RV
-b.mh <- function(Omega.draw, Sigmai.prop, b.curr, pt){
-  accept <- 0
-  O <- Omega.draw
-  b.prop <- MASS::mvrnorm(n = 1, mu = b.curr, Sigma = Sigmai.prop)
-  log.a1 <- (-1 * joint_density(b.prop, pt$long$Xt, pt$long$Yt, pt$long$Zt,
-                                O$beta, O$var.e, O$D, pt$surv$Delta, pt$surv$K,
-                                pt$surv$Fi, pt$surv$l0i, pt$surv$KK.t, pt$surv$Fu.t,
-                                pt$surv$l0u.t, O$gamma, O$eta)) - (-1 * joint_density(b.curr, pt$long$Xt, pt$long$Yt, pt$long$Zt,
-                                                                                      O$beta, O$var.e, O$D, pt$surv$Delta, pt$surv$K,
-                                                                                      pt$surv$Fi, pt$surv$l0i, pt$surv$KK.t, pt$surv$Fu.t,
-                                                                                      pt$surv$l0u.t, O$gamma, O$eta))
-  
-  dens.curr <- mvtnorm::dmvnorm(x = b.curr, sigma = Sigmai.prop, log = T)
-  dens.prop <- mvtnorm::dmvnorm(x = b.prop, sigma = Sigmai.prop, log = T)
-  
-  log.a2 <- dens.curr - dens.prop
-  a <- min(exp(log.a1 - log.a2), 1)
-  randu <- runif(1)
-  if (randu <= a) {
-    b.curr <- b.prop
-    accept <- 1
-  }
-  out <- list(b = b.curr, accept = accept)
-  return(out)
-}
-
-
 
 # Survival function -------------------------------------------------------
 S <- function(b, Omega, surv){

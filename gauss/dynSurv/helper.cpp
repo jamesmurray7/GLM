@@ -26,6 +26,14 @@ mat vech2mat(vec& x, const int q){
 }
 
 // [[Rcpp::export]]
+long double S_Cpp(List L, vec& gamma, vec& eta, vec& b){
+  rowvec l0u = L["l0u.t"];
+  mat KK = L["KK.t"];
+  mat Fu = L["Fu.t"];
+  return as_scalar(exp(-l0u * exp(KK * eta + repmat(Fu, 1, 3) * (gamma % b))));
+}
+
+// [[Rcpp::export]]
 long double S_Cpp2(List Lt, List Lu, vec& gamma, vec& eta, vec& b){
   rowvec l0u_t = Lt["l0u.t"];
   mat KK_t = Lt["KK.t"];
@@ -36,3 +44,6 @@ long double S_Cpp2(List Lt, List Lu, vec& gamma, vec& eta, vec& b){
   return as_scalar(exp(-l0u_u * exp(KK_u * eta + Fu_u * (gamma % b))) / 
                    exp(-l0u_t * exp(KK_t * eta + Fu_t * (gamma % b))));
 }
+
+
+
