@@ -1,8 +1,8 @@
 # Tabulate Sims
 rm(list=ls())
-load('~/Downloads/mixfits-2.RData')
+load('~/Downloads/mixfits-temp-20pc.RData')
 source('EM.R')
-diag(true.D) <- c(.25, .06, .50, .04, .25, .05)
+diag(true.D) <- c(.50^2, .05, .3^2, .05, .50^2, .05)
 true.D <- as.matrix(Matrix::nearPD(true.D)$mat)
 
 
@@ -21,7 +21,7 @@ targets.mat <- apply(t(as.matrix(targets)), 2, rep, 100)
 
 # Getting fits: Coeffs, SD, SE, CI, CP ------------------------------------
 
-names(fits) <- c('n=250', 'n=500', 'n=1000')
+names(fits) <- c('n=250', 'n=500')#, 'n=1000')
 
 extract.coeffs <- function(x){ # x a 'sub-list'
   xc <- x$coeffs
@@ -35,7 +35,7 @@ extract.coeffs <- function(x){ # x a 'sub-list'
 
 # Can't think how to double lapply, so let's just for loop
 fit.table <- list()
-for(i in 1:3){
+for(i in 1:2){
   fit <- fits[[i]]
   ests <- do.call(rbind, 
                   lapply(fit, function(x) if(!is.null(x)) extract.coeffs(x)))
@@ -55,3 +55,23 @@ for(i in 1:3){
                           CI.low = apply(lb, 2, mean), CI.up = apply(ub, 2, mean),
                           CP = CP, id = names(fits)[i])
 }
+
+  library(tidyverse)
+dp <- function(x, n) format(round(x, n), nsmall = n)
+toformat <- function(df){
+  id <- gsub('n\\=','',df$id[1])
+  df <- df %>% mutate(across(mean:CI.up, ~dp(.x, 3))) %>% 
+    rename_at(vars(mean:CP), ~ paste0(.x, id)) %>% 
+    select(-id)
+  df
+}
+fit.table2 <- lapply(fit.table, toformat)
+tab <- cbind(left_join(fit.table2[[1]], fit.table2[[2]], 'parameter'), target = dp(targets,3)) %>% 
+  select(parameter, target, mean250:CP500) %>% 
+  mutate_at('parameter', ~ paste0('$', .x, '$'))
+tab
+
+library(xtable)
+print(xtable(tab),
+      include.rownames = F,
+      sanitize.text.function = identity)

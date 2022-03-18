@@ -38,21 +38,22 @@ fitNB <- EM(dd$data, ph, dd$surv.data, verbose = T, gh =3, nb = T)
 # Many fits...
 rm(list=ls())
 source('EM.R')
-diag(true.D) <- c(.25, .06, .50, .04, .25, .05)
+diag(true.D) <- c(.50^2, .05, .3^2, .05, .50^2, .05)
 true.D <- as.matrix(Matrix::nearPD(true.D)$mat)
 # Simulate some different datasets
-data1 <- replicate(100, simData_joint(n = 250), simplify = F)
-data2 <- replicate(100, simData_joint(n = 500), simplify = F)
-data3 <- replicate(100, simData_joint(n = 1000), simplify = F)
-# data3 <- replicate(100, simData_joint(thetaDisp = 2), simplify = F)
-# data3 <- replicate(100, simData_joint(ntms = 15, theta = c(-6, 0.25)), simplify = F)
+data1 <- replicate(100, simData_joint(n = 250, theta = c(-4.4, 0.1)), simplify = F)
+data2 <- replicate(100, simData_joint(n = 500, theta = c(-4.4, 0.1)), simplify = F)
+
+# check average failure rate...
+quantile(do.call(c, lapply(data1, function(x) sum(x$surv$status == 1)/nrow(x$surv))))
+quantile(do.call(c, lapply(data2, function(x) sum(x$surv$status == 1)/nrow(x$surv))))
 
 fits1 <- fits2 <- fits3 <- list() # fits4 <- fits5 <- fits6 <- list()
 pb <- utils::txtProgressBar(max = 100, style = 3)
 for(i in 1:100){
   ph1 <- coxph(Surv(survtime, status) ~ cont + bin, data1[[i]]$surv.data)
   ph2 <- coxph(Surv(survtime, status) ~ cont + bin, data2[[i]]$surv.data)
-  ph3 <- coxph(Surv(survtime, status) ~ cont + bin, data3[[i]]$surv.data)
+  # ph3 <- coxph(Surv(survtime, status) ~ cont + bin, data3[[i]]$surv.data)
   # ph4 <- coxph(Surv(survtime, status) ~ cont + bin, data4[[i]]$surv.data)
   # ph5 <- coxph(Surv(survtime, status) ~ cont + bin, data5[[i]]$surv.data)
   # ph6 <- coxph(Surv(survtime, status) ~ cont + bin, data6[[i]]$surv.data)
@@ -60,8 +61,8 @@ for(i in 1:100){
                          error = function(e) NULL)
   fits2[[i]] <- tryCatch(suppressMessages(EM(data2[[i]]$data, ph2, data2[[i]]$surv.data, verbose = F, gh = 3)),
                          error = function(e) NULL)
-  fits3[[i]] <- tryCatch(suppressMessages(EM(data3[[i]]$data, ph3, data3[[i]]$surv.data, verbose = F, gh = 3)),
-                         error = function(e) NULL)
+  # fits3[[i]] <- tryCatch(suppressMessages(EM(data3[[i]]$data, ph3, data3[[i]]$surv.data, verbose = F, gh = 3)),
+  #                        error = function(e) NULL)
   # fits4[[i]] <- tryCatch(suppressMessages(EM(data4[[i]]$data, ph4, data4[[i]]$surv.data, verbose = F)),
   #                        error = function(e) NULL)
   # fits5[[i]] <- tryCatch(suppressMessages(EM(data5[[i]]$data, ph5, data5[[i]]$surv.data, verbose = F)),
@@ -70,5 +71,5 @@ for(i in 1:100){
   #                        error = function(e) NULL)
   utils::setTxtProgressBar(pb, i)
 }
-fits <- list(fits1, fits2, fits3)#, fits4, fits5, fits6)
-save(fits, file = '~/Downloads/mixfits-2.RData')
+fits <- list(fits1, fits2)#, fits3)#, fits4, fits5, fits6)
+save(fits, file = '~/Downloads/mixfits-temp-20pc.RData')
