@@ -1,6 +1,6 @@
 # Tabulate Sims
 rm(list=ls())
-load('~/Downloads/mixfits-temp-20pc.RData')
+load('~/Downloads/mixfits-temp-40pc.RData')
 source('EM.R')
 diag(true.D) <- c(.50^2, .05, .3^2, .05, .50^2, .05)
 true.D <- as.matrix(Matrix::nearPD(true.D)$mat)
@@ -56,22 +56,63 @@ for(i in 1:2){
                           CP = CP, id = names(fits)[i])
 }
 
-  library(tidyverse)
+library(tidyverse)
 dp <- function(x, n) format(round(x, n), nsmall = n)
-toformat <- function(df){
-  id <- gsub('n\\=','',df$id[1])
-  df <- df %>% mutate(across(mean:CI.up, ~dp(.x, 3))) %>% 
-    rename_at(vars(mean:CP), ~ paste0(.x, id)) %>% 
-    select(-id)
-  df
-}
-fit.table2 <- lapply(fit.table, toformat)
-tab <- cbind(left_join(fit.table2[[1]], fit.table2[[2]], 'parameter'), target = dp(targets,3)) %>% 
-  select(parameter, target, mean250:CP500) %>% 
-  mutate_at('parameter', ~ paste0('$', .x, '$'))
-tab
+
+fit.table2 <- lapply(fit.table, function(tab){
+  id <- gsub('n\\=', '', tab$id)
+  tab <- tab %>% mutate(across(mean:CI.up, ~ dp(.x, 3)))
+  tab <- tab %>% mutate(CP =dp(CP, 2))
+  tab$CI = paste0('[', tab$CI.low, ', ', tab$CI.up, ']')
+  tab %>% 
+    select(parameter, Mean = mean, SD = SD, SE = SE, CI = CI, CP = CP)
+})
+
+fit.table3 <- lapply(fit.table2, function(tab){
+  tab$parameter <- gsub('\\[', '_{', tab$parameter)
+  tab$parameter <- gsub('\\]', '}', tab$parameter)
+  tab$parameter <- gsub('^cont$', 'zeta_1', tab$parameter)
+  tab$parameter <- gsub('^bin$', 'zeta_2', tab$parameter)
+  tab$parameter <- gsub('^G\\_', 'beta_{1', tab$parameter)
+  tab$parameter <- gsub('^B\\_', 'beta_{2', tab$parameter)
+  tab$parameter <- gsub('^P\\_', 'beta_{3', tab$parameter)
+  tab$parameter <- gsub('\\(Intercept\\)', '0}', tab$parameter)
+  tab$parameter <- gsub('time', '1}', tab$parameter)
+  tab$parameter <- gsub('cont', '2}', tab$parameter)
+  tab$parameter <- gsub('bin',  '3}', tab$parameter)
+  tab$parameter <- gsub('var\\.e',  'sigma^2_varepsilon', tab$parameter)
+  tab$parameter <- gsub('^gamma', 'gamma', tab$parameter)
+  tab$parameter <- paste0('$', tab$parameter, '$')
+  tab
+})
+
+tab1 <- fit.table3[[1]]
+tab1 <- cbind(Parameter = tab1[,1], Target = dp(targets,3), tab1[,-1])
+
+tab <- cbind(tab1, fit.table3[[2]][,-1])
 
 library(xtable)
 print(xtable(tab),
       include.rownames = F,
       sanitize.text.function = identity)
+
+
+# Time taken --------------------------------------------------------------
+
+sapply(1:2, function(i){
+  f1 <- fits[[i]]
+  n1 <- names(fits)[i]
+  et <- do.call(c, lapply(f1, function(f) f$EMtime + f$postpro))
+  m <- median(et)
+  p25 <- unname(quantile(et, .25)) ; p75 <- unname(quantile(et, .75))
+  
+  cat(sprintf(
+    "%s Median [IQR]: %.1f(seconds), [%.1f, %.1f]\n\n", n1, m, p25, p75
+  ))
+  
+})
+
+
+
+
+
