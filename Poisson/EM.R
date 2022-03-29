@@ -15,7 +15,7 @@ vech <- function(x) x[lower.tri(x, diag = T)]
 
 EMupdate <- function(b, Y, X, Z, 
                      D, beta, gamma, eta,
-                     Delta, l0i, l0u, Fi, Fu, K, KK, survdata, sv, w, v){
+                     Delta, l0i, l0u, Fi, Fu, K, KK, survdata, sv, w, v, beta.quad = F){
   n <- length(b)
   
   #' ### ------
@@ -39,25 +39,33 @@ EMupdate <- function(b, Y, X, Z,
   Drhs <- mapply(function(b, S){
     S + tcrossprod(b)
   }, S = Sigmai, b = b.hat, SIMPLIFY = F)
-  
+
   # Score and Hessian for \beta
-  Sb <- mapply(function(X, Y, Z, b){
-    Sbeta(beta, X, Y, Z, b)
-  }, X = X, Y = Y, Z = Z, b = b.hat, SIMPLIFY = F)
-  
-  Hb <- mapply(function(X, Y, Z, b){
-    Hbeta(beta, X, Y, Z, b, 1e-4)
-  }, X = X, Y = Y, Z = Z, b = b.hat, SIMPLIFY = F)
-  
-  Egammaeta(c(gamma, eta), b.hat[[1]], Sigmai[[1]], K[[1]], KK[[1]], Fu[[1]], Fi[[1]], l0u[[1]], Delta[[1]], w, v)
+  if(beta.quad){
+    Sb <- mapply(function(b, X, Y, Z, S){
+      pracma::grad(pois_ll_quad, beta, X = X, Y = Y, Z = Z, b = b, S = S, w = w$w2, v = v$v2)
+    }, b = b.hat, X = X, Y = Y, Z = Z, S = Sigmai, SIMPLIFY = F)
+    
+    Hb <- mapply(function(b, X, Y, Z, S){
+      pracma::hessian(pois_ll_quad, beta, X = X, Y = Y, Z = Z, b = b, S = S, w = w$w2, v = v$v2)
+    }, b = b.hat, X = X, Y = Y, Z = Z, S = Sigmai, SIMPLIFY = F)
+  }  else{
+    Sb <- mapply(function(X, Y, Z, b){
+      Sbeta(beta, X, Y, Z, b)
+    }, X = X, Y = Y, Z = Z, b = b.hat, SIMPLIFY = F)
+    
+    Hb <- mapply(function(X, Y, Z, b){
+      Hbeta(beta, X, Y, Z, b, 1e-4)
+    }, X = X, Y = Y, Z = Z, b = b.hat, SIMPLIFY = F)
+  }
   
   # Score and Hessian for (gamma, eta)
   Sge <- mapply(function(b, Delta, Fi, K, KK, Fu, l0u, S){
-    Sgammaeta(c(gamma, eta), b, S, K, KK, Fu, Fi, l0u, Delta, w, v, 1e-4)
+    Sgammaeta(c(gamma, eta), b, S, K, KK, Fu, Fi, l0u, Delta, w$w, v$v, 1e-4)
   }, b = b.hat, Delta = Delta, Fi = Fi, K = K, KK = KK, Fu = Fu, l0u = l0u, S = Sigmai)
   
   Hge <- mapply(function(b, Delta, Fi, K, KK, Fu, l0u, S){
-    Hgammaeta(c(gamma, eta), b, S, K, KK, Fu, Fi, l0u, Delta, w, v, 1e-4)
+    Hgammaeta(c(gamma, eta), b, S, K, KK, Fu, Fi, l0u, Delta, w$w, v$v, 1e-4)
   }, b = b.hat, Delta = Delta, Fi = Fi, K = K, KK = KK, Fu = Fu, l0u = l0u, S = Sigmai, SIMPLIFY = F)
   
   #' ### ------
@@ -67,7 +75,7 @@ EMupdate <- function(b, Y, X, Z,
   D.new <- Reduce('+', Drhs)/n
   beta.new <- beta - solve(Reduce('+', Hb), Reduce('+', Sb))
   gammaeta.new <- c(gamma, eta) - solve(Reduce('+', Hge), rowSums(Sge))
-  lambda <- lambdaUpdate(sv$surv.times, sv$ft, gamma, eta, K, Sigmai, b.hat, w, v)
+  lambda <- lambdaUpdate(sv$surv.times, sv$ft, gamma, eta, K, Sigmai, b.hat, w$w, v$v)
   # Baseline hazard
   l0.new <- sv$nev/rowSums(lambda)
   l0u.new <- lapply(l0u, function(x){
@@ -85,7 +93,7 @@ EMupdate <- function(b, Y, X, Z,
   ))
 }
 
-EM <- function(data, ph, survdata, gh = 9, tol = 0.01, post.process = T, verbose = F){
+EM <- function(data, ph, survdata, gh = 9, tol = 0.01, post.process = T, verbose = F, beta.quad = F){
   start <- proc.time()[3]
   inits.long <- Longit.inits(data)
   beta <- inits.long$beta.init
@@ -121,8 +129,12 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, post.process = T, verbose
   })
   
   # Quadrature //
-  aa <- statmod::gauss.quad.prob(gh, 'normal')
+  aa <- statmod::gauss.quad.prob(gh, 'normal') # For survival part
   w <- aa$w; v <- aa$n
+  bb <- statmod::gauss.quad.prob(gh, 'normal', sigma = sqrt(0.5))
+  w2 <- bb$w; v2 <- bb$n
+  w <- list(w=w,w2=w2); v <- list(v=v,v2=v2)
+  
   
   # Collect parameters
   vD <- vech(D);
@@ -136,7 +148,7 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, post.process = T, verbose
   diff <- 100; iter <- 0
   EMstart <- proc.time()[3]
   while(diff > tol){
-    update <- EMupdate(b, Y, X, Z, D, beta, gamma, eta, Delta, l0i, l0u, Fi, Fu, K, KK, survdata, sv, w, v)
+    update <- EMupdate(b, Y, X, Z, D, beta, gamma, eta, Delta, l0i, l0u, Fi, Fu, K, KK, survdata, sv, w, v, beta.quad)
     params.new <- c(vech(update$D.new), update$beta.new, update$gamma.new, update$eta.new)
     names(params.new) <- names(params)
     if(verbose) print(sapply(params.new, round, 4))
@@ -163,7 +175,7 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, post.process = T, verbose
               iter = iter,
               totaltime = proc.time()[3] - start)
   out$hazard <- cbind(ft = sv$ft, haz = l0)
-  
+  out$beta.quad <- beta.quad
   
   # Post Processing
   if(post.process){
