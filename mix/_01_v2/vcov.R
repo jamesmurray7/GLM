@@ -59,7 +59,7 @@ vcov <- function(Omega, data.mat, V, b, bsplit, bmat, Sigmai, SigmaiSplit, l0u, 
   #' beta
   if(quad){
     Sb <- mapply(function(X, Y, Z, b, V, S){
-      Sbeta_quad(beta, X, Y[,1], Y[,2], Y[,3], Z, b, V, S, w, v, nb, theta, eps = 1e-4)
+      Sbeta_quad(beta, X, Y[,1], Y[,2], Y[,3], Z, b, V, S[[2]], w, v, nb, theta, eps = 1e-4)
     }, X = X, Y = Y, Z = Z, b = b, V = V, S = SigmaiSplit, SIMPLIFY = F)
   }else{
     Sb <- mapply(function(X, Y, Z, b, V){

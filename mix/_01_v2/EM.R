@@ -1,5 +1,5 @@
 #' ####    MIXTURE/
-#' Approximate EM for joint model of negative-binomial (gamma-poisson deviate) x survival response.
+#' Approximate EM for mixture of joint models
 #' ####
 library(dplyr)
 library(survival)
@@ -51,12 +51,12 @@ EMupdate <- function(b, Y, X, Z, V,
   
   # beta
   if(quad){
-    Sb_Q <- mapply(function(X, Y, Z, b, V, S){
-      Sbeta_quad(beta, X, Y[,1], Y[,2], Y[,3], Z, b, V, S, w, v, nb, theta, eps = 1e-4)
-    }, X = X, Y = Y, Z = Z, b = b.hat, V = V, S = SigmaiSplit, SIMPLIFY = F)
-    Hb_Q <- mapply(function(X, Y, Z, b, V, S){
-      Hbeta_quad(beta, X, Y[,1], Y[,2], Y[,3], Z, b, V, S, w, v, nb, theta, eps = 1e-4)
-    }, X = X, Y = Y, Z = Z, b = b.hat, V = V, S = SigmaiSplit, SIMPLIFY = F)
+    Sb <- mapply(function(X, Y, Z, b, V, S){
+      Sbeta_quad(beta, X, Y[,1], Y[,2], Y[,3], Z, b, V, S[3:4, 3:4], w, v, nb, theta, eps = 1e-4)
+    }, X = X, Y = Y, Z = Z, b = b.hat, V = V, S = Sigmai, SIMPLIFY = F)
+    Hb <- mapply(function(X, Y, Z, b, V, S){
+      Hbeta_quad(beta, X, Y[,1], Y[,2], Y[,3], Z, b, V, S[3:4, 3:4], w, v, nb, theta, eps = 1e-4)
+    }, X = X, Y = Y, Z = Z, b = b.hat, V = V, S = Sigmai, SIMPLIFY = F)
   }else{
     Sb <- mapply(function(X, Y, Z, b, V){
       Sbeta(beta, X, Y[,1], Y[,2], Y[,3], Z, b, V, nb, theta)
@@ -66,10 +66,6 @@ EMupdate <- function(b, Y, X, Z, V,
     }, X = X, Y = Y, Z = Z, b = b.hat, V = V, SIMPLIFY = F)
   }
   
-  
-  
-  
-    
   # var.e (Gaussian submodel)
   tauL <- mapply(function(S, Z){
     sqrt(diag(tcrossprod(Z %*% S[1:2, 1:2], Z)))
