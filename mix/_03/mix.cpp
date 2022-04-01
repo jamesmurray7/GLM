@@ -275,75 +275,110 @@ mat joint_density_sdb(vec& b, mat& X, List Z, vec& beta, mat& V, mat& D,        
 	return 0.5 * (out + out.t());
 }
 
-// 5. (gamma, eta)
-// Define the conditional expectation and then take Score AND Hessian via forward differencing
+// 5. gamma
+// Define the conditional expectation and then take Score and Hessian via forward differencing.
+// [[Rcpp::export]]
+double Egamma(vec& gamma, mat& bmat, List S, mat& Fu, List Fu_list,
+              rowvec& Fi, vec& haz, int Delta, vec& w, vec& v){
+  int K = S.size();
+  int gh = w.size();
+  vec tau = vec(haz.size());
+  for(int i = 0; i < K; i++){
+    mat Si_k = S[i];
+    mat Fu_k = Fu_list[i];
+    tau += pow(gamma[i], 2.0) * diagvec(Fu_k * Si_k * Fu_k.t());
+  }
+  double rhs = 0;
+  for(int l = 0; l < gh; l++){
+    rhs += w[l] * as_scalar(haz.t() * exp(Fu * (bmat.t() * gamma) + v[l] * pow(tau, 0.5)));
+  }
+  return as_scalar(Delta * (Fi * (bmat.t() * gamma)) - rhs);
+}
+
+// [[Rcpp::export]]
+vec Sgamma(vec& gamma, mat& bmat, List S, mat& Fu, List Fu_list,
+           rowvec& Fi, vec& haz, int Delta, vec& w, vec& v, long double eps){
+  vec out = vec(gamma.size());
+  double f0 = Egamma(gamma, bmat, S, Fu, Fu_list, Fi, haz, Delta, w, v);
+  for(int i = 0; i < gamma.size(); i++){
+    vec g = gamma;
+    double xi = std::max(g[i], 1.0);
+    g[i] = gamma[i] + (xi * eps);
+    double fdiff = Egamma(g, bmat, S, Fu, Fu_list, Fi, haz, Delta, w, v) - f0;
+    out[i] = fdiff / (g[i] - gamma[i]);
+  }
+  return out;
+}
+
+// [[Rcpp::export]]
+mat Hgamma(vec& gamma, mat& bmat, List S, mat& Fu, List Fu_list,
+           rowvec& Fi, vec& haz, int Delta, vec& w, vec& v, long double eps){
+  mat out = zeros<mat>(gamma.size(), gamma.size());
+  vec f0 = Sgamma(gamma, bmat, S, Fu, Fu_list, Fi, haz, Delta, w, v, eps);
+  for(int i = 0; i < gamma.size(); i++){
+    vec g = gamma;
+    double xi = std::max(g[i], 1.0);
+    g[i] = gamma[i] + (xi * eps);
+    vec fdiff = Sgamma(g, bmat, S, Fu, Fu_list, Fi, haz, Delta, w, v, eps) - f0;
+    out.col(i) = fdiff / (g[i] - gamma[i]);
+  }
+  return 0.5 * (out + out.t());
+}
+
+
+void test(rowvec& v, uvec& row, uvec& col){
+  Rcout << "col: " << v.cols(col) << std::endl;
+  Rcout << "row: " << v.rows(row) << std::endl;
+  mat test = v.cols(col);
+}
+
+// [[Rcpp::export]]
+mat lambdaUpdate(List survtime, mat& ft, vec& gamma, List S, List b, List inds, vec& w, vec& v){
+  int gh = w.size();
+  int n = b.size();
+  int K = gamma.size();
+  mat store = zeros<mat>(ft.n_rows, n); // Initialise the matrix.
+  // Start loop over subjects
+  for(int i = 0; i < n; i++){
+    vec survtimes_i = survtime[i];      // Survived time indices.
+    List Si = S[i];
+    List bi = b[i];
+    for(int j = 0; j < survtimes_i.size(); j++){
+      rowvec Fj = ft.row(j);
+      double tau = 0.0, mu = tau;
+      for(int k = 0; k < K ; k++){
+        uvec ids_k = inds[k];
+        mat Sik = Si[k];
+        vec bik = bi[k];
+        mat Fjk = Fj.cols(ids_k);
+        mu += gamma[k] * as_scalar((Fjk * bik));
+        tau += pow(gamma[k], 2.0) * as_scalar(Fjk * Sik * Fjk.t());
+      }
+      for(int l = 0; l < gh; l++){
+        store(j, i) += w[l] * as_scalar(exp(mu + pow(tau, 0.5) * v[l]));
+      }
+    }
+  }
+  return store;
+}
+
+// 6. Update for baseline hazard, lambda -------------------------------
+// Function for the update to the baseline hazard, \lambda_0(u)
 // // [[Rcpp::export]]
-// double Egammaeta(vec& gammaeta, mat& bmat, List S,
-// 				rowvec& K, mat& KK, mat& Fu, rowvec& Fi, vec& haz, int Delta, vec& w, vec& v){
-// 	vec g = gammaeta.subvec(0,2);
-// 	vec e = gammaeta.subvec(3,4);
-// 	vec tau = vec(Fu.n_rows);
-// 	for(int i = 0; i < S.size(); i++){
-// 		mat Si = S[i];
-// 		tau += pow(g[i], 2.0) * diagvec(Fu * Si * Fu.t());
-// 	}
-// 	double rhs = 0.0;
-// 	for(int l = 0; l < w.size(); l++){
-// 		rhs += w[l] * as_scalar(haz.t() * exp(KK * e + Fu * (bmat.t() * g) + v[l] * pow(tau, 0.5)));
-// 	}
-// 	return as_scalar(Delta * (K * e + Fi * (bmat.t() * g)) - rhs);
-// }
-// // [[Rcpp::export]]
-// vec Sgammaeta(vec& gammaeta, mat& bmat, List S,
-// 				rowvec& K, mat& KK, mat& Fu, rowvec& Fi, vec& haz, int Delta, vec& w, vec& v, double eps){
-// 	vec out = vec(gammaeta.size());
-// 	double f0 = Egammaeta(gammaeta, bmat, S, K, KK, Fu, Fi, haz, Delta, w, v);
-// 	for(int i = 0; i < gammaeta.size(); i++){
-// 		vec ge = gammaeta;
-// 		double xi = std::max(ge[i], 1.0);
-// 		ge[i] = gammaeta[i] + xi * eps;
-// 		double fdiff = Egammaeta(ge, bmat, S, K, KK, Fu, Fi, haz, Delta, w, v)-f0;
-// 		out[i] = fdiff/(ge[i]-gammaeta[i]);
-// 	}
-// 	return out;
-// }
-// // [[Rcpp::export]]
-// mat Hgammaeta(vec& gammaeta, mat& bmat, List S,
-// 			  rowvec& K, mat& KK, mat& Fu, rowvec& Fi, vec& haz, int Delta, vec& w, vec& v, double eps){
-// 	mat out = zeros<mat>(gammaeta.size(), gammaeta.size());
-// 	vec f0 = Sgammaeta(gammaeta, bmat, S, K, KK, Fu, Fi, haz, Delta, w, v, eps);
-// 	for(int i = 0; i < gammaeta.size(); i++){
-// 		vec ge = gammaeta;
-// 		double xi = std::max(ge[i], 1.0);
-// 		ge[i] = gammaeta[i] + xi * eps;
-// 		vec fdiff = Sgammaeta(ge, bmat, S, K, KK, Fu, Fi, haz, Delta, w, v, eps) - f0;
-// 		out.col(i) = fdiff/(ge[i]-gammaeta[i]);
-// 	}
-// 	return 0.5 * (out + out.t());
-// }
-// 
-// // 6. Update for baseline hazard, lambda -------------------------------
-// 
-// // Function for the update to the baseline hazard, \lambda_0(u)
-// //     (adapted from my implementation in Bernhardt work)...
-// // [[Rcpp::export]]
-//  mat lambdaUpdate(List survtimes, vec& ft,
-//  				  vec& gamma, vec& eta, List K, List S, List b, 
-//  				  vec& w, vec& v){
+// mat lambdaUpdate(List survtimes, vec& ft, vec& gamma, List S, List b, vec& w, vec& v){
 // 	int gh = w.size();
 // 	int id = b.size();
 // 	mat store = zeros<mat>(ft.size(), id); // Initialise the matrix
 //  	// Start loop over i subjects
 //  	for(int i = 0; i < id; i++){
-//  		vec survtimes_i = survtimes[i];    // This id's survived time indices   
+//  		vec survtimes_i = survtimes[i];    // This id's survived time indices
 //  		List Si = S[i];
 //  		List bi = b[i];
-//  		rowvec Ki = K[i];                  // Start loop over subject i's j survived times     
 //  		for(int j = 0; j < survtimes_i.size(); j++){
 //  			rowvec Fst = NumericVector::create(1.0, ft[j]);
 //  			double tau = 0.0;
 //  			vec rhs = NumericVector::create(0.0, 0.0);
-// 			// Loop over the K responses 
+// 			// Loop over the K responses
 //  			for(int k = 0; k < bi.size(); k++){
 // 				mat Sik = Si[k];
 // 				vec bik = bi[k];
@@ -351,7 +386,7 @@ mat joint_density_sdb(vec& b, mat& X, List Z, vec& beta, mat& V, mat& D,        
 // 				rhs += gamma[k] * bik;
 // 			}
 //  			double mu = as_scalar(exp(Ki * eta + Fst * rhs));
-//  			// Rcpp::Rcout << "mu = " << mu << std::endl;								  
+//  			// Rcpp::Rcout << "mu = " << mu << std::endl;
 //  			for(int l = 0; l < gh; l++){ // Finally loop over gh nodes
 //  				store(j,i) += as_scalar(w[l] * mu * exp(v[l] * sqrt(tau)));
 //  			}

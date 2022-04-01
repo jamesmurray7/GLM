@@ -34,7 +34,7 @@ simData <- function(n = 250, ntms = 10, beta = true.beta, D = true.D, var.e = 0.
   X <- model.matrix(~time+cont+bin, df)
   Z <- model.matrix(~time, df)
   eta1 <- X %*% beta[1,] + rowSums(Z * b[df$id, 1:2])
-  eta2 <- X %*% beta[2,] + rowSums(Z * b[df$id, 3])
+  eta2 <- X %*% beta[2,] + rowSums(Z[,1,drop=F] * b[df$id, 3, drop=F])
   eta3 <- X %*% beta[3,] + rowSums(Z * b[df$id, 4:5])
   
   df$Y.1 <- rnorm(n * ntms, eta1, sd = sqrt(var.e))
@@ -66,7 +66,7 @@ simData_joint <- function(n = 250, ntms = 10, beta = true.beta, var.e = 0.4^2,
   #' Linear predictors & response generation ----
   b <- MASS::mvrnorm(n, mu = rep(0, q), Sigma = D)
   eta1 <- X %*% beta[1, ] + rowSums(Z * b[df$id, 1:2])
-  eta2 <- X %*% beta[2, ] + rowSums(Z * b[df$id, 3])
+  eta2 <- X %*% beta[2, ] + rowSums(Z[, 1, drop = F] * b[df$id, 3, drop = F])
   eta3 <- X %*% beta[3, ] + rowSums(Z * b[df$id, 4:5])
   
   df$Y.1 <- c(eta1 + rnorm(n * ntms, sd = sqrt(var.e)))
