@@ -14,32 +14,8 @@
 rm(list=ls())
 source('EM.R')
 
-#' ####
-#' 23/2/22
-#' --------
-#' Simulating 50 sets for comparison across univariate GLMM fits and multivariate ones
-#' ####
-
-simdata <- replicate(50, simData_joint(), simplify = F)
-save(simdata, file = 'simdata.RData')
-
-#' #####
-#' 23/2/22 
-#' -----
-#' END
-#' #####
-
-# One fit...
-dd <- simData_joint(thetaDisp = 1.5)
-ph <- coxph(Surv(survtime, status) ~ cont + bin, dd$surv.data)
-fitP <- EM(dd$data, ph, dd$surv.data, verbose = T, gh =3, nb = F)
-fitNB <- EM(dd$data, ph, dd$surv.data, verbose = T, gh =3, nb = T)
-
-# Many fits...
 rm(list=ls())
 source('EM.R')
-diag(true.D) <- c(.50^2, .05, .3^2, .05, .50^2, .05)
-true.D <- as.matrix(Matrix::nearPD(true.D)$mat)
 # Simulate some different datasets
 data1 <- replicate(100, simData_joint(n = 250, theta = c(-4.4, 0.1)), simplify = F)
 data2 <- replicate(100, simData_joint(n = 250, theta = c(-3.8, 0.2)), simplify = F)
@@ -51,8 +27,8 @@ quantile(do.call(c, lapply(data2, function(x) sum(x$surv$status == 1)/nrow(x$sur
 fits1Q <- fits2Q <- fits1NQ <- fits2NQ <- list()
 pb <- utils::txtProgressBar(max = 100, style = 3)
 for(i in 1:100){
-  ph1 <- coxph(Surv(survtime, status) ~ cont + bin, data1[[i]]$surv.data)
-  ph2 <- coxph(Surv(survtime, status) ~ cont + bin, data2[[i]]$surv.data)
+  ph1 <- coxph(Surv(survtime, status) ~ 1, data1[[i]]$surv.data)
+  ph2 <- coxph(Surv(survtime, status) ~ 1, data2[[i]]$surv.data)
 
   fits1Q[[i]] <- tryCatch(suppressMessages(EM(data1[[i]]$data, ph1, data1[[i]]$surv.data, verbose = F, gh = 3, quad = T)),
                          error = function(e) NULL)
@@ -67,5 +43,5 @@ for(i in 1:100){
 fitsQ <- list(fits1Q, fits2Q)#, fits3)#, fits4, fits5, fits6)
 fitsNQ <- list(fits1NQ, fits2NQ)
 
-save(fitsQ, file = '~/Downloads/Quad-fits-29mar.RData')
-save(fitsNQ, file = '~/Downloads/Noquad-fits-29mar.RData')
+save(fitsQ, file = '~/Downloads/Quad-fits-rustand.RData')
+save(fitsNQ, file = '~/Downloads/Noquad-fits-rustand.RData')
