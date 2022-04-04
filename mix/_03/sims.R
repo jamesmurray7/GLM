@@ -1,14 +1,14 @@
 #' #############
 #' Tests of EM fits.
+#' Y_1: Gaussian; Y_2: binary; Y_3: Poisson 
 #'  args(simData_joint) = 
-#'  beta =      [,1] [,2] [,3]  [,4]
-#'         [1,]    0 1.00 0.50 -0.25   // Gauss
-#'         [2,]    1 0.10 0.33 -0.50   // bin
-#'         [3,]    0 0.05 0.01  0.30   // count
-#'  diag(D) = 0.25 0.06 0.50 0.04 0.25 0.05
-#'  gamma = 0.5, -0.25, 0.40,
-#'  eta = 0.05, -0.3,
-#'  var.e = 0.25, 
+#'  beta =      [,1] [,2] [,3] [,4]
+#'        [1,]  0.2 -0.1  0.1 -0.2
+#'        [2,]  1.0 -1.0  1.0 -1.0
+#'        [3,]  3.0 -0.1  0.1 -0.2
+#'  diag(D) = 0.16 0.09 0.25 0.25 0.16
+#'  gamma = 0.5, 0.3, -0.2
+#'  var.e = 0.16, 
 #' #########
 
 rm(list=ls())
@@ -17,8 +17,10 @@ source('EM.R')
 rm(list=ls())
 source('EM.R')
 # Simulate some different datasets
-data1 <- replicate(100, simData_joint(n = 250, theta = c(-4.4, 0.1)), simplify = F)
-data2 <- replicate(100, simData_joint(n = 250, theta = c(-3.8, 0.2)), simplify = F)
+# data1 <- replicate(100, simData_joint(n = 250, theta = c(-4.4, 0.1)), simplify = F) #20%
+# data2 <- replicate(100, simData_joint(n = 500, theta = c(-4.4, 0.1)), simplify = F)
+data1 <- replicate(100, simData_joint(n = 250, theta = c(-3.8, 0.2)), simplify = F) # 40%
+data2 <- replicate(100, simData_joint(n = 250, ntms = 16, theta = c(-3.8, 0.2)), simplify = F) # 40%
 
 # check average failure rate...
 quantile(do.call(c, lapply(data1, function(x) sum(x$surv$status == 1)/nrow(x$surv)))) #20%
@@ -43,5 +45,5 @@ for(i in 1:100){
 fitsQ <- list(fits1Q, fits2Q)#, fits3)#, fits4, fits5, fits6)
 fitsNQ <- list(fits1NQ, fits2NQ)
 
-save(fitsQ, file = '~/Downloads/Quad-fits-rustand.RData')
-save(fitsNQ, file = '~/Downloads/Noquad-fits-rustand.RData')
+save(fitsQ, file = '~/Downloads/Quad-fits-rustand2.RData')
+save(fitsNQ, file = '~/Downloads/Noquad-fits-rustand2.RData')

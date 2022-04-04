@@ -1,15 +1,13 @@
 rm(list=ls())
 source('EM.R')
-diag(true.D) <- c(.50^2, .05, .3^2, .05, .50^2, .05)
-true.D <- as.matrix(Matrix::nearPD(true.D)$mat)
 
 # Load the two fits(N)Q RData files
-load('~/Downloads/Quad-fits-29mar.RData')
-load('~/Downloads/Noquad-fits-29mar.RData')
+load('~/Downloads/Quad-fits-rustand.RData')
+load('~/Downloads/Noquad-fits-rustand.RData')
 
 extract.coeffs <- function(x){ # x a sub-list of one model fit
   co <- x$co
-  setNames(c(vech(co$D), c(co$beta), co$var.e, co$gamma, co$eta),
+  setNames(c(vech(co$D), c(co$beta), co$var.e, co$gamma),
            names(x$SE))
 }
 extract.SE <- function(x) x$SE # x a sub-list of one model fit
@@ -20,7 +18,7 @@ NQ.ests <- lapply(fitsNQ, function(f) do.call(rbind, lapply(f, extract.coeffs)))
 NQ.SE <- lapply(fitsNQ, function(f) do.call(rbind, lapply(f, extract.SE)))                 
 
 targets <- apply(matrix(c(vech(true.D), do.call(c, lapply(1:3, function(i) true.beta[i,])),
-                          0.25, true.gamma, true.eta),nr=1),
+                          0.16, true.gamma),nr=1),
                  2,rep,100)
 
 tabulate <- function(tab, SE, target.col = T){
@@ -55,8 +53,6 @@ pc20df <- cbind(parameter = rownames(pc20), pc20 %>%
          across(contains('CP'),  ~ todp(.x, 2)))) %>% 
   as_tibble %>%
   mutate(
-    parameter = gsub('^cont$', 'zeta_1', parameter),
-    parameter = gsub('^bin$', 'zeta_2', parameter),
     parameter = gsub('\\(Intercept\\)', '0}', parameter),
     parameter = gsub('time$', '1}', parameter),
     parameter = gsub('cont$', '2}', parameter),
@@ -76,8 +72,6 @@ pc40df <- cbind(parameter = rownames(pc40), pc40 %>%
                          across(contains('CP'),  ~ todp(.x, 2)))) %>% 
   as_tibble %>%
   mutate(
-    parameter = gsub('^cont$', 'zeta_1', parameter),
-    parameter = gsub('^bin$', 'zeta_2', parameter),
     parameter = gsub('\\(Intercept\\)', '0}', parameter),
     parameter = gsub('time$', '1}', parameter),
     parameter = gsub('cont$', '2}', parameter),

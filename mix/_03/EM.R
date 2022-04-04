@@ -148,7 +148,9 @@ EM <- function(data, ph, survdata, gh = 3, tol = 0.01, verbose = F, post.process
   D <- inits.long$D.init
   
   # pre-populate D step?
-  ## NYI
+  # pre-populate D step?
+  D[lower.tri(D, F)] <- cov(b)[lower.tri(cov(b), F)]
+  D[upper.tri(D, F)] <- t(D)[upper.tri(D, F)]
   
   inits.surv <- TimeVarCox(data, b)
   b <- lapply(1:n, function(i) b[i, ])

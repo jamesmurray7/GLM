@@ -72,6 +72,14 @@ simData_joint <- function(n = 250, ntms = 10, beta = true.beta, var.e = 0.4^2,
   df$Y.1 <- c(eta1 + rnorm(n * ntms, sd = sqrt(var.e)))
   df$Y.2 <- rbinom(n * ntms, 1, plogis(eta2))
   df$Y.3 <- rpois(n * ntms, lambda = exp(eta3))
+  
+  if(any(is.na(df$Y.3))){
+    message('NANs for\n')
+    print(eta3[is.na(df$Y.3)])
+    message('Which gave\n')
+    print(exp(eta3)[is.na(df$Y.3)])
+    message('end\n')
+  }
 
   #' Survival ----
   theta0 <- theta[1]; theta1 <- theta[2]
