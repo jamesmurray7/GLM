@@ -15,35 +15,33 @@ rm(list=ls())
 source('EM.R')
 
 rm(list=ls())
+N <- 100
 source('EM.R')
 # Simulate some different datasets
-# data1 <- replicate(100, simData_joint(n = 250, theta = c(-4.4, 0.1)), simplify = F) #20%
-# data2 <- replicate(100, simData_joint(n = 500, theta = c(-4.4, 0.1)), simplify = F)
-data1 <- replicate(100, simData_joint(n = 250, theta = c(-3.8, 0.2)), simplify = F) # 40%
-data2 <- replicate(100, simData_joint(n = 250, ntms = 16, theta = c(-3.8, 0.2)), simplify = F) # 40%
+# data1 <- replicate(N, simData_joint(n = 250, theta = c(-4.4, 0.1)), simplify = F) #20%
+# data2 <- replicate(N, simData_joint(n = 500, theta = c(-4.4, 0.1)), simplify = F)
+data1 <- replicate(N, simData_joint(n = 500, theta = c(-2.85, 0.2)), simplify = F) # 40%
+data2 <- replicate(N, simData_joint(n = 500, theta = c(-3.75, 0.2)), simplify = F) # 20%
 
 # check average failure rate...
 quantile(do.call(c, lapply(data1, function(x) sum(x$surv$status == 1)/nrow(x$surv)))) #20%
 quantile(do.call(c, lapply(data2, function(x) sum(x$surv$status == 1)/nrow(x$surv)))) #40%
 
-fits1Q <- fits2Q <- fits1NQ <- fits2NQ <- list()
-pb <- utils::txtProgressBar(max = 100, style = 3)
-for(i in 1:100){
+fit1 <- fit2 <- vector('list', N)
+pb <- utils::txtProgressBar(max = N, style = 3)
+for(i in 1:N){
   ph1 <- coxph(Surv(survtime, status) ~ 1, data1[[i]]$surv.data)
   ph2 <- coxph(Surv(survtime, status) ~ 1, data2[[i]]$surv.data)
 
-  fits1Q[[i]] <- tryCatch(suppressMessages(EM(data1[[i]]$data, ph1, data1[[i]]$surv.data, verbose = F, gh = 3, quad = T)),
+  # fit
+  fit1[[i]] <- tryCatch(suppressMessages(EM(data1[[i]]$data, ph1, data1[[i]]$surv.data, verbose = F, gh = 3, quad = T)),
                          error = function(e) NULL)
-  fits2Q[[i]] <- tryCatch(suppressMessages(EM(data2[[i]]$data, ph2, data2[[i]]$surv.data, verbose = F, gh = 3, quad = T)),
-                         error = function(e) NULL)
-  fits1NQ[[i]] <- tryCatch(suppressMessages(EM(data1[[i]]$data, ph1, data1[[i]]$surv.data, verbose = F, gh = 3, quad = F)),
-                         error = function(e) NULL)
-  fits2NQ[[i]] <- tryCatch(suppressMessages(EM(data2[[i]]$data, ph2, data2[[i]]$surv.data, verbose = F, gh = 3, quad = F)),
+  fit2[[i]] <- tryCatch(suppressMessages(EM(data2[[i]]$data, ph2, data2[[i]]$surv.data, verbose = F, gh = 3, quad = T)),
                          error = function(e) NULL)
   utils::setTxtProgressBar(pb, i)
 }
-fitsQ <- list(fits1Q, fits2Q)#, fits3)#, fits4, fits5, fits6)
-fitsNQ <- list(fits1NQ, fits2NQ)
 
-save(fitsQ, file = '~/Downloads/Quad-fits-rustand2.RData')
-save(fitsNQ, file = '~/Downloads/Noquad-fits-rustand2.RData')
+fits <- list(`40%` = fit1, `20%` = fit2)
+save(fits, file = '~/Downloads/fits-rustand-failure2040.RData')
+save(fitsQ, file = '~/Downloads/Quad-fits-rustand-ntms.RData')
+save(fitsNQ, file = '~/Downloads/Noquad-fits-rustand-ntms.RData')

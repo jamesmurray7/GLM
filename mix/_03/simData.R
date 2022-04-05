@@ -45,13 +45,16 @@ simData <- function(n = 250, ntms = 10, beta = true.beta, D = true.D, var.e = 0.
 
 simData_joint <- function(n = 250, ntms = 10, beta = true.beta, var.e = 0.4^2,
                           D = true.D, gamma = true.gamma, theta = c(-4, 0.2),
-                          cens.rate = exp(-3.5)){
+                          cens.rate = exp(-3.5), fup = 5){
   nK <- nrow(beta)
   q <- ncol(D)
   if(any(eigen(D)$val < 0) | det(D) <= 0) stop('D not positive semi-definite :(')
   
   #' Necessary parameters & data generation ----
-  time <- 0:(ntms-1); tau <- (ntms - 1) + 0.1 # time variable and truncation time tau.
+  # time <- 0:(ntms-1); tau <- (ntms - 1) + 0.1 
+  # time variable and truncation time tau.
+  tau <- fup + 0.1
+  time <- seq(0, fup, length.out = ntms)
   cont <- rnorm(n, mean = 1, sd = 0.5); bin <- rbinom(n, 1, 0.5)  # Continuous and binary covariates.
   
   df <- data.frame(id = rep(1:n, each = ntms),
