@@ -2,27 +2,23 @@
 #' Calculating the observed emprical information matrix (-ve Hessian)
 #' ####
 
-vcov <- function(Omega, data.mat, V, b, bsplit, bmat, Sigmai, SigmaiSplit, l0u, gh.nodes, nb, n, quad){
+vcov <- function(Omega, data.mat, V, b, bsplit, bmat, Sigmai, SigmaiSplit, l0u, gh.nodes, n, quad){
   #' Unpack Omega ----
   D <- Omega$D
   beta <- c(Omega$beta)
   var.e <- Omega$var.e
   gamma <- c(Omega$gamma)
-  eta <- c(Omega$eta)
-  if(nb) theta <- Omega$theta else theta <- 0.0
+  gamma_r <- rep(gamma, c(2, 1, 2))
   
   #' Extract data objects ----
   #' Longitudinal //
-  Z <- data.mat$Z; Zk <- data.mat$Zk
-  X <- data.mat$X; Xk <- data.mat$Xk
-  Y <- data.mat$Y; Yk <- data.mat$Yk
+  Z <- data.mat$Z; X <- data.mat$X; Y <- data.mat$Y; 
   m <- data.mat$m
   
   #' Survival //
-  K <- data.mat$K
-  KK <- data.mat$KK
   Fi <- data.mat$Fi
   Fu <- data.mat$Fu
+  Fu.list <- data.mat$Fu.list
   Delta <- data.mat$Delta
   
   gh <- statmod::gauss.quad.prob(gh.nodes, 'normal')
@@ -56,50 +52,39 @@ vcov <- function(Omega, data.mat, V, b, bsplit, bmat, Sigmai, SigmaiSplit, l0u, 
   sD <- sapply(1:nrow(vech.indices), sDi)
   sD <- lapply(1:nrow(sD), function(x) sD[x, ]) # Cast to list
  
-  #' beta
+  #' \beta
   if(quad){
     Sb <- mapply(function(X, Y, Z, b, V, S){
-      Sbeta_quad(beta, X, Y[,1], Y[,2], Y[,3], Z, b, V, S[[2]], w, v, nb, theta, eps = 1e-4)
-    }, X = X, Y = Y, Z = Z, b = b, V = V, S = SigmaiSplit, SIMPLIFY = F)
+      Sbeta_quad(beta, X, Y[,1], Y[,2], Y[,3], Z, b, V, S[[2]], w, v, .Machine$double.eps^(1/3))
+    }, X = X, Y = Y, Z = Z, b = bsplit, V = V, S = SigmaiSplit, SIMPLIFY = F)
   }else{
     Sb <- mapply(function(X, Y, Z, b, V){
-      Sbeta(beta, X, Y[,1], Y[,2], Y[,3], Z, b, V, nb, theta)
-    }, X = X, Y = Y, Z = Z, b = b, V = V, SIMPLIFY = F)
+      Sbeta(beta, X, Y[,1], Y[,2], Y[,3], Z, b, V)
+    }, X = X, Y = Y, Z = Z, b = bsplit, V = V, SIMPLIFY = F)
   }
   
   #' Residual variance for the Gaussian response
   tau.long <- mapply(function(Z, S){
-    sqrt(diag(Z %*% S[[1]] %*% t(Z))) # just the first block is associated w/ Gaussian response
+    sqrt(diag(Z[["gc"]] %*% S[[1]] %*% t(Z[["gc"]]))) # just the first block is associated w/ Gaussian response
   }, Z = Z, S = SigmaiSplit, SIMPLIFY = F)
   
   Ss <- mapply(function(X, Y, Z, b, m, tau){
     rhs <- 0
-    for(l in 1:gh.nodes) rhs <- rhs + w[l] * crossprod(Y[,1] - X %*% beta[1:4] - Z %*% b[[1]] - v[l] * tau)
+    for(l in 1:gh.nodes) rhs <- rhs + w[l] * crossprod(Y[,1] - X %*% beta[1:4] - Z[["gc"]] %*% b[[1]] - v[l] * tau)
     -m/(2*var.e) + 1/(2 * var.e^2) * rhs
   }, X = X, Y = Y, Z = Z, b = bsplit, m = m, tau = tau.long, SIMPLIFY = F)
   
-  #' Dispersion parameter, theta
-  if(nb){
-    St <- mapply(function(b, X, Y, Z, S){
-      Stheta(theta, beta[9:12], X, Y[, 3], Z, b[[3]], S[[3]], w, v, 1e-4)
-    }, b = bsplit, X = X, Y = Y, Z = Z, S = SigmaiSplit)
-  }else{
-    St <- NULL
-  }
-  
-  #' (gamma, eta)
-  Sge <- mapply(function(b, S, K, KK, Fu, Fi, l0u, Delta){
-    Sgammaeta(c(gamma, eta), b, S, K, KK, Fu, Fi[1:2], l0u, Delta, w, v, 1e-4)
-  }, b = bmat, S = SigmaiSplit, K = K, KK = KK, Fu = Fu, Fi = Fi, l0u = l0u, Delta = Delta, SIMPLIFY = F)
+  #' \gamma
+  Sg <- mapply(function(b, S, Fu, Fu.list, Fi, l0u, Delta){
+    Sgamma(gamma, b, S, Fu[, 1:2, drop = F], Fu.list, Fi[1:2], l0u, Delta, w, v, .Machine$double.eps^(1/3))
+  }, b = bmat, S = SigmaiSplit, Fu = Fu, Fu.list = Fu.list, Fi = Fi, l0u = l0u, Delta = Delta, SIMPLIFY = F)
 
 
   # Collate and form information --------------------------------------------
   
-  S <- mapply(function(sD, Sb, Ss, Sge){
-    c(sD, c(Sb), Ss, Sge)
-  }, sD = sD, Sb = Sb, Ss = Ss, Sge = Sge)
-
-  if(nb) S <- rbind(S, St)
+  S <- mapply(function(sD, Sb, Ss, Sg){
+    c(sD, c(Sb), Ss, Sg)
+  }, sD = sD, Sb = Sb, Ss = Ss, Sg = Sg)
   
   SS <- rowSums(S) # sum S
   I <- Reduce('+', lapply(1:n, function(i) tcrossprod(S[, i]))) - tcrossprod(SS)/n

@@ -46,6 +46,9 @@ double negbin_ll(vec& Y, vec& eta, double theta){
 }
 
 // Conditional expectations of log-likelihoods calculated via quadrature ------
+// -- Update 29/03/2022:
+//    I can only get this to work for binomial sub-model(s).
+// --
 vec lfact(vec& v){
   vec out = vec(v.size());
   for(int i = 0; i < v.size(); i++){
@@ -56,22 +59,21 @@ vec lfact(vec& v){
 
 
 // Poisson with quadrature
-// [[Rcpp::export]]
-double poisson_ll_quad(vec& beta, mat& X, vec& Y, mat& Z, vec& b,
-                       mat& S, vec& w, vec& v){
-  vec eta = X * beta + Z * b;
-  vec lfactY = lfact(Y);
-  vec out = vec(Y.size()), rhs = out;
-  // quadrature
-  int gh = w.size();
-  vec tau = sqrt(diagvec(Z * S * Z.t()));
-  for(int l = 0; l < gh; l++){
-    vec this_eta = eta + v[l] * tau;
-    rhs += w[l] * exp(this_eta);
-  }
-  out = Y % eta - rhs - lfactY;
-  return sum(out);
-}
+// double poisson_ll_quad(vec& beta, mat& X, vec& Y, mat& Z, vec& b,
+//                        mat& S, vec& w, vec& v){
+//   vec eta = X * beta + Z * b;
+//   vec lfactY = lfact(Y);
+//   vec out = vec(Y.size()), rhs = out;
+//   // quadrature
+//   int gh = w.size();
+//   vec tau = sqrt(diagvec(Z * S * Z.t()));
+//   for(int l = 0; l < gh; l++){
+//     vec this_eta = eta + v[l] * tau;
+//     rhs += w[l] * exp(this_eta);
+//   }
+//   out = Y % eta - rhs - lfactY;
+//   return sum(out);
+// }
 
 // Binomial with Quadrature
 // [[Rcpp::export]]
@@ -91,21 +93,20 @@ double binomial_ll_quad(vec& beta, mat& X, vec& Y, mat& Z, vec& b,
 }
 
 // Negative binomial with quadrature
-// [[Rcpp::export]]
-double negbin_ll_quad(vec& beta, mat& X, vec& Y, mat& Z, vec& b,
-                     mat& S, vec& w, vec& v, double theta){
-  vec eta = X * beta + Z * b;
-  vec rhs = vec(eta.size());
-  // quadrature
-  int gh = w.size();
-  vec tau = sqrt(diagvec(Z * S * Z.t()));
-  for(int l = 0; l < gh; l ++){
-    vec this_eta = eta + v[l] * tau;
-    rhs += w[l] * log(theta + exp(this_eta));
-  }
-  vec out = Y % eta - (theta + Y) % rhs;
-  return sum(out);
-}
+// double negbin_ll_quad(vec& beta, mat& X, vec& Y, mat& Z, vec& b,
+//                      mat& S, vec& w, vec& v, double theta){
+//   vec eta = X * beta + Z * b;
+//   vec rhs = vec(eta.size());
+//   // quadrature
+//   int gh = w.size();
+//   vec tau = sqrt(diagvec(Z * S * Z.t()));
+//   for(int l = 0; l < gh; l ++){
+//     vec this_eta = eta + v[l] * tau;
+//     rhs += w[l] * log(theta + exp(this_eta));
+//   }
+//   vec out = Y % eta - (theta + Y) % rhs;
+//   return sum(out);
+// }
 
 // 2. Scores for linear predictors -------------------------------------
 // Gaussian -> binom -> poisson -> negbin
@@ -179,7 +180,7 @@ mat Hbeta(vec& beta, mat& X, vec& Y_1, vec& Y_2, vec& Y_3,
 // With quadrature
 // [[Rcpp::export]]
 vec Sbeta_quad(vec& beta, mat& X, vec& Y_1, vec& Y_2, vec& Y_3,
-               mat& Z, vec& b, mat& V, List S, vec& w, vec& v, bool nb, double theta, double eps){
+               mat& Z, vec& b, mat& V, mat& S, vec& w, vec& v, bool nb, double theta, double eps){
   // _g: Gaussian, _b: Binomial, _c: Count (poisson for now)
   vec beta_g = beta.subvec(0, 3);
   vec beta_b = beta.subvec(4, 7);
@@ -188,48 +189,38 @@ vec Sbeta_quad(vec& beta, mat& X, vec& Y_1, vec& Y_2, vec& Y_3,
   vec b_b = b.subvec(2,3);
   vec b_c = b.subvec(4,5);
   
-  // Score for Gaussian doesn't require quadrature (I think).
+  // Linear predictors
   vec eta_g = X * beta_g + Z * b_g;
-  vec Score_g = X.t() * Score_eta_gauss(Y_1, eta_g, V);
+  vec eta_b = X * beta_b + Z * b_b;
+  vec eta_c = X * beta_c + Z * b_c;
   
-  // Conditional expectations at current beta for bin/count via quadrature.
-  mat S_b = S[1];
-  mat S_c = S[2];
-  double f0_b = binomial_ll_quad(beta_b, X, Y_2, Z, b_b, S_b, w, v);
-  double f0_c = 0.0;
+  // Scores
+  vec Score_g = X.t() * Score_eta_gauss(Y_1, eta_g, V);
+  vec Score_c = vec(beta_c.size());
   if(nb == TRUE){
-    f0_c += negbin_ll_quad(beta_c, X, Y_3, Z, b_c, S_c, w, v, theta);
+    Score_c += X.t() * Score_eta_negbin(Y_3, eta_c, theta);
   }else{
-    f0_c += poisson_ll_quad(beta_c, X, Y_3, Z, b_c, S_c, w, v);
+    Score_c += X.t() * Score_eta_poiss(Y_3, eta_c);
   }
-  // Begin forward differencing loop
-  vec out_b = vec(beta_b.size()), out_c = out_b;
-  for(int i = 0; i < beta_b.size(); i ++){
-    vec bb_b = beta_b;
-    vec bb_c = beta_c;
-    double xi_b = std::max(1.0, beta_b[i]);
-    double xi_c = std::max(1.0, beta_c[i]);
-    bb_b[i] = beta_b[i] + xi_b * eps;
-    bb_c[i] = beta_c[i] + xi_c * eps;
-    double fdiff_b = binomial_ll_quad(bb_b, X, Y_2, Z, b_b, S_b, w, v) - f0_b;
-    double fdiff_c = 0.0;
-    if(nb == TRUE){
-      fdiff_c += negbin_ll_quad(bb_c, X, Y_3, Z, b_c, S_c, w, v, theta) - f0_c;
-    }else{
-      fdiff_c += poisson_ll_quad(bb_c, X, Y_3, Z, b_c, S_c, w, v) - f0_c;
-    }
-    
-    out_b[i] = fdiff_b/(bb_b[i] - beta_b[i]);
-    out_c[i] = fdiff_c/(bb_c[i] - beta_c[i]);
-    
+  
+  // Quadrature for binomial sub-model.
+  int n_b = beta_b.size();
+  vec Score_b = vec(n_b);
+  double f0 = binomial_ll_quad(beta_b, X, Y_2, Z, b_b, S, w, v); 
+  for(int i = 0; i < n_b; i++){
+    vec bb = beta_b;
+    double xi = std::max(1.0, bb[i]);
+    bb[i] = beta_b[i] + xi * eps;
+    double fdiff = binomial_ll_quad(bb, X, Y_2, Z, b_b, S, w, v) - f0;
+    Score_b[i] = fdiff/(bb[i]-beta_b[i]);
   }
-  // "cbind" and return
-  return join_cols(Score_g, out_b, out_c);
+  vec out = join_cols(Score_g, Score_b, Score_c);
+  return out;
 }
 
 // [[Rcpp::export]]
 mat Hbeta_quad(vec& beta, mat& X, vec& Y_1, vec& Y_2, vec& Y_3,
-               mat& Z, vec& b, mat& V, List S, vec& w, vec& v, bool nb, double theta, double eps){
+               mat& Z, vec& b, mat& V, mat S, vec& w, vec& v, bool nb, double theta, double eps){
   int n = beta.size();
   mat out = zeros<mat>(n, n);
   vec f0 = Sbeta_quad(beta, X, Y_1, Y_2, Y_3, Z, b, V, S, w, v, nb, theta, eps);

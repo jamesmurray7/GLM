@@ -39,7 +39,7 @@ EMupdate <- function(b, Y, X, Z,
   Drhs <- mapply(function(b, S){
     S + tcrossprod(b)
   }, S = Sigmai, b = b.hat, SIMPLIFY = F)
-  
+
   # Score and Hessian for \beta
   if(beta.quad){
     Sb <- mapply(function(X, Y, Z, b, S){
@@ -127,7 +127,7 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, post.process = T, verbose
   })
   
   # Quadrature //
-  aa <- statmod::gauss.quad.prob(gh, 'normal')
+  aa <- statmod::gauss.quad.prob(gh, 'normal') 
   w <- aa$w; v <- aa$n
   
   # Collect parameters
@@ -169,7 +169,7 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, post.process = T, verbose
               iter = iter,
               totaltime = proc.time()[3] - start)
   out$hazard <- cbind(ft = sv$ft, haz = l0)
-  
+  out$beta.quad <- beta.quad
   
   # Post Processing
   if(post.process){
