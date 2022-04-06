@@ -2,7 +2,7 @@
 #' Calculating vcov for EM fit using observed empirical information matrix
 #' ###
 
-vcov <- function(Omega, data.mat, b, Sigmai, l0u, gh.nodes, n){
+vcov <- function(Omega, data.mat, b, Sigmai, l0u, gh.nodes, n, beta.quad){
   #' Unpack Omega ----
   D <- Omega$D
   beta <- c(Omega$beta)
@@ -55,10 +55,15 @@ vcov <- function(Omega, data.mat, b, Sigmai, l0u, gh.nodes, n){
   sD <- lapply(1:nrow(sD), function(x) sD[x, ]) # Cast to list
   
   #' beta
-  Sb <- mapply(function(X, Y, Z, b, V){
-    Sbeta(beta, X, Y, Z, b)
-  }, X = X, Y = Y, Z = Z, b = b, SIMPLIFY = F)
-  
+  if(beta.quad){
+    Sb <- mapply(function(X, Y, Z, b, S){
+      Sbeta_quad(beta, X, Y, Z, b, S, w, v, 1e-4)
+    }, X = X, Y = Y, Z = Z, b = b, S = Sigmai, SIMPLIFY = F)
+  }else{
+    Sb <- mapply(function(X, Y, Z, b, V){
+      Sbeta(beta, X, Y, Z, b)
+    }, X = X, Y = Y, Z = Z, b = b, SIMPLIFY = F)
+  }
   #' (gamma, eta)
   Sge <- mapply(function(b, S, K, KK, Fu, Fi, l0u, Delta){
     Sgammaeta(c(gamma, eta), b, S, K, KK, Fu, Fi[1:2], l0u, Delta, w, v, 1e-4)

@@ -15,7 +15,7 @@ vech <- function(x) x[lower.tri(x, diag = T)]
 
 EMupdate <- function(b, Y, X, Z, 
                      D, beta, gamma, eta,
-                     Delta, l0i, l0u, Fi, Fu, K, KK, survdata, sv, w, v){
+                     Delta, l0i, l0u, Fi, Fu, K, KK, survdata, sv, w, v, beta.quad){
   n <- length(b)
   
   #' ### ------
@@ -41,15 +41,21 @@ EMupdate <- function(b, Y, X, Z,
   }, S = Sigmai, b = b.hat, SIMPLIFY = F)
   
   # Score and Hessian for \beta
-  Sb <- mapply(function(X, Y, Z, b){
-    Sbeta(beta, X, Y, Z, b)
-  }, X = X, Y = Y, Z = Z, b = b.hat, SIMPLIFY = F)
-  
-  Hb <- mapply(function(X, Y, Z, b){
-    Hbeta(beta, X, Y, Z, b, 1e-4)
-  }, X = X, Y = Y, Z = Z, b = b.hat, SIMPLIFY = F)
-  
-  Egammaeta(c(gamma, eta), b.hat[[1]], Sigmai[[1]], K[[1]], KK[[1]], Fu[[1]], Fi[[1]], l0u[[1]], Delta[[1]], w, v)
+  if(beta.quad){
+    Sb <- mapply(function(X, Y, Z, b, S){
+      Sbeta_quad(beta, X, Y, Z, b, S, w, v, 1e-4)
+    }, X = X, Y = Y, Z = Z, b = b.hat, S = Sigmai, SIMPLIFY = F)
+    Hb <- mapply(function(X, Y, Z, b, S){
+      Hbeta_quad(beta, X, Y, Z, b, S, w, v, 1e-4)
+    }, X = X, Y = Y, Z = Z, b = b.hat, S = Sigmai, SIMPLIFY = F)
+  }else{
+    Sb <- mapply(function(X, Y, Z, b){
+      Sbeta(beta, X, Y, Z, b)
+    }, X = X, Y = Y, Z = Z, b = b.hat, SIMPLIFY = F)
+    Hb <- mapply(function(X, Y, Z, b){
+      Hbeta(beta, X, Y, Z, b, 1e-4)
+    }, X = X, Y = Y, Z = Z, b = b.hat, SIMPLIFY = F)
+  }
   
   # Score and Hessian for (gamma, eta)
   Sge <- mapply(function(b, Delta, Fi, K, KK, Fu, l0u, S){
@@ -85,7 +91,7 @@ EMupdate <- function(b, Y, X, Z,
   ))
 }
 
-EM <- function(data, ph, survdata, gh = 9, tol = 0.01, post.process = T, verbose = F){
+EM <- function(data, ph, survdata, gh = 9, tol = 0.01, post.process = T, verbose = F, beta.quad = F){
   start <- proc.time()[3]
   inits.long <- Longit.inits(data)
   beta <- inits.long$beta.init
@@ -136,7 +142,7 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, post.process = T, verbose
   diff <- 100; iter <- 0
   EMstart <- proc.time()[3]
   while(diff > tol){
-    update <- EMupdate(b, Y, X, Z, D, beta, gamma, eta, Delta, l0i, l0u, Fi, Fu, K, KK, survdata, sv, w, v)
+    update <- EMupdate(b, Y, X, Z, D, beta, gamma, eta, Delta, l0i, l0u, Fi, Fu, K, KK, survdata, sv, w, v, beta.quad)
     params.new <- c(vech(update$D.new), update$beta.new, update$gamma.new, update$eta.new)
     names(params.new) <- names(params)
     if(verbose) print(sapply(params.new, round, 4))
@@ -182,7 +188,7 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, post.process = T, verbose
     }, b = b, X = X, Y = Y, Z = Z, Delta = Delta, K = K, Fi = Fi, l0i = l0i,
     KK = KK, Fu = Fu, haz = l0u, SIMPLIFY = F)
    
-    I <- structure(vcov(coeffs, data.mat, b, Sigmai, l0u, gh, n),
+    I <- structure(vcov(coeffs, data.mat, b, Sigmai, l0u, gh, n, beta.quad),
                    dimnames = list(names(params), names(params)))
     out$vcov <- I
     out$SE <- sqrt(diag(solve(I)))

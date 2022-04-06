@@ -90,6 +90,54 @@ mat Hbeta(vec& beta, mat& X, vec& Y, mat& Z, vec& b, double theta, double eps){
 	return 0.5 * (out + out.t());
 }
 
+// Update to \beta using quadrature
+// [[Rcpp::export]]
+double negbin_ll_quad(vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S, long double theta,
+					  vec& w, vec& v){
+	int gh = w.size();
+	vec eta = X * beta + Z * b;
+	vec tau = sqrt(diagvec(Z * S * Z.t()));
+	vec rhs = vec(Y.size());
+	for(int l = 0; l < gh; l++){
+		vec this_eta = eta + v[l] * tau;
+		rhs += w[l] * log(exp(this_eta) + theta);
+	}
+	vec out = Y % eta - (theta + Y) % rhs;
+	return sum(out);
+}
+
+// [[Rcpp::export]]
+vec Sbeta_quad(vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S, long double theta,
+		       vec& w, vec& v, double eps){
+	int n = beta.size();
+	double f0 = negbin_ll_quad(beta, X, Y, Z, b, S, theta, w, v);
+	vec out = vec(n);
+	for(int i = 0; i < n; i++){
+		vec bb = beta;
+		double xi = std::max(1.0, beta[i]);
+		bb[i] = beta[i] + xi * eps;
+		double fdiff = negbin_ll_quad(bb, X, Y, Z, b, S, theta, w, v) - f0;
+		out[i] = fdiff/(bb[i]-beta[i]);
+	}
+	return out;
+}
+
+// [[Rcpp::export]]
+mat Hbeta_quad(vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S, long double theta,
+		       vec& w, vec& v, double eps){
+	int n = beta.size();
+	vec f0 = Sbeta_quad(beta, X, Y, Z, b, S, theta, w, v, eps);
+	mat out = zeros<mat>(n, n);
+	for(int i = 0; i < n; i++){
+		vec bb = beta;
+		double xi = std::max(1.0, beta[i]);
+		bb[i] = beta[i] + xi * eps;
+		vec fdiff = Sbeta_quad(bb, X, Y, Z, b, S, theta, w, v, eps) - f0;
+		out.col(i) = fdiff/(bb[i]-beta[i]);
+	}
+	return out;
+}
+
 // Update to dispersion parameter, theta
 double ll_theta_quad(double theta, vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S,
                      vec& w, vec& v){
