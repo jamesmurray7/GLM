@@ -20,8 +20,8 @@ Longit.inits <- function(data){
     if(i == 3){f = poisson;  prefix = 'P'; RE <- paste0('(1 + time|id)')}
     
     fits[[i]] <- glmmTMB(as.formula(paste0('c(Y.', i, ') ~ time + cont + bin +', RE)),
-                         family = f, data = data,
-                         control = glmmTMBControl(optCtrl = list(rel.tol = 1e-3)))
+                         family = f, data = data)#,
+                      #   control = glmmTMBControl(optCtrl = list(rel.tol = 1e-3)))
     pf[[i]] <- prefix
   }
   

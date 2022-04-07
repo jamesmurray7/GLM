@@ -108,6 +108,7 @@ EMupdate <- function(b, Y, X, Z, V,
   lambda <- lambdaUpdate(sv$surv.times, ft, gamma, SigmaiSplit, bsplit, inds, w, v)
   # Baseline hazard objects
   l0.new <- sv$nev/rowSums(lambda)
+  l0.new <- predict(lm(l0.new~splines::bs(sv$ft, degree = 4)))
   l0u.new <- lapply(l0u, function(x){
     ll <- length(x); l0.new[1:ll]
   })
@@ -147,7 +148,6 @@ EM <- function(data, ph, survdata, gh = 3, tol = 0.01, verbose = F, post.process
   V <- lapply(m, function(x) diag(x = var.e, nr = x, nc = x))
   D <- inits.long$D.init
   
-  # pre-populate D step?
   # pre-populate D step?
   D[lower.tri(D, F)] <- cov(b)[lower.tri(cov(b), F)]
   D[upper.tri(D, F)] <- t(D)[upper.tri(D, F)]

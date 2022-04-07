@@ -35,7 +35,21 @@ summary.mix <- function(fit, ci = 95){
     c('Coefficient', 'SE', lower.name, upper.name, 'z-value', 'p-value')
   )
   
+  # Covariance matrix, D
+  D <- coeff$D
+  covmat <- matrix(NA, nr=dim(D)[1],nc=dim(D)[2])
+  covmat[lower.tri(covmat, T)] <- vech(D)
+  covmat[upper.tri(covmat, F)] <- t(cov2cor(D))[upper.tri(D)]
+  covmat <- structure(round(covmat, 3),
+                      dimnames = list(colnames(fit$RE), colnames(fit$RE)))
+  
   # Survival Part
   
-  list(longpart)
+  # print-out
+  cat("\nRandom effects covariance matrix:\n")
+  print(covmat)
+  cat("With correlation presented in upper triangle.")
+  cat("\n\nLongitudinal Process:\n")
+  print(longpart)
+  invisible(fit)
 }

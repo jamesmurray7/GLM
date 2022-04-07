@@ -7,7 +7,7 @@ pbc$bin <- as.numeric(pbc$drug) - 1
 
 survdata <- pbc %>%
   distinct(id, survtime, status, age, bin) %>% 
-  mutate(`cont` = as.numeric(scale(age)))
+  mutate(`cont` = age)#as.numeric(scale(age)))
 
 pbc <- left_join(
   pbc %>% select(-age, -drug),
@@ -57,7 +57,7 @@ pbc <- pbc %>%
 
 # Make our set to export
 pbc <- pbc %>% 
-  select(id, survtime, status, cont, bin, time, Y.1 = albumin, Y.2 = spiders, Y.3 = platelets) %>% 
+  select(id, survtime, status, cont, bin, time, Y.1 = albumin, Y.2 = hepatomegaly, Y.3 = platelets) %>% 
   mutate_at('Y.2', ~ as.numeric(.x)) %>% 
   mutate_at('id', ~ as.numeric(.x)) %>% 
   filter(complete.cases(.))
@@ -71,11 +71,11 @@ save(pbcdata, file = 'PBC/pbc-hepatomegaly.RData')
 
 
 
-source()
+source('EM.R')
 pbc <- as.data.frame(pbc)
-
+ph <- coxph(Surv(survtime, status) ~ 1, survdata)
 fit <- EM(pbc, ph, survdata, quad = F)
-fit <- EM(pbc, ph, survdata, quad = T, tol = 1e-3)
+fit <- EM(pbc, ph, survdata, quad = T)
 
 
 glmmTMB(Y.3 ~ time + cont + bin + (1+time|id), pbc, family = poisson) -> temp
