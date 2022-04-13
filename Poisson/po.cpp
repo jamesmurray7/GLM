@@ -16,55 +16,45 @@ double pois_ll(vec& b, mat& X, vec& Y, mat& Z, vec& beta){
 }
 
 // conditional expectation wrt REs for Poisson log-likelihood via quadature
-vec lfact(vec& v){
-	vec out = vec(v.size());
-	for(int i = 0; i < v.size(); i++){
-		out[i] = lgamma(v[i] + 1.0);
-	}
-	return out;
-}
 // [[Rcpp::export]]
-double pois_ll_quad(vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S,
-                    vec& w, vec& v){
-	int gh = w.size();
-	vec out = vec(Y.size()), rhs = out;
-	vec eta = X * beta + Z * b;
-	vec tau = sqrt(diagvec(Z * S * Z.t()));
-	for(int l = 0; l < gh; l++){
-		vec this_eta = eta + v[l] * tau;
-		rhs += w[l] * exp(this_eta);
-	}
-	out = Y % eta - rhs;// - lfact(Y);
-	return sum(out);
+double pois_ll_quad(vec& beta, mat& X, vec& Y, mat& Z, vec& b, vec& tau, vec& w, vec& v){
+  int mi = Y.size();
+  vec out = vec(mi), rhs = out;
+  vec eta = X * beta + Z * b;
+  int gh = w.size();
+  for(int l = 0; l < gh; l++){
+    vec this_eta = Z * b + v[l] * tau;
+    rhs += w[l] * exp(this_eta);
+  }
+  out = Y % eta - (exp(X * beta) % rhs);
+  return sum(out);
 }
 
 // [[Rcpp::export]]
-vec Sbeta_quad(vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S,
-                    vec& w, vec& v, long double eps){
+vec Sbeta_quad(vec& beta, mat& X, vec& Y, mat& Z, vec& b, vec& tau, vec& w, vec& v, long double eps){
 	int n = beta.size();
 	vec out = vec(n);
-	double f0 = pois_ll_quad(beta, X, Y, Z, b, S, w, v);
+	double f0 = pois_ll_quad(beta, X, Y, Z, b, tau, w, v);
 	for(int i = 0; i < n; i++){
 		vec bb = beta;
 		double xi = std::max(1.0, beta[i]);
 		bb[i] = beta[i] + (xi * eps);
-		double fdiff = pois_ll_quad(bb, X, Y, Z, b, S, w, v) - f0;
+		double fdiff = pois_ll_quad(bb, X, Y, Z, b, tau, w, v) - f0;
 		out[i] = fdiff/(bb[i]-beta[i]);
 	}
 	return out;
 }
 
 // [[Rcpp::export]]
-mat Hbeta_quad(vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S,
-               vec& w, vec& v, long double eps){
+mat Hbeta_quad(vec& beta, mat& X, vec& Y, mat& Z, vec& b, vec& tau, vec& w, vec& v, long double eps){
 	int n = beta.size();
 	mat out = zeros<mat>(n,n);
-	vec f0 = Sbeta_quad(beta, X, Y, Z, b, S, w, v, eps);
+	vec f0 = Sbeta_quad(beta, X, Y, Z, b, tau, w, v, eps);
 	for(int i = 0; i < n; i++){
 		vec bb = beta;
 		double xi = std::max(1.0, beta[i]);
 		bb[i] = beta[i] + (xi * eps);
-		vec fdiff = Sbeta_quad(bb, X, Y, Z, b, S, w, v, eps) - f0;
+		vec fdiff = Sbeta_quad(bb, X, Y, Z, b, tau, w, v, eps) - f0;
 		out.col(i) = fdiff/(bb[i]-beta[i]);
 	}
 	return out;
@@ -99,39 +89,6 @@ mat Hbeta(vec& beta, mat& X, vec& Y, mat& Z, vec& b, double eps){
 	}
 	return 0.5 * (out + out.t());
 }
-
-// Quadrature maybe?
-static long double const root2 = pow(2.0, 0.5);
-static long double const rootpi = pow(M_PI, 0.5); // not needed but good to know you can do this!
-
-vec lfact(vec& v){
-  vec out = vec(v.size());
-  for(int i = 0; i < v.size(); i++){
-    out[i] = lgamma(v[i] + 1.0);
-  }
-  return out;
-}
-
-// [[Rcpp::export]]
-double pois_ll_quad(vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S,
-                    vec& w, vec& v){
-  int mi = Y.size();
-  vec out = vec(mi), rhs = out;
-  vec lfactY = lfact(Y);
-  vec eta = X * beta + Z * b;
-  // quadrature
-  vec tau = sqrt(diagvec(Z * S * Z.t()));
-  int gh = w.size();
-  for(int l = 0; l < gh; l++){
-    vec this_eta = eta + v[l] * tau;
-    rhs += w[l] * exp(this_eta);
-  }
-  out = Y % eta - rhs - lfactY;
-  return sum(out);
-}
-
-
-
 
 // Joint density (negative) log likelihood
 // [[Rcpp::export]]

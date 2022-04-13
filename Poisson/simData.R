@@ -27,7 +27,9 @@ simData_joint <- function(n = 250, ntms = 10, beta = c(1, 0.10, 0.33, -0.50),
                           gamma = 0.5, surv.eta = c(0.05, -0.30), theta = c(-4, 0.2),
                           cens.rate = exp(-3.5)){
   #' Necessary parameters & data generation ----
-  time <- 0:(ntms-1); tau <- (ntms - 1) + 0.1 # time variable and truncation time tau.
+  time <- seq(0, 5, length.out = ntms)
+  #time <- 0:(ntms-1); 
+  tau <- 5.1 # time variable and truncation time tau.
   cont <- rnorm(n); bin <- rbinom(n, 1, 0.5)  # Continuous and binary covariates.
   
   df <- data.frame(id = rep(1:n, each = ntms),

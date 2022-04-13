@@ -56,9 +56,10 @@ vcov <- function(Omega, data.mat, b, Sigmai, l0u, gh.nodes, n, beta.quad){
   
   #' beta
   if(beta.quad){
-    Sb <- mapply(function(X, Y, Z, b, S){
-      Sbeta_quad(beta, X, Y, Z, b, S, w, v, 1e-4)
-    }, X = X, Y = Y, Z = Z, b = b, S = Sigmai, SIMPLIFY = F)
+    tau <- mapply(function(S, Z) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), Z = Z, S = Sigmai)
+    Sb <- mapply(function(X, Y, Z, b, tau){
+      Sbeta_quad(beta, X, Y, Z, b, tau, w, v, .Machine$double.eps^(1/3))
+    }, X = X, Y = Y, Z = Z, b = b, tau = tau, SIMPLIFY = F)
   }else{
     Sb <- mapply(function(X, Y, Z, b, V){
       Sbeta(beta, X, Y, Z, b)
