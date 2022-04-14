@@ -1,7 +1,0 @@
-checkFormula <- function(formula){
-  
-}
-
-
-
-

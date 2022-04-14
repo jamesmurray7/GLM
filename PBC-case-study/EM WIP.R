@@ -54,7 +54,7 @@ EM <- function(long.formula, surv.formula, data, family, control = list()){
   if("function"%in%class(family)) family <- family()$family # step to ensure non-quoted arguments don't throw error.
   family <- match.arg(family, c('gaussian', 'binomial', 'poisson', 'negative.binomial'), several.ok = F)
   
-  switch(family,  ## THIS WIP !!!!!!!!!!!!!!!!!!!!!
+  switch(family,  ## THIS WIP !!!!!!!!!!!!!!!!!!!!! -> maybe send to function in _Functions (i.e. input family, output everything else)
          gaussian = {
            log.likelihood <- gauss_ll
            score.eta <- Score_eta_gauss
