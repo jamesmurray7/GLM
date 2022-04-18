@@ -31,7 +31,7 @@ EMupdate <- function(b, Y, X, Z,
   KK = KK, Fu = Fu, haz = l0u, SIMPLIFY = F)
   
   Sigmai <- mapply(function(b, X, Y, Z, Delta, K, Fi, l0i, KK, Fu, haz){
-    solve(joint_density_sdb(b, X, Y, Z, beta, D, Delta, K, Fi, l0i, KK, Fu, haz, gamma, eta, eps = 1e-4))
+    solve(joint_density_sdb(b, X, Y, Z, beta, D, Delta, K, Fi, l0i, KK, Fu, haz, gamma, eta, eps = .Machine$double.eps^(1/4)))
   }, b = b.hat, X = X, Y = Y, Z = Z, Delta = Delta, K = K, Fi = Fi, l0i = l0i,
   KK = KK, Fu = Fu, haz = l0u, SIMPLIFY = F)
   
@@ -42,28 +42,29 @@ EMupdate <- function(b, Y, X, Z,
 
   # Score and Hessian for \beta
   if(beta.quad){
-    Sb <- mapply(function(X, Y, Z, b, S){
-      Sbeta_quad(beta, X, Y, Z, b, S, w, v, 1e-4)
-    }, X = X, Y = Y, Z = Z, b = b.hat, S = Sigmai, SIMPLIFY = F)
-    Hb <- mapply(function(X, Y, Z, b, S){
-      Hbeta_quad(beta, X, Y, Z, b, S, w, v, 1e-4)
-    }, X = X, Y = Y, Z = Z, b = b.hat, S = Sigmai, SIMPLIFY = F)
+    tau <- mapply(function(S, Z) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), Z = Z, S = Sigmai)
+    Sb <- mapply(function(X, Y, Z, b, tau){
+      Sbeta_quad(beta, X, Y, Z, b, tau, w, v, .Machine$double.eps^(1/3))
+    }, X = X, Y = Y, Z = Z, b = b.hat, tau = tau, SIMPLIFY = F)
+    Hb <- mapply(function(X, Y, Z, b, tau){
+      Hbeta_quad(beta, X, Y, Z, b, tau, w, v, .Machine$double.eps^(1/4))
+    }, X = X, Y = Y, Z = Z, b = b.hat, tau = tau, SIMPLIFY = F)
   }else{
     Sb <- mapply(function(X, Y, Z, b){
       Sbeta(beta, X, Y, Z, b)
     }, X = X, Y = Y, Z = Z, b = b.hat, SIMPLIFY = F)
     Hb <- mapply(function(X, Y, Z, b){
-      Hbeta(beta, X, Y, Z, b, 1e-4)
+      Hbeta(beta, X, Y, Z, b, .Machine$double.eps^(1/4))
     }, X = X, Y = Y, Z = Z, b = b.hat, SIMPLIFY = F)
   }
   
   # Score and Hessian for (gamma, eta)
   Sge <- mapply(function(b, Delta, Fi, K, KK, Fu, l0u, S){
-    Sgammaeta(c(gamma, eta), b, S, K, KK, Fu, Fi, l0u, Delta, w, v, 1e-4)
+    Sgammaeta(c(gamma, eta), b, S, K, KK, Fu, Fi, l0u, Delta, w, v, .Machine$double.eps^(1/3))
   }, b = b.hat, Delta = Delta, Fi = Fi, K = K, KK = KK, Fu = Fu, l0u = l0u, S = Sigmai)
   
   Hge <- mapply(function(b, Delta, Fi, K, KK, Fu, l0u, S){
-    Hgammaeta(c(gamma, eta), b, S, K, KK, Fu, Fi, l0u, Delta, w, v, 1e-4)
+    Hgammaeta(c(gamma, eta), b, S, K, KK, Fu, Fi, l0u, Delta, w, v, .Machine$double.eps^(1/4))
   }, b = b.hat, Delta = Delta, Fi = Fi, K = K, KK = KK, Fu = Fu, l0u = l0u, S = Sigmai, SIMPLIFY = F)
   
   #' ### ------
@@ -127,7 +128,7 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, post.process = T, verbose
   })
   
   # Quadrature //
-  aa <- statmod::gauss.quad.prob(gh, 'normal') 
+  aa <- statmod::gauss.quad.prob(gh, 'normal')#, sigma = sqrt(0.5)) 
   w <- aa$w; v <- aa$n
   
   # Collect parameters
