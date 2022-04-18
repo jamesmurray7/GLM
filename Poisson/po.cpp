@@ -23,6 +23,7 @@ vec lfact(vec& v){
 	}
 	return out;
 }
+
 // [[Rcpp::export]]
 double pois_ll_quad(vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S,
                     vec& w, vec& v){
@@ -34,7 +35,7 @@ double pois_ll_quad(vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S,
 		vec this_eta = eta + v[l] * tau;
 		rhs += w[l] * exp(this_eta);
 	}
-	out = Y % eta - rhs;// - lfact(Y);
+	out = Y % log(rhs) - rhs - lfact(Y);
 	return sum(out);
 }
 
@@ -101,36 +102,8 @@ mat Hbeta(vec& beta, mat& X, vec& Y, mat& Z, vec& b, double eps){
 }
 
 // Quadrature maybe?
-static long double const root2 = pow(2.0, 0.5);
-static long double const rootpi = pow(M_PI, 0.5); // not needed but good to know you can do this!
-
-vec lfact(vec& v){
-  vec out = vec(v.size());
-  for(int i = 0; i < v.size(); i++){
-    out[i] = lgamma(v[i] + 1.0);
-  }
-  return out;
-}
-
-// [[Rcpp::export]]
-double pois_ll_quad(vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S,
-                    vec& w, vec& v){
-  int mi = Y.size();
-  vec out = vec(mi), rhs = out;
-  vec lfactY = lfact(Y);
-  vec eta = X * beta + Z * b;
-  // quadrature
-  vec tau = sqrt(diagvec(Z * S * Z.t()));
-  int gh = w.size();
-  for(int l = 0; l < gh; l++){
-    vec this_eta = eta + v[l] * tau;
-    rhs += w[l] * exp(this_eta);
-  }
-  out = Y % eta - rhs - lfactY;
-  return sum(out);
-}
-
-
+// static long double const root2 = pow(2.0, 0.5);
+// static long double const rootpi = pow(M_PI, 0.5); // not needed but good to know you can do this!
 
 
 // Joint density (negative) log likelihood

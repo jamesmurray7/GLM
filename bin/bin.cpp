@@ -8,7 +8,7 @@ using namespace arma;
 // This is only marginally faster than R's implementation, but included for ease of use with later functions
 // [[Rcpp::export]]
 double log_density(vec& eta, vec& Y){
-	vec mu = exp(eta)/(1+exp(eta));
+	vec mu = exp(eta)/(1.0+exp(eta));
 	vec out = vec(mu.size());
 	for(int i = 0; i < eta.size(); i++){
 		out[i] = R::dbinom(Y[i],1,mu[i],1);
@@ -20,7 +20,41 @@ double log_density(vec& eta, vec& Y){
 // [[Rcpp::export]]
 vec Sbeta(vec& beta, mat& X, vec& Y, mat& Z, vec& b){
 	vec eta = X * beta + Z * b;
-	return X.t() * (Y - exp(eta)/(exp(eta) + 1));
+	return X.t() * (Y - exp(eta)/(exp(eta) + 1.0));
+}
+
+// [[Rcpp::export]]
+vec log_dens_vec(vec& eta, vec& Y){
+    vec mu = exp(eta)/(1.0 + exp(eta));
+    vec out = vec(mu.size());
+    for(int i = 0; i < eta.size(); i++){
+      out[i] = R::dbinom(Y[i],1,mu[i],1);
+    }
+    return out;
+}
+
+// [[Rcpp::export]]
+vec temp_Sbeta(vec& beta, mat& X, vec& Y, mat& Z, vec& b, long double eps){
+  vec eta_1 = X * (beta + eps) + Z * b;
+  vec eta_2 = X * (beta - eps) + Z * b;
+  vec l1 = log_dens_vec(eta_1, Y);
+  vec l2 = log_dens_vec(eta_2, Y);
+  return X.t() * ((l1 - l2) / (2 * eps));
+}
+
+// [[Rcpp::export]]
+mat temp_Hbeta(vec& beta, mat& X, vec& Y, mat& Z, vec& b, long double eps){
+  int n = beta.size();
+  vec f0 = temp_Sbeta(beta, X, Y, Z, b, eps);
+  mat out = zeros<mat>(n, n);
+  for(int i = 0; i < n; i++){
+    vec bb = beta;
+    double xi = std::max(beta[i], 1.0);
+    bb[i] = beta[i] + (eps * xi);
+    vec fdiff = temp_Sbeta(bb, X, Y, Z, b, eps) - f0;
+    out.col(i) = fdiff/(bb[i]-beta[i]);
+  }
+  return 0.5 * (out + out.t());
 }
 
 // 3. Function for the Hessian of \beta

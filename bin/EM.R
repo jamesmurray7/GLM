@@ -15,7 +15,7 @@ vech <- function(x) x[lower.tri(x, diag = T)]
 
 EMupdate <- function(b, Y, X, Z, 
                      D, beta, gamma, eta,
-                     Delta, l0i, l0u, Fi, Fu, K, KK, survdata, sv, w, v){
+                     Delta, l0i, l0u, Fi, Fu, K, KK, survdata, sv, w, v, test){
   n <- length(b)
   
   #' ### ------
@@ -39,12 +39,23 @@ EMupdate <- function(b, Y, X, Z,
   }, S = Sigmai, b = b.hat, SIMPLIFY = F)
   
   # Score and hessian for \beta
-  beta.update <- mapply(function(X, Y, Z, b){
-    out <- list()
-    out[[1]] <- Sbeta(beta, X, Y, Z, b)
-    out[[2]] <- Hbeta(beta, X, Y, Z, b, eps = 1e-4)
-    out
-  }, X = X, Y = Y, Z = Z, b = b.hat, SIMPLIFY = F)
+  if(!test){
+    beta.update <- mapply(function(X, Y, Z, b){
+      out <- list()
+      out[[1]] <- Sbeta(beta, X, Y, Z, b)
+      out[[2]] <- Hbeta(beta, X, Y, Z, b, eps = 1e-4)
+      out
+    }, X = X, Y = Y, Z = Z, b = b.hat, SIMPLIFY = F)
+  }else{
+    beta.update <- mapply(function(X, Y, Z, b){
+      out <- vector('list', 2)
+      out[[1]] <- temp_Sbeta(beta, X, Y, Z, b, .Machine$double.eps^(1/3))
+      out[[2]] <- temp_Hbeta(beta, X, Y, Z, b, .Machine$double.eps^(1/3))
+      out
+    }, X = X, Y = Y, Z = Z, b = b.hat, SIMPLIFY = F)
+  }
+  
+  
   
   # Score and Hessian for (gamma, eta)
   Sge <- mapply(function(b, Delta, Fi, K, KK, Fu, l0u, S){
@@ -80,7 +91,7 @@ EMupdate <- function(b, Y, X, Z,
   ))
 }
 
-EM <- function(data, ph, survdata, gh = 9, tol = 0.01, post.process = T, verbose = F){
+EM <- function(data, ph, survdata, gh = 3, tol = 0.01, post.process = T, verbose = F, test = F){
   start <- proc.time()[3]
   inits.long <- Longit.inits(data)
   beta <- inits.long$beta.init
@@ -131,7 +142,7 @@ EM <- function(data, ph, survdata, gh = 9, tol = 0.01, post.process = T, verbose
   # Start EM
   EMstart <- proc.time()[3]
   while(diff > tol){
-    update <- EMupdate(b, Y, X, Z, D, beta, gamma, eta, Delta, l0i, l0u, Fi, Fu, K, KK, survdata, sv, w, v)
+    update <- EMupdate(b, Y, X, Z, D, beta, gamma, eta, Delta, l0i, l0u, Fi, Fu, K, KK, survdata, sv, w, v, test)
     params.new <- c(vech(update$D.new), update$beta.new, update$gamma.new, update$eta.new)
     names(params.new) <- names(params)
     if(verbose) print(sapply(params.new, round, 4))
