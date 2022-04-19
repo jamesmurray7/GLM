@@ -14,6 +14,7 @@ simData <- function(n = 250, ntms = 10, fup = 5, family = 'gaussian', disp = NUL
   
   #' Checks --------------
   # Check family is valid option
+  if("function"%in%class(family)) family <- family()$family
   if(!family%in%c("gaussian", "binomial", "poisson", "negative.binomial")) stop('Family must be one of "gaussian", "binomial", "poisson" or "negative.binomial"')
   # Check dispersion supplied if neg. binom.
   if(family == 'negative.binomial' & is.null(disp)) stop('Must define disp (scalar) if negative.binomial model chosen')

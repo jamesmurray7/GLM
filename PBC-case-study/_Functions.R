@@ -3,6 +3,7 @@
 #'   Collection of functions to help parse formula inputs
 #' ######
 
+# .sub <- function(x) return(deparse(substitute(x))) # No idea why this doesnt work!
 # Parsing input formula ---------------------------------------------------
 # (for longitudinal part), initial conditions found in inits.R
 parseFormula <- function(formula){
@@ -50,8 +51,7 @@ createDataMatrices <- function(data, formulas){
 }
 
 # Survival objects --------------------------------------------------------
-# Parsing the coxph object/formula (formula as of 14/4/22) and constructing 
-# all survival-related data objects.
+# Parsing the survival formula and constructing all survival-related data objects.
 
 parseCoxph <- function(surv.formula, data){
   survdata <- data[!duplicated(data[, 'id']), ]; n <- nrow(survdata)
@@ -63,7 +63,7 @@ parseCoxph <- function(surv.formula, data){
   ft <- sf$time[sf$n.event >= 1] # failure times
   nev <- sf$n.event[sf$n.event >= 1] # Number of failures per failure time
   
-  S <- lapply(1:n, function(i) ph$x[i, ])
+  S <- lapply(1:n, function(i) ph$x[i, , drop = F])
   Delta <- as.list(survdata$status)
   
   #' #' Obtain form of S through call to ph ----  (If coxph object is entered instead of a formula)
@@ -103,7 +103,9 @@ surv.mod <- function(ph, survdata, formulas, l0.init){
     Fi
   }
   .getFu <- function(times, q = q){
-    sapply(1:q, function(i) times ^ (i - 1))
+    out <- sapply(1:q, function(i) times ^ (i - 1))
+    if(!"matrix"%in%class(out)) out <- t(out)
+    out
   }
   
   # Failure times
@@ -135,53 +137,26 @@ surv.mod <- function(ph, survdata, formulas, l0.init){
     if(status == 1) l0i[i] <- l0[which(ft == survtime)] else l0i[i] <- 0
   }
   
+  ftmat <- .getFu(ft, q)
+  
   #' Return list ----
   return(list(
-    ft = ft, nev = coxph.detail(ph)$nevent, surv.times = surv.times,
-    l0 = l0, l0i = as.list(l0i), l0u = l0u, Fi = Fi, Fu = Fu
+    ft = ft, ft.mat = ftmat, nev = coxph.detail(ph)$nevent, surv.times = surv.times,
+    l0 = l0, l0i = as.list(l0i), l0u = l0u, Fi = Fi, Fu = Fu, Tis = survdata$survtime
   ))
 }
 
-
-# Family-related ----------------------------------------------------------
-
-setfamily <- function(family){
-  if("function"%in%class(family)) family <- family()$family # step to ensure non-quoted arguments don't throw error.
-  family <- match.arg(family, c('gaussian', 'binomial', 'poisson', 'negative.binomial'), several.ok = F)
-  
-  #' Switch statement
-  switch(family,  
-  gaussian = {
-    log.likelihood <- gaussian_ll
-    score.eta <- Score_eta_gauss
-    sigma.update <- vare_update
-    mu <- identity
-  },
-  binomial = {
-    log.likelihood <- binomial_ll
-    score.eta <- Score_eta_binom
-    sigma.update <- NULL
-    mu <- plogis
-  },
-  poisson = {
-    log.likelihood <- poisson_ll
-    score.eta <- Score_eta_poiss
-    sigma.update <- NULL
-    mu <- exp
-  },
-  negative.binomial = {
-    log.likelihood <- negbin_ll
-    score.eta <- Score_eta_negbin
-    sigma.update <- theta_update
-    mu <- exp
-  })
-  
-  # Return a list of family-specific arguments
-  return(list(log.likelihood = log.likelihood,
-              score.eta = score.eta,
-              sigma.update <- sigma.update,
-              mu = mu
-         ))
+difference <- function(params.old, params.new, type){
+  if(type == 'absolute'){
+    rtn <- max(abs(params.new - params.old))
+  }else if(type == 'relative'){
+    rtn <- max(
+      abs(params.new - params.old)/(abs(params.old) + 1e-3)
+    )
+  }else{
+    rtn <- NA
+  }
+  rtn
 }
 
 

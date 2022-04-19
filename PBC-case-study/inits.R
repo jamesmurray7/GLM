@@ -29,8 +29,8 @@ Longit.inits <- function(long.formula, data, family, dispformula = NULL){
   }
   
   #' Fit using glmmTMB ----
-  fit <- glmmTMB(formula.lme, 
-                 family = gaussian, data = data, dispformula = dispformula,
+  fit <- glmmTMB(long.formula,
+                 family = f, data = data, dispformula = dispformula,
                  control = glmmTMBControl(optCtrl = list(rel.tol = 1e-3)))
 
   #' Extract & Return ----
@@ -47,11 +47,11 @@ Longit.inits <- function(long.formula, data, family, dispformula = NULL){
   }
   
   if(family == 'negative.binomial'){
-    theta <- glmmTMB::sigma(fit); var.e <- 0.0
+    sigma <- setNames(glmmTMB::sigma(fit), 'theta')
   }else if(family == 'gaussian'){
-    var.e <- glmmTMB::sigma(fit)^2; theta <- 0.0
+    sigma <- setNames(glmmTMB::sigma(fit)^2, 'var.e') # This potentially confusing later on!
   }else{
-    var.e <- theta <- 0
+    sigma <- 0
   }
   
   #' Random effects
@@ -60,8 +60,7 @@ Longit.inits <- function(long.formula, data, family, dispformula = NULL){
   list(
     beta.init = beta,
     D.init = D,
-    theta.init = theta,
-    var.e.init = var.e,
+    sigma.init = sigma,
     b = b
   )
 }

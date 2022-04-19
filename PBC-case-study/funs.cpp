@@ -5,7 +5,7 @@ using namespace Rcpp;
 using namespace arma;
 
 
-// Log-likelihoods -------------------------------------
+// Log-likelihoods --------------------------------------------------------
 // Gaussian
 // [[Rcpp::export]]
 double gaussian_ll(vec& Y, vec& eta, double sigma){ // important/misleading - sigma is the __variance__!!
@@ -47,7 +47,7 @@ double negbin_ll(vec& Y, vec& eta, double theta){
   return sum(out);
 }
 
-// 2. Scores for linear predictors -------------------------------------
+// 2. Scores for linear predictors ----------------------------------------
 // Gaussian -> binom -> poisson -> negbin
 // [[Rcpp::export]]
 vec Score_eta_gauss(vec& Y, vec& eta, double sigma){
@@ -70,7 +70,7 @@ vec Score_eta_negbin(vec& Y, vec& eta, double theta){
 }
 
 
-// 3. Defining a joint density ------------------------------------------
+// 3. Defining a joint density --------------------------------------------
 static double log2pi = log(2.0 * M_PI); // does this work?
 
 // [[Rcpp::export]]
@@ -88,7 +88,7 @@ double joint_density(vec& b, vec& Y, mat& X, mat& Z,      // Longitudinal + REs
     ll += binomial_ll(Y, eta);
   }else if(family == "poisson"){
     ll += poisson_ll(Y, eta);
-  }else if(family == "negative binomial"){
+  }else if(family == "negative.binomial"){
     ll += negbin_ll(Y, eta, sigma);
   }
   
@@ -116,7 +116,7 @@ vec joint_density_ddb(vec& b, vec& Y, mat& X, mat& Z,      // Longitudinal + REs
     Score += Z.t() * Score_eta_binom(Y, eta);
   }else if(family == "poisson"){
     Score += Z.t() * Score_eta_poiss(Y, eta);
-  }else if(family == "negative binomial"){
+  }else if(family == "negative.binomial"){
     Score += Z.t() * Score_eta_negbin(Y, eta, sigma);
   }
   
@@ -141,5 +141,161 @@ mat joint_density_sdb(vec& b, vec& Y, mat& X, mat& Z,      // Longitudinal + REs
     out.col(i) = fdiff/(bb[i]-b[i]);
   }
   return 0.5 * (out + out.t()); // Ensure symmetry
+}
+
+// 4. Defining updates to fixed-effects \beta -----------------------------
+
+// [[Rcpp::export]]
+vec Sbeta(vec& beta, mat& X, vec& Y, mat& Z, vec& b, double sigma, std::string& family){
+  int p = beta.size();
+  vec Score = vec(p);
+  vec eta = X * beta + Z * b;
+  
+  if(family == "gaussian"){
+    Score += X.t() * Score_eta_gauss(Y, eta, sigma);
+  }else if(family == "binomial"){
+    Score += X.t() * Score_eta_binom(Y, eta);
+  }else if(family == "poisson"){
+    Score += X.t() * Score_eta_poiss(Y, eta);
+  }else if(family == "negative.binomial"){
+    Score += X.t() * Score_eta_negbin(Y, eta, sigma);
+  }
+  
+  return Score;
+}
+
+// [[Rcpp::export]]
+mat Hbeta(vec& beta, mat& X, vec& Y, mat& Z, vec& b, double sigma, std::string& family, long double eps){
+  int p = beta.size();
+  mat out = zeros<mat>(p, p);
+  vec S0 = Sbeta(beta, X, Y, Z, b, sigma, family);
+  for(int i = 0; i < p; i++){
+    vec bb = beta;
+    double xi = std::max(beta[i], 1.0);
+    bb[i] = beta[i] + eps * xi;
+    vec Sdiff = Sbeta(bb, X, Y, Z, b, sigma, family) - S0;
+    out.col(i) = Sdiff/(bb[i]-beta[i]);
+  }
+  return 0.5 * (out + out.t()); // Ensure symmetry
+}
+
+// 5. Defining updates to dispersion/scale parameters ---------------------
+
+// 5a. Update for \theta, in case of Y|. ~ NB(mu, theta) parameterisation.
+double ll_theta_quad(double theta, vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S,
+                     vec& w, vec& v){
+  vec rhs = vec(Y.size());
+  vec tau = sqrt(diagvec(Z * S * Z.t()));
+  vec eta = X * beta + Z * b;
+  for(int l = 0; l < w.size(); l++){
+    vec this_eta = eta + v[l] * tau;
+    rhs += w[l] * log(exp(this_eta) + theta);
+  }
+  vec out = vec(Y.size());
+  for(int i = 0; i < Y.size(); i++){
+    out[i] = lgamma(theta + Y[i]) - lgamma(theta) + theta * log(theta) - (theta + Y[i]) * rhs[i];
+  }
+  return sum(out);
+}
+
+// [[Rcpp::export]]
+double Stheta(double theta, vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S,
+              vec& w, vec& v, double eps){
+  double theta1 = theta + eps;
+  double theta2 = theta - eps;
+  double l1 = ll_theta_quad(theta1, beta, X, Y, Z, b, S, w, v);
+  double l2 = ll_theta_quad(theta2, beta, X, Y, Z, b, S, w, v);
+  return (l1-l2)/(theta1-theta2);
+}
+
+// [[Rcpp::export]]
+double Htheta(double theta, vec& beta, mat& X, vec& Y, mat& Z, vec& b, mat& S,
+              vec& w, vec& v, double eps){
+  double f0 = Stheta(theta, beta, X, Y, Z, b, S, w, v, eps);
+  double xi = eps * (abs(theta) + eps);
+  double tt = theta + xi;
+  double fdiff = Stheta(tt, beta, X, Y, Z, b, S, w, v, eps) - f0;
+  return fdiff/(tt - theta);
+}
+
+// 5b. Update for residual variance
+// [[Rcpp::export]]
+long double vare_update(mat& X, vec& Y, mat& Z, vec& b, vec& beta, vec& tau, vec& w, vec& v){
+  vec eta = X * beta + Z * b;
+  int gh = w.size();
+  double out = 0.0;
+  for(int l = 0; l < gh; l++){
+    vec rhs = Y - eta - tau * v[l];
+    out += w[l] * as_scalar(rhs.t() * rhs);
+  }
+  return out;
+}
+
+// 6. Defining updates for the survival pair (gamma, zeta)
+// Define the conditional expectation and then take Score AND Hessian via forward differencing
+double Egammazeta(vec& gammazeta, vec& b, mat& Sigma,
+                  rowvec& S, mat& SS, mat& Fu, rowvec& Fi, vec& haz, int Delta, vec& w, vec& v){
+  double g = as_scalar(gammazeta.head(1)); // gamma will always be scalar and the first element
+  vec z = gammazeta.subvec(1, gammazeta.size() - 1);  // with the rest of the vector constructed by zeta
+  // determine tau
+  vec tau = pow(g, 2.0) * diagvec(Fu * Sigma * Fu.t());
+  double rhs = 0.0;
+  for(int l = 0; l < w.size(); l++){
+    rhs += w[l] * as_scalar(haz.t() * exp(SS * z + Fu * (g * b) + v[l] * pow(tau, 0.5)));
+  }
+  return as_scalar(Delta * (S * z + Fi * (g * b)) - rhs);
+}
+// [[Rcpp::export]]
+vec Sgammazeta(vec& gammazeta, vec& b, mat& Sigma,
+              rowvec& S, mat& SS, mat& Fu, rowvec& Fi, vec& haz, int Delta, vec& w, vec& v, long double eps){
+  vec out = vec(gammazeta.size());
+  double f0 = Egammazeta(gammazeta, b, Sigma, S, SS, Fu, Fi, haz, Delta, w, v);
+  for(int i = 0; i < gammazeta.size(); i++){
+    vec ge = gammazeta;
+    double xi = std::max(ge[i], 1.0);
+    ge[i] = gammazeta[i] + xi * eps;
+    double fdiff = Egammazeta(ge, b, Sigma, S, SS, Fu, Fi, haz, Delta, w, v) - f0;
+    out[i] = fdiff/(ge[i]-gammazeta[i]);
+  }
+  return out;
+}
+// [[Rcpp::export]]
+mat Hgammazeta(vec& gammazeta, vec& b, mat& Sigma,
+              rowvec& S, mat& SS, mat& Fu, rowvec& Fi, vec& haz, int Delta, vec& w, vec& v, long double eps){
+  mat out = zeros<mat>(gammazeta.size(), gammazeta.size());
+  vec f0 = Sgammazeta(gammazeta, b, Sigma, S, SS, Fu, Fi, haz, Delta, w, v, eps);
+  for(int i = 0; i < gammazeta.size(); i++){
+    vec ge = gammazeta;
+    double xi = std::max(ge[i], 1.0);
+    ge[i] = gammazeta[i] + xi * eps;
+    vec fdiff = Sgammazeta(ge, b, Sigma, S, SS, Fu, Fi, haz, Delta, w, v, eps) - f0;
+    out.col(i) = fdiff/(ge[i]-gammazeta[i]);
+  }
+  return 0.5 * (out + out.t());
+}
+
+// 7. Defining update to the baseline hazard lambda_0.
+// [[Rcpp::export]]
+mat lambdaUpdate(List survtimes, mat& ft, double gamma, vec& zeta,
+                 List S, List Sigma, List b, vec& w, vec& v){
+  int gh = w.size();
+  int id = b.size();
+  mat store = zeros<mat>(ft.n_rows, id);
+  for(int i = 0; i < id; i++){
+    vec survtimes_i = survtimes[i];
+    mat Sigma_i = Sigma[i];
+    vec b_i = b[i];
+    rowvec S_i = S[i];
+    for(int j = 0; j < survtimes_i.size(); j++){
+      rowvec Fst = ft.row(j);
+      double tau = as_scalar(pow(gamma, 2.0) * Fst * Sigma_i * Fst.t());
+      vec rhs = gamma * b_i; //vec(b_i.size());
+      double mu = as_scalar(exp(S_i * zeta + Fst * rhs));
+      for(int l = 0; l < gh; l++){
+        store(j, i) += as_scalar(w[l] * mu * exp(v[l] * sqrt(tau)));
+      }
+    }
+  }
+  return store;
 }
 
