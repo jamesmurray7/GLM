@@ -5,6 +5,7 @@ library(RcppArmadillo)
 source('_Functions.R')
 source('simData.R')
 source('inits.R')
+source('vcov.R')
 sourceCpp('funs.cpp')
 vech <- function(x) x[lower.tri(x, T)]
 
@@ -144,14 +145,10 @@ EM <- function(long.formula, surv.formula, data, family, post.process = T, contr
   dmats <- createDataMatrices(data, formulas)
   X <- dmats$X; Y <- dmats$Y; Z <- dmats$Z # Longitudinal data matrices
   m <- sapply(Y, length)
-  Fi <- sv$Fi; Fu <- sv$Fu; l0i <- sv$l0i; l0u <- sv$l0u; Delta <- surv$Delta # survival
+  # survival
+  Fi <- sv$Fi; Fu <- sv$Fu; l0i <- sv$l0i; l0u <- sv$l0u; Delta <- surv$Delta 
   l0 <- sv$l0
-  S <- surv$S
-  SS <- lapply(1:n, function(i){
-    out <- apply(S[[i]], 2, rep, nrow(Fu[[i]]))
-    if("numeric"%in%class(out)) out <- t(out)
-    out
-  })
+  S <- sv$S; SS <- sv$SS
   
   #' Parameter vector ----
   Omega <- list(D=D, beta = beta, sigma = sigma, gamma = gamma, zeta = zeta)
@@ -199,7 +196,8 @@ EM <- function(long.formula, surv.formula, data, family, post.process = T, contr
     
   }
   EMend <- proc.time()[3]
-  coeffs <- list(D = D, beta = beta, sigma = sigma, gamma = gamma, zeta = zeta)
+  coeffs <- Omega
+  if(!family%in%c('gaussian', 'negative.binomial')) coeffs$sigma <- NULL
   out <- list(coeffs = coeffs,
               RE = do.call(rbind, b),
               iter = iter,
@@ -207,9 +205,32 @@ EM <- function(long.formula, surv.formula, data, family, post.process = T, contr
               totaltime = proc.time()[3] - start.time)
   out$hazard <- cbind(ft = sv$ft, haz = l0)
   out$family <- family
-  if(post.process){
-    message('Post processing not yet implemented!')
-  }
   
+  #' Post processing ----
+  if(post.process){
+    message('\nCalculating SEs...')
+    start.time <- proc.time()[3]
+    #' b and Sigmai at MLEs
+    b <- mapply(function(b, Y, X, Z, Delta, S, Fi, l0i, SS, Fu, l0u){
+      ucminf::ucminf(b, joint_density, joint_density_ddb,
+                     Y = Y, X = X, Z = Z, beta = beta, D = D, sigma = sigma, family = family, 
+                     Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS, Fu = Fu, haz = l0u, gamma = gamma, zeta = zeta)$par
+    }, b = b, Y = Y, X = X, Z = Z, Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS,
+    Fu = Fu, l0u = l0u, SIMPLIFY = F)
+    Sigma <- mapply(function(b, Y, X, Z, Delta, S, Fi, l0i, SS, Fu, l0u){
+      solve(
+        joint_density_sdb(b = b, Y = Y, X = X, Z = Z, beta = beta, D = D, sigma = sigma, family = family, 
+                          Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS, Fu = Fu, haz = l0u, gamma = gamma, 
+                          zeta = zeta, eps = 1e-3))
+    }, b = b.hat, Y = Y, X = X, Z = Z, Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS,
+    Fu = Fu, l0u = l0u, SIMPLIFY = F)
+    #Omega, dmats, surv, sv, Sigma, b, l0u, w, v, n, family
+    I <- structure(vcov(coeffs, dmats, surv, sv, Sigma, b, l0u, w, v, n, family),
+                   dimnames = list(names(params), names(params)))
+    out$SE <- sqrt(diag(solve(I)))
+    out$vcov <- I
+    out$RE <- do.call(rbind, b)
+    out$postprocess.time <- round(proc.time()[3]-start.time, 2)
+  }
   out
 }

@@ -63,7 +63,7 @@ parseCoxph <- function(surv.formula, data){
   ft <- sf$time[sf$n.event >= 1] # failure times
   nev <- sf$n.event[sf$n.event >= 1] # Number of failures per failure time
   
-  S <- lapply(1:n, function(i) ph$x[i, , drop = F])
+  
   Delta <- as.list(survdata$status)
   
   #' #' Obtain form of S through call to ph ----  (If coxph object is entered instead of a formula)
@@ -83,7 +83,7 @@ parseCoxph <- function(surv.formula, data){
   
   #' Return ----
   list(
-   survdata = survdata, ph = ph, n = n, S = S, ft = ft, nev = nev, Delta = Delta
+   survdata = survdata, ph = ph, n = n, Delta = Delta
   )
 }
 
@@ -139,10 +139,19 @@ surv.mod <- function(ph, survdata, formulas, l0.init){
   
   ftmat <- .getFu(ft, q)
   
+  # Design matrix SS and rowvec S
+  S <- lapply(1:n, function(i) ph$x[i, , drop = F])
+  SS <- lapply(1:n, function(i){
+    out <- apply(S[[i]], 2, rep, nrow(Fu[[i]]))
+    if("numeric"%in%class(out)) out <- t(out)
+    out
+  })
+  
   #' Return list ----
   return(list(
     ft = ft, ft.mat = ftmat, nev = coxph.detail(ph)$nevent, surv.times = surv.times,
-    l0 = l0, l0i = as.list(l0i), l0u = l0u, Fi = Fi, Fu = Fu, Tis = survdata$survtime
+    l0 = l0, l0i = as.list(l0i), l0u = l0u, Fi = Fi, Fu = Fu, Tis = survdata$survtime,
+    S = S, SS = SS
   ))
 }
 
