@@ -150,21 +150,22 @@ EM <- function(long.formula, surv.formula, data, family, post.process = T, contr
   l0 <- sv$l0
   S <- sv$S; SS <- sv$SS
   
-  #' Parameter vector ----
+  #' Assign family to joint density and parameter updates ----
+  if("function"%in%class(family)) family <- family()$family
+  if(family == 'nbinom2') family <- 'negative.binomial' ## Catch-all.
+  
+  #' Parameter vector and list ----
   Omega <- list(D=D, beta = beta, sigma = sigma, gamma = gamma, zeta = zeta)
   params <- c(setNames(vech(D), paste0('D[', apply(which(lower.tri(D, T), arr.ind = T), 1, paste, collapse = ','), ']')),
-              beta, sigma, gamma, zeta)
-
+              beta, gamma, zeta)
+  if(family%in%c('gaussian', 'negative.binomial')) params <- c(params, sigma)
+  
   #' Gauss-Hermite Quadrature ----
   if(!is.null(control$gh.nodes)) gh <- control$gh.nodes else gh <- 3
   if(!is.null(control$gh.sigma)) .sigma <- control$gh.sigma else .sigma <- 1
   
   GH <- statmod::gauss.quad.prob(gh, 'normal', sigma = .sigma)
   w <- GH$w; v <- GH$n
-  
-  #' Assign family to joint density and parameter updates ----
-  if("function"%in%class(family)) family <- family()$family
-  if(family == 'nbinom2') family <- 'negative.binomial' ## Catch-all.
   
   #' Begin EM ----
   diff <- 100; iter <- 0;
@@ -177,15 +178,17 @@ EM <- function(long.formula, surv.formula, data, family, post.process = T, contr
   EMstart <- proc.time()[3]
   while(diff > tol && iter < maxit){
     update <- EMupdate(Omega, family, X, Y, Z, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, sv, w, v, n, m)
-    params.new <- setNames(c(vech(update$D), update$beta, update$sigma, update$gamma, update$zeta),
-                           names(params))
+    params.new <- c(vech(update$D), update$beta, update$gamma, update$zeta)
+    if(family%in%c('gaussian', 'negative.binomial')) params.new <- c(params.new, update$sigma)
+    names(params.new) <- names(params)
+    # Check convergence
     diff <- difference(params, params.new, conv)
     if(verbose){
       print(sapply(params.new, round, 4))
       message("Iteration ", iter + 1, ' maximum ', conv, ' difference: ', round(diff, 4))
     }
 
-    # Set new estimates as current
+    #' Set new estimates as current
     b <- update$b
     D <- update$D; beta <- update$beta; sigma <- update$sigma
     gamma <- update$gamma; zeta <- update$zeta
@@ -197,7 +200,6 @@ EM <- function(long.formula, surv.formula, data, family, post.process = T, contr
   }
   EMend <- proc.time()[3]
   coeffs <- Omega
-  if(!family%in%c('gaussian', 'negative.binomial')) coeffs$sigma <- NULL
   out <- list(coeffs = coeffs,
               RE = do.call(rbind, b),
               iter = iter,
@@ -222,9 +224,8 @@ EM <- function(long.formula, surv.formula, data, family, post.process = T, contr
         joint_density_sdb(b = b, Y = Y, X = X, Z = Z, beta = beta, D = D, sigma = sigma, family = family, 
                           Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS, Fu = Fu, haz = l0u, gamma = gamma, 
                           zeta = zeta, eps = 1e-3))
-    }, b = b.hat, Y = Y, X = X, Z = Z, Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS,
+    }, b = b, Y = Y, X = X, Z = Z, Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS,
     Fu = Fu, l0u = l0u, SIMPLIFY = F)
-    #Omega, dmats, surv, sv, Sigma, b, l0u, w, v, n, family
     I <- structure(vcov(coeffs, dmats, surv, sv, Sigma, b, l0u, w, v, n, family),
                    dimnames = list(names(params), names(params)))
     out$SE <- sqrt(diag(solve(I)))

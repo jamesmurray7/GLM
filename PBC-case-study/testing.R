@@ -8,7 +8,7 @@ source('EM.R')
 
 ff <- function(){
   rm(list=setdiff(ls(), 'ff'))
-  source('EM WIP.R')
+  source('EM.R')
 }
 
 # Gaussian ----------------------------------------------------------------

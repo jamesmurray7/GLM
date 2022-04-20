@@ -12,7 +12,7 @@ vcov <- function(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, n, family){
   Z <- dmats$Z
   X <- dmats$X
   Y <- dmats$Y
-  m <- dmats$m
+  m <- sapply(Y, length)
   
   #' Survival //
   S <- sv$S
@@ -57,32 +57,33 @@ vcov <- function(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, n, family){
   #' The dispersion parameter, \sigma
   if(family == 'gaussian'){
     tau <- mapply(function(Sigma, Z) sqrt(diag(tcrossprod(Z %*% Sigma, Z))), Z = Z, Sigma = Sigma, SIMPLIFY = F)
-    Ss <- list()
+    Ss <- numeric(n)
     for(i in 1:n){
       rhs <- 0
       for(l in 1:length(w)){
-        rhs <- rhs + w[l] * crossprod(Y[[i]] - X[[i]] %*% beta - Z[[i]] %*% b - v[l] * tau[[i]])
+        rhs <- rhs + w[l] * crossprod(Y[[i]] - X[[i]] %*% beta - Z[[i]] %*% b[[i]] - v[l] * tau[[i]])
       } 
-      Ss[[i]] <- -m[i]/(2*sigma) + 1/(2 * sigma^2) * rhs
+      Ss[i] <- -m[i]/(2*sigma) + 1/(2 * sigma^2) * rhs
     }
   }else if(family == 'negative.binomial'){
     Ss <- mapply(function(X, Y, Z, b, Sigma){
       Stheta(sigma, beta, X, Y, Z, b, Sigma, w, v, .Machine$double.eps^(1/3))
-    }, X = X, Y = Y, Z = Z, b = b.hat, Sigma = Sigma, SIMPLIFY = F)
+    }, X = X, Y = Y, Z = Z, b = b, Sigma = Sigma)
   }else{
-    Ss <- NULL
+    Ss <- 0
   }
   
   #' Survival parameters (\gamma, \zeta)
   Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
     Sgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, .Machine$double.eps^(1/3))
-  }, b = b.hat, Sigma = Sigma, S = S, SS = SS, Fu = Fu, Fi = Fi, l0u = l0u, Delta = Delta)
+  }, b = b, Sigma = Sigma, S = S, SS = SS, Fu = Fu, Fi = Fi, l0u = l0u, Delta = Delta, SIMPLIFY = F)
   
   # Collate and form information --------------------------------------------
-  S <- mapply(function(sD, Sb, Ss, Sgz){
-    c(sD, c(Sb), Ss, Sgz)
-  }, sD = sD, Sb = Sb, Ss = Ss, Sgz = Sgz)
-  
+  S <- mapply(function(sD, Sb, Sgz){
+    c(sD, c(Sb), Sgz)
+  }, sD = sD, Sb = Sb, Sgz = Sgz)
+
+  if(family%in%c('gaussian', 'negative.binomial')) S <- rbind(S, Ss)
   
   SS <- rowSums(S) # sum S
   I <- Reduce('+', lapply(1:n, function(i) tcrossprod(S[, i]))) - tcrossprod(SS)/n
