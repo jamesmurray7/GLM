@@ -10,27 +10,51 @@ sourceCpp('funs.cpp')
 vech <- function(x) x[lower.tri(x, T)]
 
 
-EMupdate <- function(Omega, family, X, Y, Z, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, sv, w, v, n, m){
+EMupdate <- function(Omega, family, X, Y, Z, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, sv, w, v, n, m, optimiser, hessian){
   
   #' Unpack Omega, the parameter vector
   D <- Omega$D; beta <- Omega$beta; sigma <- Omega$sigma; gamma <- Omega$gamma; zeta <- Omega$zeta
 
-  #' Posterior mode via ucminf ----
-  b.hat <- mapply(function(b, Y, X, Z, Delta, S, Fi, l0i, SS, Fu, l0u){
-    ucminf::ucminf(b, joint_density, joint_density_ddb,
-                   Y = Y, X = X, Z = Z, beta = beta, D = D, sigma = sigma, family = family, 
-                   Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS, Fu = Fu, haz = l0u, gamma = gamma, zeta = zeta)$par
-  }, b = b, Y = Y, X = X, Z = Z, Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS,
-     Fu = Fu, l0u = l0u, SIMPLIFY = F)
-  
-  #' And its variance ----
-  Sigma <- mapply(function(b, Y, X, Z, Delta, S, Fi, l0i, SS, Fu, l0u){
-    solve(
-      joint_density_sdb(b = b, Y = Y, X = X, Z = Z, beta = beta, D = D, sigma = sigma, family = family, 
-                        Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS, Fu = Fu, haz = l0u, gamma = gamma, 
-                        zeta = zeta, eps = 1e-3))
-  }, b = b.hat, Y = Y, X = X, Z = Z, Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS,
-  Fu = Fu, l0u = l0u, SIMPLIFY = F)
+  #' Find b.hat and Sigma
+  if(hessian == 'auto') .hess <- T else .hess <- F
+  if(optimiser == 'optim'){
+    #' Posterior mode and hessian via BFGS search (optim) ----
+    b.update <- mapply(function(b, Y, X, Z, Delta, S, Fi, l0i, SS, Fu, l0u){
+      optim(b, joint_density, joint_density_ddb,
+            Y = Y, X = X, Z = Z, beta = beta, D = D, sigma = sigma, family = family, 
+            Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS, Fu = Fu, haz = l0u, gamma = gamma, zeta = zeta,
+            method = 'BFGS', hessian = .hess)
+    }, b = b, Y = Y, X = X, Z = Z, Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS,
+    Fu = Fu, l0u = l0u, SIMPLIFY = F)
+    b.hat <- lapply(b.update, function(x) x$par)
+    if(hessian == 'manual'){
+      Sigma <- mapply(function(b, Y, X, Z, Delta, S, Fi, l0i, SS, Fu, l0u){
+        solve(
+          joint_density_sdb(b = b, Y = Y, X = X, Z = Z, beta = beta, D = D, sigma = sigma, family = family,
+                            Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS, Fu = Fu, haz = l0u, gamma = gamma,
+                            zeta = zeta, eps = 1e-3))
+      }, b = b.hat, Y = Y, X = X, Z = Z, Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS,
+      Fu = Fu, l0u = l0u, SIMPLIFY = F)
+    }else{
+      Sigma <- lapply(b.update, function(x) solve(x$hessian))
+    }
+    }else{
+    #' Posterior mode via ucminf ----
+    b.hat <- mapply(function(b, Y, X, Z, Delta, S, Fi, l0i, SS, Fu, l0u){
+      ucminf::ucminf(b, joint_density, joint_density_ddb,
+            Y = Y, X = X, Z = Z, beta = beta, D = D, sigma = sigma, family = family, 
+            Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS, Fu = Fu, haz = l0u, gamma = gamma, zeta = zeta)$par
+    }, b = b, Y = Y, X = X, Z = Z, Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS,
+    Fu = Fu, l0u = l0u, SIMPLIFY = F)
+    #' And its variance ----
+    Sigma <- mapply(function(b, Y, X, Z, Delta, S, Fi, l0i, SS, Fu, l0u){
+      solve(
+        joint_density_sdb(b = b, Y = Y, X = X, Z = Z, beta = beta, D = D, sigma = sigma, family = family,
+                          Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS, Fu = Fu, haz = l0u, gamma = gamma,
+                          zeta = zeta, eps = 1e-3))
+    }, b = b.hat, Y = Y, X = X, Z = Z, Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS,
+    Fu = Fu, l0u = l0u, SIMPLIFY = F)
+  }
   
   #' #########
   #' E-step ##
@@ -174,10 +198,14 @@ EM <- function(long.formula, surv.formula, data, family, post.process = T, contr
   if(!is.null(control$conv)) conv <- control$conv else conv <- "relative"
   if(!conv%in%c('absolute', 'relative')) stop('Only "absolute" and "relative" difference convergence criteria implemented.')
   if(!is.null(control$verbose)) verbose <- control$verbose else verbose <- F
+  if(!is.null(control$optimiser)) optimiser <- control$optimiser else optimiser <- 'optim'
+  if(!optimiser %in% c('ucminf', 'optim')) stop("Only optimisers 'optim' and 'ucminf' supported.")
+  if(!is.null(control$hessian)) hessian <- control$hessian else hessian <- 'manual'
+  if(!hessian %in% c('auto', 'manual')) stop("Argument 'hessian' needs to be either 'auto' (i.e. from optim) or 'manual' (i.e. from _sdb, the defualt).")
   
   EMstart <- proc.time()[3]
   while(diff > tol && iter < maxit){
-    update <- EMupdate(Omega, family, X, Y, Z, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, sv, w, v, n, m)
+    update <- EMupdate(Omega, family, X, Y, Z, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, sv, w, v, n, m, optimiser, hessian)
     params.new <- c(vech(update$D), update$beta, update$gamma, update$zeta)
     if(family%in%c('gaussian', 'negative.binomial')) params.new <- c(params.new, update$sigma)
     names(params.new) <- names(params)

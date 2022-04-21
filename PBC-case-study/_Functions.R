@@ -119,7 +119,7 @@ surv.mod <- function(ph, survdata, formulas, l0.init){
   Fi <- lapply(survdata$survtime, .getFi, q)
   
   #' loop over subjects -----
-  for(i in uids){
+  for(i in as.numeric(uids)){
     # slice this id
     survtime <- survdata[survdata$id == i, 'survtime']
     status <- survdata[survdata$id == i, 'status']
