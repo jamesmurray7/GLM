@@ -81,8 +81,17 @@ Longit.inits <- function(long.formula, data, family, dispformula = NULL){
   as.data.frame(do.call(rbind, this.subj))
 }
 
+.ToRanefForm <- function(time, random.formula, q){
+  if(attr(random.formula, 'special') == 'none'){
+    out <- sapply(1:q, function(i) time^(i - 1))
+  }else if(attr(random.formula, 'special') == 'spline'){
+    out <- model.matrix(as.formula(paste0('~', random.formula)), as.data.frame(time))
+  }
+  as.data.frame(out)
+}
+
 # Using this StartStop and getting timevarying coxph...
-TimeVarCox <- function(data, b, ph){
+TimeVarCox <- function(data, b, ph, formulas){
   # Prepare data
   ss <- .ToStartStop(data); q <- ncol(b) # send to Start-Stop (ss) format
   REs <- as.data.frame(b); REs$id <- 1:nrow(b)
@@ -91,9 +100,10 @@ TimeVarCox <- function(data, b, ph){
   ss3 <- ss3[!duplicated.matrix(ss3), ]
   
   # Create gamma variable
-  lhs <- sapply(1:q, function(i) ss3[, 'time1']^(i-1))
-  rhs <- ss3[,(4:(3+q))]
-  gamma <- unname(rowSums(lhs * rhs))
+  lhs <- .ToRanefForm(ss3[,'time1'], formulas2$random, q) #sapply(1:q, function(i) ss3[, 'time1']^(i-1))
+  gamma <- unname(rowSums(lhs * b[ss3$id,]))
+  # gamma2 <- lhs * ss3[,(4:(3+q))]
+  # gamma <- unname(rowSums(lhs * rhs))
 
   # And join on ...
   ss3 <- cbind(ss3, gamma)
