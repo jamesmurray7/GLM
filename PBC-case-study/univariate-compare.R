@@ -73,6 +73,7 @@ compare.gaussians <- function(myfit, jRfit, jRMLfit, Y){
   invisible(Y)
 }
 
+.to3dp <- function(x) round(x, 3)
 my.summary <- function(myfit, Yname = NULL){
   if(!is.null(Yname)) cat('Approximate EM fit for ', Yname,'\n\n')
   if(is.null(myfit$SE)) stop('Need to run EM with post.process = T')
@@ -90,7 +91,7 @@ my.summary <- function(myfit, Yname = NULL){
   z <- my/SE
   p <- 2 * (pnorm(abs(z), lower.tail = F))
   
-  my.out <- setNames(data.frame(parameter, my, SE, lb, ub, round(p, 3)),
+  my.out <- setNames(data.frame(parameter, .to3dp(my), .to3dp(SE), .to3dp(lb), .to3dp(ub), round(p, 3)),
                      c('Parameter', 'Estimate', 'SE', '2.5%', '97.5%', 'p-value'))
   row.names(my.out) <- NULL
   

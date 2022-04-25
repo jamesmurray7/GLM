@@ -44,7 +44,23 @@ joineRML.serBilir <- joineRML.fit(bil.pbc, serBilir ~ drug + time, ~ 1 + time|id
 my.summary(my.serBilir, 'log(Serum bilirubin)')
 compare.gaussians(my.serBilir, joineR.serBilir, joineRML.serBilir, 'Serum Bilirubin')
 
-# JMbayes2.serBilir <- JMbayes2.fit(pbc, gaussian, serBilir ~ drug + time, ~ 1 + time|id, Surv(survtime, status) ~ drug) # Don't run this on linux! Crashes
+JMbayes2.serBilir <- JMbayes2.fit(bil.pbc, gaussian, serBilir ~ drug + time, ~ 1 + time|id, Surv(survtime, status) ~ drug) # Don't run this on linux! Crashes
+
+# Spline fits
+long.formula <- serBilir ~ drug * splines::ns(time, knots = c(1, 4)) + 
+                       (1 + splines::ns(time, knots = c(1, 4)) | id)
+surv.formula <- Surv(survtime, status) ~ drug
+
+my.serBilir <- EM(long.formula, surv.formula,
+                  data = bil.pbc, family = gaussian, control = list(optimiser = 'optim', hessian = 'auto'))
+
+joineR.serBilir <- joineR.fit(bil.pbc, 'serBilir', serBilir ~ drug + splines::ns(time,knots=c(1,4)), Surv(survtime, status) ~ drug,
+                              c('time'), c('drug'))
+
+joineRML.serBilir <- joineRML.fit(bil.pbc, serBilir ~ drug * splines::ns(time,knots=c(1,4)), ~ 1 + splines::ns(time,knots=c(1,4))|id, Surv(survtime, status) ~ drug)
+summary(joineRML.serBilir)
+my.summary(my.serBilir)
+
 
 # log(serum aspartate aminotransferase) -----------------------------------
 # AST, or aspartate aminotransferase, is one of the two liver enzymes. 
@@ -99,27 +115,41 @@ my.pla <- EM(platelets ~ drug + time + (1 + time|id),
              Surv(survtime, status) ~ drug,
              data = pla.pbc, family = poisson)
 my.pla2 <- EM(platelets ~ drug + time + (1 + time|id),
-             Surv(survtime, status) ~ drug, # Strangely, this needs extra in survival sub-model(?)
-             data = pla.pbc, family = 'negative.binomial', control = list(verbose = T))
+             Surv(survtime, status) ~ drug, 
+             data = pla.pbc, family = 'negative.binomial', control = list(hessian = 'auto'))
 my.summary(my.pla, 'Platelet count')
 my.summary(my.pla2, 'Platelet count (Negative binomial model)')
 
-#' TO DO: JMbayes2 fit
-# ...
+# Spline fit 
+my.pla.spline <- EM(platelets ~ drug + splines::ns(time, knots = c(1, 4)) + (1 + splines::ns(time, knots = c(1, 4))|id),
+                    Surv(survtime, status) ~ drug,
+                    data = pla.pbc, family = poisson, control = list(hessian = 'auto'))
+my.summary(my.pla.spline, 'Platelet count (poisson w/ natural spline)')
+my.pla.spline2 <- EM(platelets ~ drug + splines::ns(time, knots = c(1, 4)) + (1 + splines::ns(time, knots = c(1, 4))|id),
+                    Surv(survtime, status) ~ drug,
+                    data = pla.pbc, family = 'negative.binomial', control = list(hessian = 'auto'))
+my.summary(my.pla.spline2, 'Platelet count (Negative binomial w/ natural spline)')
+
+#' JMbayes2 fit
+# No splines
+JMb.pla.pois <- JMbayes2.fit(pla.pbc, poisson, # Does not converge
+                             platelets ~ drug + splines::ns(time, knots = c(1, 4)), ~ 1 + splines::ns(time, knots = c(1, 4))|id,
+                             Surv(survtime, status) ~ drug)
 
 # Alkaline Phosphates -----------------------------------------------------
 alk.pbc <- newpbc('alkaline')
 my.alk <- EM(alkaline ~ drug + time + (1 + time|id),
              Surv(survtime, status) ~ drug,
-             data = alk.pbc, family = poisson, control = list(verbose = T))
+             data = alk.pbc, family = poisson, control = list(hessian = 'auto'))
 my.alk2 <- EM(alkaline ~ drug + time + (1 + time|id),
               Surv(survtime, status) ~ drug,
-              data = alk.pbc, family = 'negative.binomial', control = list(verbose = T))
+              data = alk.pbc, family = 'negative.binomial', control = list(hessian = 'auto'))
 my.summary(my.alk,  'Alkaline Phosphates')
-my.summary(my.alk2, 'Alkaline Phosphates (Negative binomial model)')
+my.summary(my.alk2, 'Alkaline Phosphates (Negative binomial model)') # Is sig. with negbin?
 
 #' TO DO: JMbayes2 fit
-# ...
+JMb.alk <- JMbayes2.fit(alk.pbc, poisson,
+                        alkaline ~ drug + time, ~ 1+time|id, Surv(survtime, status) ~ drug)
 
 #' ###
 #' Binomial
@@ -131,30 +161,51 @@ my.summary(my.alk2, 'Alkaline Phosphates (Negative binomial model)')
 spi.pbc <- newpbc('spiders')
 my.spi <- EM(spiders ~ drug * time + (1 + time|id),
              Surv(survtime, status) ~ drug,
-             data = spi.pbc, family = binomial)
+             data = spi.pbc, family = binomial, control = list(hessian = 'auto'))
 my.summary(my.spi, 'Spiders (binomial)')
 
 #' TO DO: JMbayes2 fit
-# ...
+jm.spi <- JMbayes2.fit(spi.pbc,
+                       binomial,
+                       spiders ~ drug * time,
+                       ~ 1 + time | id,
+                       Surv(survtime, status) ~ drug)
+
+my.summary(my.spi, 'Spiders (binomial)')
+summary(jm.spi)
 
 # Ascites -----------------------------------------------------------------
 # Presence of abnormal accumulation of fluid in abdomen.
 asc.pbc <- newpbc('ascites')
 my.asc <- EM(ascites ~ drug * time + (1 + time|id),
              Surv(survtime, status) ~ drug,
-             data = asc.pbc, family = binomial)
+             data = asc.pbc, family = binomial, control = list(hessian = 'auto'))
 my.summary(my.asc, 'Ascites (binomial)')
 
-#' TO DO: JMbayes2 fit
-# ...
+#' JMbayes2 fit
+jm.asc <- JMbayes2.fit(asc.pbc,
+                       binomial,
+                       ascites ~ drug * time,
+                       ~ 1 + time | id,
+                       Surv(survtime, status) ~ drug)
+
+my.summary(my.asc, 'Ascites (binomial)')
+summary(jm.asc)
 
 # Hepatomegaly ------------------------------------------------------------
 # Enlarged liver
 hep.pbc <- newpbc('hepatomegaly')
 my.hep <-  EM(hepatomegaly ~ drug * time + (1 + time|id),
               Surv(survtime, status) ~ drug,
-              data = hep.pbc, family = binomial)
-my.summary(my.hep, 'Spiders (binomial)')
+              data = hep.pbc, family = binomial, control = list(hessian = 'auto'))
+my.summary(my.hep, 'Hepatomegaly (binomial)')
 
-#' TO DO: JMbayes2 fit
-# ...
+#' JMbayes2 fit
+jm.hep <- JMbayes2.fit(hep.pbc,
+                       binomial,
+                       hepatomegaly ~ drug * time,
+                       ~ 1 + time | id,
+                       Surv(survtime, status) ~ drug)
+
+my.summary(my.hep, 'Hepatomegaly (binomial)')
+summary(jm.hep)
