@@ -100,7 +100,7 @@ TimeVarCox <- function(data, b, ph, formulas){
   ss3 <- ss3[!duplicated.matrix(ss3), ]
   
   # Create gamma variable
-  lhs <- .ToRanefForm(ss3[,'time1'], formulas2$random, q) #sapply(1:q, function(i) ss3[, 'time1']^(i-1))
+  lhs <- .ToRanefForm(ss3[,'time1'], formulas$random, q) #sapply(1:q, function(i) ss3[, 'time1']^(i-1))
   gamma <- unname(rowSums(lhs * b[ss3$id,]))
   # gamma2 <- lhs * ss3[,(4:(3+q))]
   # gamma <- unname(rowSums(lhs * rhs))
