@@ -140,11 +140,11 @@ surv.mod <- function(ph, survdata, formulas, l0.init){
     newSurvdata <- as.data.frame(cbind(id = survdata$id, model.matrix(as.formula(paste0('~', formulas$random)), survdata)))
     q <- ncol(newSurvdata) - 1 # (Intercept) INCLUDED as of now (22)
     .getFi <- function(time, q = q){
-      id <- which(survdata$time == time)
-      newSurvdata[id,-1,drop=F]
+      id <- which(survdata$time == time)[1] # Take the first one in case of ties -- same design matrix regardless
+      as.matrix(newSurvdata[id, -1, drop = F])
     } 
     .getFu <- function(times, q = q){
-      newSurvdata[match(times, survdata$time), -1, drop = F]
+      as.matrix(newSurvdata[match(times, survdata$time), -1, drop = F])
     }
     Fi <- lapply(survdata$survtime, .getFi)
     ftmat <- .getFu(ft)

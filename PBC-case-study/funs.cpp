@@ -79,7 +79,6 @@ double joint_density(vec& b, vec& Y, mat& X, mat& Z,      // Longitudinal + REs
                      int Delta, rowvec& S, rowvec& Fi, double l0i,  // Everything else.
                      mat& SS, mat& Fu, rowvec& haz, double gamma, vec& zeta){
   vec eta = X * beta + Z * b;
-  
   // Determine longitudinal response log-likelihood.
   double ll = 0.0;
   if(family == "gaussian"){
@@ -129,7 +128,7 @@ vec joint_density_ddb(vec& b, vec& Y, mat& X, mat& Z,      // Longitudinal + REs
 mat joint_density_sdb(vec& b, vec& Y, mat& X, mat& Z,      // Longitudinal + REs
                       vec& beta, mat& D, double sigma, std::string& family,
                       int Delta, rowvec& S, rowvec& Fi, double l0i,  // Everything else.
-                      mat& SS, mat& Fu, rowvec& haz, double gamma, vec& zeta, long double eps){
+                      mat& SS, mat& Fu, rowvec& haz, double gamma, vec& zeta, double eps){
   int n = b.size();
   mat out = zeros<mat>(n, n);
   vec f0 = joint_density_ddb(b, Y, X, Z, beta, D, sigma, family, Delta, S, Fi, l0i, SS, Fu, haz, gamma, zeta);

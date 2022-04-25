@@ -139,7 +139,6 @@ EMupdate <- function(Omega, family, X, Y, Z, b, S, SS, Fi, Fu, l0i, l0u, Delta, 
 }
 
 
-
 EM <- function(long.formula, surv.formula, data, family, post.process = T, control = list()){
   
   start.time <- proc.time()[3]
@@ -152,7 +151,7 @@ EM <- function(long.formula, surv.formula, data, family, post.process = T, contr
   #' Initial conditons ----
   if(!is.null(control$dispformula)) dispformula <- control$dispformula else dispformula <- NULL
   inits.long <- Longit.inits(long.formula, data, family, dispformula = dispformula)
-  inits.surv <- TimeVarCox(data, inits.long$b, surv$ph)
+  inits.surv <- TimeVarCox(data, inits.long$b, surv$ph, formulas)
   
   # Longitudinal parameters
   beta <- inits.long$beta.init
@@ -241,19 +240,16 @@ EM <- function(long.formula, surv.formula, data, family, post.process = T, contr
     message('\nCalculating SEs...')
     start.time <- proc.time()[3]
     #' b and Sigmai at MLEs
-    b <- mapply(function(b, Y, X, Z, Delta, S, Fi, l0i, SS, Fu, l0u){
-      ucminf::ucminf(b, joint_density, joint_density_ddb,
-                     Y = Y, X = X, Z = Z, beta = beta, D = D, sigma = sigma, family = family, 
-                     Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS, Fu = Fu, haz = l0u, gamma = gamma, zeta = zeta)$par
+    b.update <- mapply(function(b, Y, X, Z, Delta, S, Fi, l0i, SS, Fu, l0u){
+      optim(b, joint_density, joint_density_ddb,
+            Y = Y, X = X, Z = Z, beta = beta, D = D, sigma = sigma, family = family, 
+            Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS, Fu = Fu, haz = l0u, gamma = gamma, zeta = zeta,
+            method = 'BFGS', hessian = T)
     }, b = b, Y = Y, X = X, Z = Z, Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS,
     Fu = Fu, l0u = l0u, SIMPLIFY = F)
-    Sigma <- mapply(function(b, Y, X, Z, Delta, S, Fi, l0i, SS, Fu, l0u){
-      solve(
-        joint_density_sdb(b = b, Y = Y, X = X, Z = Z, beta = beta, D = D, sigma = sigma, family = family, 
-                          Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS, Fu = Fu, haz = l0u, gamma = gamma, 
-                          zeta = zeta, eps = 1e-3))
-    }, b = b, Y = Y, X = X, Z = Z, Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS,
-    Fu = Fu, l0u = l0u, SIMPLIFY = F)
+    Sigma <- lapply(b.update, function(x) solve(x$hessian))
+    b <- lapply(b.update, function(x) x$par)
+    # The Information matrix
     I <- structure(vcov(coeffs, dmats, surv, sv, Sigma, b, l0u, w, v, n, family),
                    dimnames = list(names(params), names(params)))
     out$SE <- sqrt(diag(solve(I)))
