@@ -115,3 +115,15 @@ JMbayes2.fit <- function(data, family, long.formula, random.formula, surv.formul
     cores = 1, n_chains = 2
   ))
 }
+
+
+# Plotting functionality --------------------------------------------------
+library(ggplot2)
+plot.long <- function(data, Y, by){
+  ggplot(data = data, aes(x = time, y = {{Y}}, group = id)) + 
+    geom_line(alpha = .20) + 
+    geom_smooth(aes(group = {{by}}, colour = {{by}}),
+                method = 'lm', formula = y~splines::ns(x, df = 3)) +
+    theme_light()
+}
+
