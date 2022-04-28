@@ -131,7 +131,6 @@ vec joint_density_ddb(vec& b, List Y, List X, List Z,                  // Longit
     vec beta_k = beta.elem(beta_k_inds); // Ensure indexing from zero!!
     vec b_k = b.elem(b_k_inds);
     vec eta = Xk * beta_k + Zk * b_k;
-    int qk = b.size();
     if(f == "gaussian"){
       Score.elem(b_k_inds) += Zk.t() * Score_eta_gauss(Yk, eta, sigmak);
     }else if(f == "binomial"){
@@ -184,7 +183,6 @@ vec Sbeta(vec& beta, List X, List Y, List Z, List b, List sigma, List family, Li
     vec beta_k = beta.elem(beta_k_inds); // Ensure indexing from zero!!
     vec b_k = b[k];
     vec eta = Xk * beta_k + Zk * b_k;
-    int qk = b.size();
     if(f == "gaussian"){
       Score.elem(beta_k_inds) += Xk.t() * Score_eta_gauss(Yk, eta, sigmak);
     }else if(f == "binomial"){
