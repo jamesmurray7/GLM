@@ -284,6 +284,7 @@ EM <- function(long.formulas, surv.formula, data, family, post.process = T, cont
   }
   EMend <- proc.time()[3]
   coeffs <- Omega
+  coeffs$beta <- setNames(c(Omega$beta), names(inits.long$beta.init))
   out <- list(coeffs = coeffs,
               RE = do.call(rbind, b),
               iter = iter,

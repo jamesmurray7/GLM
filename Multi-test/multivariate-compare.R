@@ -1,103 +1,70 @@
 #' ###
-#' Functions to compare my PBC (univariate) fits with joineR, joineRML and JMbayes2.
+#' Functions to compare my PBC (multivariate) fits with other software.
 #' ###
 
-library(joineR)
-joineR.fit <- function(data, Y, long.formula, surv.formula, long.covs, baseline.covs){
-  survdata <- UniqueVariables(data, var.col = c('survtime', 'status'), id.col = 'id')
-  longdata <- data[, c('id', Y, long.covs)]
-  covdata <- UniqueVariables(data, baseline.covs, id.col = 'id')
-  joint.data <- jointdata(longitudinal = longdata,
-                          baseline = covdata,
-                          survival = survdata,
-                          id.col = 'id', time.col = 'time')
-  fit <- joint(data = joint.data,
-               long.formula = long.formula,
-               surv.formula = surv.formula,
-               model = 'intslope', sepassoc = F, gpt = 3)
-  return(fit)
-}
-
-library(joineRML)
-joineRML.fit <- function(data, long.formula, random.formula, surv.formula, ...){
-  mjoint(
-    formLongFixed = list('1' = long.formula),
-    formLongRandom = list('1' = random.formula),
-    formSurv = surv.formula,
-    data = data,
-    timeVar = 'time',
-    control = list(convCrit = 'rel', type = 'sobol', tol2 = 1e-2, ...)
-  )
-}
-
-# Compare Gaussians -------------------------------------------------------
-compare.gaussians <- function(myfit, jRfit, jRMLfit, Y){
-  #' Mine
-  my <- c(vech(myfit$co$D), c(myfit$co$beta), myfit$co$gamma, myfit$co$zeta)
-  if(myfit$co$sigma != 0) my <- c(my, myfit$co$sigma)
-  parameter <- names(myfit$SE)
-  SE <- myfit$SE
-  lb <- my - qnorm(.975) * SE; ub <- my + qnorm(.975) * SE
-  
-  #' joineR point-estimates
-  j.ests <- c(vech(jRfit$sigma.u), c(jRfit$coefficients$fixed$longitudinal)$b1, jRfit$coefficients$latent,
-              jRfit$coefficients$fixed$survival, jRfit$sigma.z)
-  
-  my.out <- setNames(data.frame(parameter, my, SE, lb, ub, j.ests),
-                     c('Parameter', 'Estimate', 'SE', '2.5%', '97.5%', 'joineR'))
-  row.names(my.out) <- NULL
-  #' joineR
-  
-  
-  #' joineRML
-  jML <- summary(jRMLfit)
-  jML.out <- as.data.frame(rbind(jML$coefs.long, jML$coefs.surv))
-  jML.out$`2.5%` <- jML.out$Value - qnorm(.975) * jML.out$Std.Err
-  jML.out$`97.5%` <- jML.out$Value + qnorm(.975) * jML.out$Std.Err
-  jML.out$Parameter <- rownames(jML.out)
-  jML.out <- with(jML.out, setNames(data.frame(Parameter, Value, `Std.Err`, `2.5%`, `97.5%`),
-                                    c('Parameter', 'Estimate', 'SE', '2.5%', '97.5%')))
-  
-  #' Print out
-  cat(paste0('Model comparisons for Gaussian fits of ', Y, ':\n'))
-  cat("Approximate EM Algorithm and joineR point-estimates:\n")
-  print(my.out)
-  cat('\nComputation times: \n')
-  cat(paste0('EM took ', round(myfit$EMtime, 2), ' seconds and total computation time was ', round(myfit$totaltime, 2), ' seconds.\n'))
-  cat('\njoineRML fit:\n')
-  print(jML.out)
-  cat('\nComputation times: \n')
-  units <- attr(jML$comp.time, 'units')
-  cat(paste0('EM took ', round(as.numeric(jML$comp.time[2]), 2), ' ', units, ' and total computation time was ', round(as.numeric(jML$comp.time[1]), 2), ' ', units,'.\n'))
-  
-  invisible(Y)
-}
 
 .to3dp <- function(x) round(x, 3)
-my.summary <- function(myfit, Yname = NULL){
-  if(!is.null(Yname)) cat('Approximate EM fit for ', Yname,'\n\n')
+my.summary <- function(myfit){
   if(is.null(myfit$SE)) stop('Need to run EM with post.process = T')
-  SE <- myfit$SE
-  
-  # Establishing quantile stuff
   qz <- qnorm(.975)
+  # Model fit info
+  K <- length(myfit$ResponseInfo)
+  responses <- lapply(sapply(myfit$ResponseInfo, strsplit, '\\s\\('), el, 1)
+  families <- unlist(myfit$family)
+  # Standard errors and parameter estimates.
+  SE <- myfit$SE
+  D <- myfit$co$D
+  betas <- myfit$co$beta
+  sigmas <- unlist(myfit$co$sigma)
+  gammas <- myfit$co$gamma
+  zetas <- myfit$co$zeta
   
-  # Longitudinal part
-  my <- c(vech(myfit$co$D), c(myfit$co$beta), myfit$co$gamma, myfit$co$zeta)
-  if(myfit$co$sigma != 0) my <- c(my, myfit$co$sigma)
-  parameter <- names(myfit$SE)
-  lb <- my - qz * myfit$SE; ub <- my + qz * SE
+  #' Random effects matrix
+  cat(paste0('Random effects variance-covariance matrix: \n'))
+  print(.to3dp(D))
+  cat('\n')
   
-  z <- my/SE
+  # Longitudinal parts
+  MakeTables <- lapply(1:K, function(k){
+    
+    beta <- betas[grepl(responses[[k]], names(betas))]
+    sigma <- setNames(sigmas[k], paste0(responses[[k]], '_var.e'))
+    
+    cat(paste0(responses[[k]], ' (', families[k], '): \n'))
+    my <- c(beta)
+    if(sigma != 0.0) my <- c(my, sigma)
+    parameter <- names(my)
+    
+    rSE <- SE[match(names(my), names(SE))]#SE associated with these coeffs
+    
+    lb <- my - qz * rSE; ub <- my + qz * rSE
+    
+    z <- my/rSE
+    p <- 2 * (pnorm(abs(z), lower.tail = F))
+    
+    this.out <- setNames(data.frame(.to3dp(my), .to3dp(rSE), .to3dp(lb), .to3dp(ub), round(p, 3)),
+                         c('Estimate', 'SE', '2.5%', '97.5%', 'p-value'))
+    print(this.out)
+    cat('\n')
+  })
+  
+  #' Survival
+  cat('Event-time sub-model: \n')
+  # Rename gammas?
+  survs <- c(zetas, gammas)
+  surv.SE <- SE[match(names(survs), names(SE))]
+  new.gammas <- sapply(1:K, function(k) gsub('\\_\\d?\\d', paste0('_', unlist(responses)[k]), names(gammas)[k]))
+  names(survs)[grepl('gamma', names(survs))] <- new.gammas
+  
+  lb <- survs - qz * surv.SE; ub <- survs + qz * surv.SE
+  z <- survs/surv.SE
   p <- 2 * (pnorm(abs(z), lower.tail = F))
   
-  my.out <- setNames(data.frame(parameter, .to3dp(my), .to3dp(SE), .to3dp(lb), .to3dp(ub), round(p, 3)),
-                     c('Parameter', 'Estimate', 'SE', '2.5%', '97.5%', 'p-value'))
-  row.names(my.out) <- NULL
+  surv.out <- setNames(data.frame(.to3dp(survs), .to3dp(surv.SE), .to3dp(lb), .to3dp(ub), round(p, 3)),
+                       c('Estimate', 'SE', '2.5%', '97.5%', 'p-value'))
+  print(surv.out)
   
-  print(my.out)
-  cat('\nComputation times: \n')
-  cat(paste0('EM took ', round(myfit$EMtime, 2), ' seconds and total computation time was ', round(myfit$totaltime, 2), ' seconds.\n'))
+  cat(paste0('\nApproximate EM algorithm took ', round(myfit$EMtime, 2), ' seconds and total computation time was ', round(myfit$totaltime, 2), ' seconds.\n'))
   invisible(1+1)
 }
 
