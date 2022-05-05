@@ -39,7 +39,7 @@ long.formulas <- list(
     (1 + splines::ns(time, knots = c(1, 4)) | id)
 )
 
-my.fit.spline <- EM(long.formulas, surv.formula, pbc, family, control = list(verbose=T, hessian='auto'))
+my.fit.spline <- EM(long.formulas, surv.formula, pbc, family, control = list(hessian='auto'))
 
 mjoint(
   formLongFixed = list(
@@ -133,5 +133,31 @@ JMbayes2.rustand <- jm(
 )
 
 
-
-
+# INLA fit ----------------------------------------------------------------
+library(INLAjoint)
+Nsplines <- ns(pbc.quin$time, knots = c(1,4))
+f1 <- function(x) predict(Nsplines, x)[,1]
+f2 <- function(x) predict(Nsplines, x)[,2]
+f3 <- function(x) predict(Nsplines, x)[,3]
+survdata <- pbc.quin[!duplicated(pbc.quin[, 'id']), ]
+death <- inla.surv(time = survdata$survtime, event = survdata$status)
+pbc.quin$serBilir <- log(pbc.quin$serBilir)
+pbc.quin$SGOT <- log(pbc.quin$SGOT)
+inla.fit <- joint(
+  formLong = list(
+    serBilir ~ (1 + f1(time) + f2(time) + f3(time)) * drug + 
+               (1 + f1(time) + f2(time) + f3(time) | id),
+    SGOT ~ (1 + f1(time) + f2(time) + f3(time)) * drug + 
+           (1 + f1(time) + f2(time) + f3(time) | id),
+    albumin ~ (1 + time) * drug + (1 + time|id),
+    platelets ~ (1 + f1(time) + f2(time) + f3(time)) * drug + 
+                (1 + f1(time) + f2(time) + f3(time) | id),
+    spiders ~ (1 + time) * drug + (1 + time|id)
+  ),
+  formSurv = (death ~ drug),
+  dataLong = pbc.quin, id = 'id', timeVar = 'time', basRisk = 'rw1',
+  corLong = F, #TRUE, Cant fit using model above!
+  assoc = rep('SRE',5),
+  family = c('gaussian', 'gaussian', 'gaussian', 'poisson', 'binomial'),
+  control = list(int.strategy = 'eb')
+)
