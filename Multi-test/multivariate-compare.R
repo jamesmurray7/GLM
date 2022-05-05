@@ -4,7 +4,7 @@
 
 
 .to3dp <- function(x) round(x, 3)
-my.summary <- function(myfit){
+my.summary <- function(myfit, printD = F){
   if(is.null(myfit$SE)) stop('Need to run EM with post.process = T')
   qz <- qnorm(.975)
   # Model fit info
@@ -20,9 +20,11 @@ my.summary <- function(myfit){
   zetas <- myfit$co$zeta
   
   #' Random effects matrix
-  cat(paste0('Random effects variance-covariance matrix: \n'))
-  print(.to3dp(D))
-  cat('\n')
+  if(printD){
+    cat(paste0('Random effects variance-covariance matrix: \n'))
+    print(.to3dp(D))
+    cat('\n')
+  }
   
   # Longitudinal parts
   MakeTables <- lapply(1:K, function(k){
