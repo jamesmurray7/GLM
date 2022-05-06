@@ -350,3 +350,38 @@ mat lambdaUpdate(List survtimes, mat& ft, vec& gamma, vec& gamma_rep, vec& zeta,
   return store;
 }
 
+// 8. Helper functions for dynamic prediction ----
+// vech(X) -> matrix X
+arma::mat duplication_matrix(const int &n) {
+  arma::mat out((n*(n+1))/2, n*n, arma::fill::zeros);
+  for (int j = 0; j < n; ++j) {
+    for (int i = j; i < n; ++i) {
+      arma::vec u((n*(n+1))/2, arma::fill::zeros);
+      u(j*n+i-((j+1)*j)/2) = 1.0;
+      arma::mat T(n,n, arma::fill::zeros);
+      T(i,j) = 1.0;
+      T(j,i) = 1.0;
+      out += u * arma::trans(arma::vectorise(T));
+    }
+  }
+  return out.t();
+}
+
+// [[Rcpp::export]]
+mat vech2mat(vec& x, const int q){
+  vec xx = duplication_matrix(q) * x;
+  return reshape(xx, q, q);
+}
+
+// Ratio of survival functions S(u|.)/S(t|.)
+// [[Rcpp::export]]
+double Surv_ratio(List Lt, List Lu, vec& gamma_rep, vec& zeta, vec& b){
+  rowvec l0u_t = Lt["l0u"];
+  mat SS_t = Lt["SS"];
+  mat Fu_t = Lt["Fu"];
+  rowvec l0u_u = Lu["l0u"];
+  mat SS_u = Lu["SS"];
+  mat Fu_u = Lu["Fu"];
+  return as_scalar(exp(-l0u_u * exp(SS_u * zeta + Fu_u * (gamma_rep % b))) / 
+                   exp(-l0u_t * exp(SS_t * zeta + Fu_t * (gamma_rep % b))));
+}

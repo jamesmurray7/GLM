@@ -154,7 +154,7 @@ EMupdate <- function(Omega, family, X, Y, Z, b, S, SS, Fi, Fu, l0i, l0u, Delta, 
   
   # Return
   list(
-    D = D.new, beta = beta.new, sigma = sigma.new,     # Yk responses
+    D = D.new, beta = beta.new, sigma = sigma.new,       # Yk responses
     gamma = gammazeta.new[1:K], zeta = gammazeta.new[(K+1):length(gammazeta.new)],  # Survival
     l0 = l0.new, l0u = l0u.new, l0i = as.list(l0i.new),  #   Hazard
     b = b.hat                                            #   REs.
@@ -289,6 +289,8 @@ EM <- function(long.formulas, surv.formula, data, family, post.process = T, cont
               RE = do.call(rbind, b),
               iter = iter,
               EMtime = EMend-EMstart,
+              long.formulas = long.formulas, 
+              surv.formula = surv.formula, 
               totaltime = proc.time()[3] - start.time)
   out$hazard <- cbind(ft = sv$ft, haz = l0)
   out$family <- family
