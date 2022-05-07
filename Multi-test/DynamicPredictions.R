@@ -12,28 +12,17 @@ prepareLongData <- function(data, formulas, responses, u = NULL){
   formulas <- lapply(formulas, parseFormula); K <- length(formulas)
   responses <- lapply(strsplit(responses, '\\s\\('), el, 1)
   
-  if(is.null(u)){
-    X <- lapply(1:K, function(k){
-      .DataWorkhorse(data, data$id[1], formulas[[k]]$fixed, formulas[[k]]$random, responses[[k]], what = 'X')
-    })
-    Y <- lapply(1:K, function(k){
-      .DataWorkhorse(data, data$id[1], formulas[[k]]$fixed, formulas[[k]]$random, responses[[k]], what = 'Y')
-    })
-    Z <- lapply(1:K, function(k){
-      .DataWorkhorse(data, data$id[1], formulas[[k]]$fixed, formulas[[k]]$random, responses[[k]], what = 'Z')
-    })
-  }else{
-    data.u <- data[data$time <= u,]
-    X <- lapply(1:K, function(k){
-      .DataWorkhorse(data.u, data.u$id[1], formulas[[k]]$fixed, formulas[[k]]$random, responses[[k]], what = 'X')
-    })
-    Y <- lapply(1:K, function(k){
-      .DataWorkhorse(data.u, data.u$id[1], formulas[[k]]$fixed, formulas[[k]]$random, responses[[k]], what = 'Y')
-    })
-    Z <- lapply(1:K, function(k){
-      .DataWorkhorse(data.u, data.u$id[1], formulas[[k]]$fixed, formulas[[k]]$random, responses[[k]], what = 'Z')
-    })
-  }
+  if(is.null(u)) data <- data[data$time <= u, ] # Truncate if necessary
+  
+  X <- lapply(1:K, function(k){
+    .DataWorkhorse(data, data$id[1], formulas[[k]]$fixed, formulas[[k]]$random, responses[[k]], what = 'X')
+  })
+  Y <- lapply(1:K, function(k){
+    .DataWorkhorse(data, data$id[1], formulas[[k]]$fixed, formulas[[k]]$random, responses[[k]], what = 'Y')
+  })
+  Z <- lapply(1:K, function(k){
+    .DataWorkhorse(data, data$id[1], formulas[[k]]$fixed, formulas[[k]]$random, responses[[k]], what = 'Z')
+  })
   
   list(X = X, Y = Y, Z = Z)
 }
