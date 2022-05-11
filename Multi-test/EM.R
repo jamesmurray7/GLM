@@ -329,7 +329,10 @@ EM <- function(long.formulas, surv.formula, data, family, post.process = T, cont
                         Sigma, SigmaSplit, b, bsplit, 
                         l0u, w, v, n, family, K, q, beta.inds, b.inds),
                    dimnames = list(names(params), names(params)))
-    out$SE <- sqrt(diag(solve(I)))
+    I.inv <- tryCatch(solve(I), error = function(e) e)
+    if(inherits(I.inv, 'error')) I.inv <- structure(MASS::ginv(I),
+                                                    dimnames = dimnames(I))
+    out$SE <- sqrt(diag(I.inv))
     out$vcov <- I
     out$RE <- do.call(rbind, b)
     out$postprocess.time <- round(proc.time()[3]-start.time, 2)
