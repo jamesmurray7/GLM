@@ -216,6 +216,11 @@ EM <- function(long.formulas, surv.formula, data, family, post.process = T, cont
     family
   })
   
+  # Do we want to add-in correlated random effects between responses? For large K this greatly increases
+  #   computation time and model instability.
+  if(!is.null(control$correlated)) correlated <- control$correlated else correlated <- T
+  if(!correlated) D[inits.long$off.inds] <- 0
+  
   #' Parameter vector and list ----
   Omega <- list(D=D, beta = beta, sigma = sigma, gamma = gamma, zeta = zeta)
   params <- c(setNames(vech(D), paste0('D[', apply(which(lower.tri(D, T), arr.ind = T), 1, paste, collapse = ','), ']')),
@@ -257,6 +262,7 @@ EM <- function(long.formulas, surv.formula, data, family, post.process = T, cont
   EMstart <- proc.time()[3]
   while(diff > tol && iter < maxit){
     update <- EMupdate(Omega, family, X, Y, Z, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, sv, w, v, n, m, optimiser, hessian, beta.inds, b.inds, K, q)
+    if(!correlated) update$D[inits.long$off.inds] <- 0
     params.new <- c(vech(update$D), update$beta, update$gamma, update$zeta)
     if(any(unlist(family) %in%c('gaussian', 'negative.binomial'))){
       gauss.inds <- which(unlist(family) == 'gaussian')
@@ -267,7 +273,7 @@ EM <- function(long.formulas, surv.formula, data, family, post.process = T, cont
     # Check convergence
     diff <- difference(params, params.new, conv)
     if(verbose){
-      # print(sapply(params.new, round, 4))
+      print(sapply(params.new, round, 4))
       message("Iteration ", iter + 1, ' maximum ', conv, ' difference: ', round(diff, 4))
     }
 
