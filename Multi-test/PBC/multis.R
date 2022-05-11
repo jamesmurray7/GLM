@@ -39,7 +39,16 @@ families <- list(gaussian, gaussian, gaussian, gaussian, poisson, binomial, bino
 
 fullfit <- EM(long.formula8, surv.formula, data, families, control = list(hessian = 'auto'))
 
-
+# All gaussians //
+gaussians <- list(
+  serBilir ~ drug * splines::ns(time, knots = c(1, 4)) + (1 + splines::ns(time, knots = c(1, 4))|id),
+  SGOT ~ drug * splines::ns(time, knots = c(1, 4)) + (1 + splines::ns(time, knots = c(1, 4))|id),
+  albumin ~ drug * time + (1 + time|id),
+  prothrombin ~ drug * splines::ns(time, knots = c(1, 4)) + (1 + splines::ns(time, knots = c(1, 4))|id)
+)
+families <- as.list(rep('gaussian', 4))
+gauss.fit1 <- EM(gaussians, surv.formula, data, families, control = list(hessian = 'auto'))
+gauss.fit1 <- EM(gaussians, surv.formula, data, families, control = list(hessian = 'auto', correlated = F))
 
 long.formula <- list(spiders ~ drug * time + (1|id))
 EM(long.formula, surv.formula ,data,list(binomial), control = list(hessian = 'auto'))
