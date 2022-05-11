@@ -24,7 +24,7 @@ data$prothrombin <- (.1*data$prothrombin)^(-4)
 surv.formula <- Surv(survtime, status) ~ drug # Global
 
 # Full 8-variate model ----------------------------------------------------
-long.formula8 <- list(
+long.formulas <- list(
   serBilir ~ drug * splines::ns(time, knots = c(1, 4)) + (1 + splines::ns(time, knots = c(1, 4))|id),
   SGOT ~ drug * splines::ns(time, knots = c(1, 4)) + (1 + splines::ns(time, knots = c(1, 4))|id),
   albumin ~ drug * time + (1 + time|id),
@@ -38,7 +38,6 @@ long.formula8 <- list(
 families <- list(gaussian, gaussian, gaussian, gaussian, poisson, binomial, binomial, binomial)
 
 fullfit <- EM(long.formula8, surv.formula, data, families, control = list(hessian = 'auto'))
-fullfit <- EM(long.formula8, surv.formula, data, families, control = list(optimiser = 'optim', hessian = 'manual', verbose = T))
 
 
 
