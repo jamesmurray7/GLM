@@ -383,5 +383,71 @@ double Surv_ratio(List Lt, List Lu, vec& gamma_rep, vec& zeta, vec& b){
   mat SS_u = Lu["SS"];
   mat Fu_u = Lu["Fu"];
   return as_scalar(exp(-l0u_u * exp(SS_u * zeta + Fu_u * (gamma_rep % b))) / 
-                   exp(-l0u_t * exp(SS_t * zeta + Fu_t * (gamma_rep % b))));
+                   (exp(-l0u_t * exp(SS_t * zeta + Fu_t * (gamma_rep % b))) + 1e-6)); // small amount on denominator to avoid NaN (0/0)
+}
+
+// 9. Fast DMVNORM (https://gallery.rcpp.org/articles/dmvnorm_arma/)
+void inplace_tri_mat_mult(arma::rowvec &x, arma::mat const &trimat){
+  arma::uword const n = trimat.n_cols;
+  
+  for(unsigned j = n; j-- > 0;){
+    double tmp(0.);
+    for(unsigned i = 0; i <= j; ++i)
+      tmp += trimat.at(i, j) * x[i];
+    x[j] = tmp;
+  }
+}
+
+
+// [[Rcpp::export]]
+arma::vec dmvnrm_arma_fast(arma::mat const &x,  
+                           arma::rowvec const &mean,  
+                           arma::mat const &sigma, 
+                           bool const logd = true) { 
+  using arma::uword;
+  uword const n = x.n_rows, 
+    xdim = x.n_cols;
+  arma::vec out(n);
+  arma::mat const rooti = arma::inv(trimatu(arma::chol(sigma)));
+  double const rootisum = arma::sum(log(rooti.diag())), 
+    constants = -(double)xdim/2.0 * log2pi, 
+    other_terms = rootisum + constants;
+  
+  arma::rowvec z;
+  for (uword i = 0; i < n; i++) {
+    z = (x.row(i) - mean);
+    inplace_tri_mat_mult(z, rooti);
+    out(i) = other_terms - 0.5 * arma::dot(z, z);     
+  }  
+  
+  if (logd)
+    return out;
+  return exp(out);
+}
+
+// [[Rcpp::export]]
+arma::vec dmvt_arma_fast(mat const &x,             // fast DMVT inspired by the above.
+                         rowvec const &mean,
+                         mat const &sigma, 
+                         double const df,
+                         bool const logd = true){
+  using arma::uword;
+  uword const n = x.n_rows, 
+    xdim = x.n_cols;
+  arma::vec out(n);
+  arma::mat const rooti = arma::inv(trimatu(arma::chol(sigma)));
+  double const rootisum = arma::sum(log(rooti.diag())), 
+    constants = lgamma(((double)xdim + df)/2.0) - lgamma(df/2.0) - (double)xdim/2.0 * log(M_PI * df), 
+    other_terms = rootisum + constants;
+  
+  arma::rowvec z;
+  for (uword i = 0; i < n; i++) {
+    z = (x.row(i) - mean);
+    inplace_tri_mat_mult(z, rooti);
+    out(i) = other_terms - 0.5 * (df + (double)xdim) * log(arma::dot(z, z)/df + 1.0);     
+  }  
+  
+  if (logd)
+    return out;
+  return exp(out);
 }

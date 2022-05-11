@@ -78,6 +78,7 @@ Longit.inits <- function(long.formula, data, family, dispformula = NULL){
     
   
   #' Populate off-block-diagonal terms in D 
+  off.inds <- which(D == 0, arr.ind = T)
   D[lower.tri(D, F)] <- cov(b)[lower.tri(cov(b), F)]
   D[upper.tri(D, F)] <- t(D)[upper.tri(D, F)]
     
@@ -86,7 +87,8 @@ Longit.inits <- function(long.formula, data, family, dispformula = NULL){
     D.init = D,
     sigma.init = sigma,
     b = b,
-    responses = markers
+    responses = markers,
+    off.inds = off.inds
   )
 }
 

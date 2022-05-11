@@ -35,7 +35,7 @@ EMupdate <- function(Omega, family, X, Y, Z, b, S, SS, Fi, Fu, l0i, l0u, Delta, 
         solve(
           joint_density_sdb(b = b, Y = Y, X = X, Z = Z, beta = beta, D = D, sigma = sigma, family = family,
                             Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS, Fu = Fu, haz = l0u, gamma_rep = gamma.rep,
-                            zeta = zeta, beta_inds = beta.inds2, b_inds = b.inds2, K = K, eps = 1e-3))
+                            zeta = zeta, beta_inds = beta.inds2, b_inds = b.inds2, K = K, eps = 1e-5))
       }, b = b.hat, Y = Y, X = X, Z = Z, Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS,
       Fu = Fu, l0u = l0u, SIMPLIFY = F)
     }else{
@@ -55,11 +55,11 @@ EMupdate <- function(Omega, family, X, Y, Z, b, S, SS, Fi, Fu, l0i, l0u, Delta, 
       solve(
         joint_density_sdb(b = b, Y = Y, X = X, Z = Z, beta = beta, D = D, sigma = sigma, family = family,
                           Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS, Fu = Fu, haz = l0u, gamma_rep = gamma.rep,
-                          zeta = zeta, beta_inds = beta.inds2, b_inds = b.inds2, K = K, eps = 1e-3))
+                          zeta = zeta, beta_inds = beta.inds2, b_inds = b.inds2, K = K, eps = 1e-5))
     }, b = b.hat, Y = Y, X = X, Z = Z, Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS,
     Fu = Fu, l0u = l0u, SIMPLIFY = F)
     }
-  SigmaSplit <- lapply(Sigma, function(x) lapply(b.inds, function(y) x[y,y]))
+  SigmaSplit <- lapply(Sigma, function(x) lapply(b.inds, function(y) as.matrix(x[y,y])))
   bsplit <- lapply(b.hat, function(x) lapply(b.inds, function(y) x[y])) # Needed for updates to beta.
   bmat <- lapply(bsplit, bind.bs) # Needed for E[\ell(\gamma,\zeta)|\b...|\Omega].
   
@@ -216,6 +216,11 @@ EM <- function(long.formulas, surv.formula, data, family, post.process = T, cont
     family
   })
   
+  # Do we want to add-in correlated random effects between responses? For large K this greatly increases
+  #   computation time and model instability.
+  if(!is.null(control$correlated)) correlated <- control$correlated else correlated <- T
+  if(!correlated) D[inits.long$off.inds] <- 0
+  
   #' Parameter vector and list ----
   Omega <- list(D=D, beta = beta, sigma = sigma, gamma = gamma, zeta = zeta)
   params <- c(setNames(vech(D), paste0('D[', apply(which(lower.tri(D, T), arr.ind = T), 1, paste, collapse = ','), ']')),
@@ -245,7 +250,7 @@ EM <- function(long.formulas, surv.formula, data, family, post.process = T, cont
   #' Begin EM ----
   diff <- 100; iter <- 0;
   if(!is.null(control$tol)) tol <- control$tol else tol <- 1e-2
-  if(!is.null(control$maxit)) maxit <- control$maxit else maxit <- 100
+  if(!is.null(control$maxit)) maxit <- control$maxit else maxit <- 200
   if(!is.null(control$conv)) conv <- control$conv else conv <- "relative"
   if(!conv%in%c('absolute', 'relative')) stop('Only "absolute" and "relative" difference convergence criteria implemented.')
   if(!is.null(control$verbose)) verbose <- control$verbose else verbose <- F
@@ -257,7 +262,7 @@ EM <- function(long.formulas, surv.formula, data, family, post.process = T, cont
   EMstart <- proc.time()[3]
   while(diff > tol && iter < maxit){
     update <- EMupdate(Omega, family, X, Y, Z, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, sv, w, v, n, m, optimiser, hessian, beta.inds, b.inds, K, q)
-    dbg <<-update
+    if(!correlated) update$D[inits.long$off.inds] <- 0
     params.new <- c(vech(update$D), update$beta, update$gamma, update$zeta)
     if(any(unlist(family) %in%c('gaussian', 'negative.binomial'))){
       gauss.inds <- which(unlist(family) == 'gaussian')
@@ -317,7 +322,7 @@ EM <- function(long.formulas, surv.formula, data, family, post.process = T, cont
     Fu = Fu, l0u = l0u, SIMPLIFY = F)
     Sigma <- lapply(b.update, function(x) solve(x$hessian))
     b <- lapply(b.update, function(x) x$par)
-    SigmaSplit <- lapply(Sigma, function(x) lapply(b.inds, function(y) x[y,y]))
+    SigmaSplit <- lapply(Sigma, function(x) lapply(b.inds, function(y) as.matrix(x[y,y])))
     bsplit <- lapply(b, function(x) lapply(b.inds, function(y) x[y])) # Needed for updates to beta.
     # The Information matrix
     I <- structure(vcov(coeffs, dmats, surv, sv, 
