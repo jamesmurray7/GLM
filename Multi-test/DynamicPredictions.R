@@ -214,8 +214,12 @@ b.mh <- function(b.current, long, surv, O, beta.inds, b.inds, fit, Sigma, b.dens
     current.ll <- dmvnrm_arma_fast(t(b.current), b.current, Sigma, T)
     prop.ll <- dmvnrm_arma_fast(t(b.prop), b.current, Sigma, T)
   }else{
-    current.ll <- mvtnorm::dmvt(x = b.current, delta = b.current, sigma = Sigma, df = df, log = T)
-    prop.ll <- mvtnorm::dmvt(x = b.prop, delta = b.current, sigma = Sigma, df = df, log = T)
+    # message('\nb.prop')
+    # print(b.prop)
+    # message('\nb.current')
+    # print(t(b.current))
+    current.ll <- dmvt_arma_fast(x = t(b.current), mean = b.current, sigma = Sigma, df = df, logd = T)
+    prop.ll <- dmvt_arma_fast(x = b.prop, mean = b.current, sigma = Sigma, df = df, logd = T)
   }
   
   # Difference
@@ -237,7 +241,7 @@ b.mh <- function(b.current, long, surv, O, beta.inds, b.inds, fit, Sigma, b.dens
     b.current <- b.prop
   }
   
-  list(b.current = b.current, accept = accept)
+  list(b.current = c(b.current), accept = accept)
 }
 
 

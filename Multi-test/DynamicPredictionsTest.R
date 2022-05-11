@@ -6,25 +6,27 @@ pbc$serBilir <- log(pbc$serBilir)
 
 #' Univariate
 long.formulas <- list(serBilir ~ drug * time + (1 + time|id))
-surv.formula <- Surv(survtime, status) ~ drug
+surv.formula <- Surv(survtime, status) ~ drug + age + sex
 family <- list(gaussian)
 my.fit <- EM(long.formulas, surv.formula, pbc, family, control = list(hessian='auto'))
 
 
 #' ROC for interval (3, 5], (5, 7] and (9, 11]
-myROC35  <- ROC(my.fit, pbc, Tstart = 3, delta = 2, 
+myROC35_t2  <- ROC(my.fit, pbc, Tstart = 3, delta = 2, 
                 control = list(
-                  nsim = 10
+                  nsim = 10, b.density = 't', df = 4
                 ))
+
+
 myROC57 <- ROC(my.fit, pbc, Tstart = 5, delta = 2, nsim = 10)
 myROC911 <- ROC(my.fit, pbc, Tstart = 9, delta = 2,
                 control = list(
-                  nsim = 10, b.dens = 't', scale = 2, df = 4
+                  nsim = 100, b.dens = 't', scale = 2, df = 4
                 ))
-myROC911.2 <- ROC(my.fit, pbc, Tstart = 9, delta = 2,
-                control = list(
-                  nsim = 10, b.dens = 'normal', scale = 2, df = 4
-                ))
+myROC911_t <- ROC(my.fit, pbc, Tstart = 9, delta = 2,
+                 control = list(
+                   nsim = 100, b.density = 't', scale = 2, df = 4
+                 ))
 
 par(mfrow=c(3,1))
 plotROC(myROC35, T)
