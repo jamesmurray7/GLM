@@ -113,19 +113,19 @@ prepareData <- function(data, id, fit, b.inds, beta.inds, u = NULL){ # b.inds, b
   gamma.rep <- rep(fit$coeffs$gamma, sapply(b.inds, length))
   
   if(is.null(u)){
-    Sigma <- solve(optim(
-      b, joint_density, joint_density_ddb, Y = long$Y, X = long$X, Z = long$Z,
-      beta = fit$coeffs$beta, D = fit$coeffs$D, sigma = fit$coeffs$sigma, family = fit$family,
-      Delta = surv$Delta, S = surv$S, Fi = surv$Fi, l0i = surv$l0i, SS = surv$SS, Fu = surv$Fu,
-      haz = surv$l0u, gamma_rep = gamma.rep, zeta = fit$coeffs$zeta, beta_inds = beta.inds,
-      b_inds = b.inds, K = K, method = 'BFGS', hessian = T)$hessian
-    )
+    bfit <- optim(
+        b, joint_density, joint_density_ddb, Y = long$Y, X = long$X, Z = long$Z,
+        beta = fit$coeffs$beta, D = fit$coeffs$D, sigma = fit$coeffs$sigma, family = fit$family,
+        Delta = surv$Delta, S = surv$S, Fi = surv$Fi, l0i = surv$l0i, SS = surv$SS, Fu = surv$Fu,
+        haz = surv$l0u, gamma_rep = gamma.rep, zeta = fit$coeffs$zeta, beta_inds = beta.inds,
+        b_inds = b.inds, K = K, method = 'BFGS', hessian = T
+        )
   }else{
-    Sigma <- NA
+    bfit <- NULL
   }
   
   list(
-    long = long, surv = surv, b = b, Sigma = Sigma
+    long = long, surv = surv, b.MLE = b, b = bfit
   )
   
 }
@@ -195,12 +195,12 @@ logLik.b <- function(b, long, surv, O, beta.inds, b.inds, fit){
   -neg.ll
 }
 
-b.mh <- function(b.current, long, surv, O, beta.inds, b.inds, fit, Sigma, b.density, df){
+b.mh <- function(b.current, shift, long, surv, O, beta.inds, b.inds, fit, Sigma, b.density, df){
   accept <- 0
   if(b.density == 'normal'){
-    b.prop <- MASS::mvrnorm(n = 1, mu = b.current, Sigma = Sigma)
+    b.prop <- MASS::mvrnorm(n = 1, mu = shift, Sigma = Sigma) # shift = rep(0, q) in nm case?
   }else{
-    b.prop <- mvtnorm::rmvt(n = 1, sigma = Sigma, df = df, delta = b.current)
+    b.prop <- mvtnorm::rmvt(n = 1, sigma = Sigma, df = df, delta = shift)
   }
   
   # Joint data log likelihood on current and proposed values of b
@@ -211,11 +211,11 @@ b.mh <- function(b.current, long, surv, O, beta.inds, b.inds, fit, Sigma, b.dens
   # Log-likelihoods
   # Faster using BLAS-C++ implementation of dmvnorm.
   if(b.density == 'normal'){ # N(b|Sigma)
-    current.ll <- dmvnrm_arma_fast(t(b.current), b.current, Sigma, T)
-    prop.ll <- dmvnrm_arma_fast(t(b.prop), b.current, Sigma, T)
+    current.ll <- dmvnrm_arma_fast(t(b.current), shift, Sigma, T)
+    prop.ll <- dmvnrm_arma_fast(t(b.prop), shift, Sigma, T)
   }else{
-    current.ll <- dmvt_arma_fast(x = t(b.current), mean = b.current, sigma = Sigma, df = df, logd = T)
-    prop.ll <- dmvt_arma_fast(x = b.prop, mean = b.current, sigma = Sigma, df = df, logd = T)
+    current.ll <- dmvt_arma_fast(x = t(b.current), mean = shift, sigma = Sigma, df = df, logd = T)
+    prop.ll <- dmvt_arma_fast(x = b.prop, mean = shift, sigma = Sigma, df = df, logd = T)
   }
   
   # Difference
@@ -239,7 +239,6 @@ b.mh <- function(b.current, long, surv, O, beta.inds, b.inds, fit, Sigma, b.dens
   
   list(b.current = c(b.current), accept = accept)
 }
-
 
 # Dynamic predictions -----------------------------------------------------
 # Dynamic survial predictions for ONE subject `id` across a vector of candidate times, u.
@@ -277,7 +276,7 @@ dynSurv <- function(data, id, fit, u = NULL, nsim = 200, progress = T,
   
   pi <- setNames(vector('list', length = length(u)), paste0('u = ', u))
   MH.accept <- 0
-  b.current <- data.t$b; Sigma <- data.t$Sigma 
+  b.current <- shift <- data.t$b$par; Sigma <- solve(data.t$b$hessian)
   if(!is.null(scale)) Sigma <- Sigma * scale
   for(uu in seq_along(u)){
     data.u <- prepareData(newdata2, id = id, b.inds, beta.inds, fit = fit,  u = u[uu])
@@ -286,8 +285,11 @@ dynSurv <- function(data, id, fit, u = NULL, nsim = 200, progress = T,
     if(progress) pb <- utils::txtProgressBar(max = nsim, style = 3)
     for(i in 1:nsim){
       O <- Omega.draw(fit)
-      b.sim <- b.mh(b.current, data.t$long, data.t$surv, O, beta.inds, b.inds, fit, Sigma, b.density, df)
+      b.sim <- b.mh(b.current, shift, data.t$long, data.t$surv, O, beta.inds, b.inds, fit, Sigma, b.density, df)
       b.current <- b.sim$b.current
+      # b.sim <- b.draw(b.current, shift, Sigma, data.t$long, data.t$surv, O, beta.inds, b.inds, fit)
+      # b.current <- b.sim$b.current
+      # cat('\n', b.current,'\n')
       MH.accept <- MH.accept + b.sim$accept
       pi.store[i] <- Surv_ratio(data.t$surv, data.u$surv, rep(O$gamma, sapply(b.inds, length)), O$zeta, b.current)
       if(progress) utils::setTxtProgressBar(pb, i)
@@ -296,9 +298,78 @@ dynSurv <- function(data, id, fit, u = NULL, nsim = 200, progress = T,
   }
   return(
     list(pi = lapply(pi, quantile, probs = c(0.500, 0.025, 0.975), na.rm = T),
+         pi.mean = lapply(pi, mean, na.rm = T),
          MH.accept = MH.accept/nsim)
   )
 }
+
+# Dynamic survial predictions for ONE subject `id` across a vector of candidate times, u.
+dynSurv2 <- function(data, id, fit, u = NULL, nsim = 200, progress = T,
+                    b.density = 'normal', scale = NULL, df = NULL){
+  ft <- fit$hazard[,1];tmax <- max(ft); K <- length(fit$family)
+  if(!is.null(u) & any(u > tmax)) stop("Can't extrapolate beyond last failure time.")
+  
+  # Subset the required subject
+  newdata <- data[data$id == id, ] # subset required subject
+  
+  # If u isn't supplied then arbitrarily find probability of surviving until next failure time.
+  #              (for each longitudinal time recorded)
+  if(is.null(u)){
+    u <- sapply(newdata$time, function(x) ft[which(ft > x)][1])
+    if(any(u > tmax)) u <- u[!which(u > tmax)] # and ensure those after T_{max} aren't included
+  }
+  
+  # Get indices for \b and \beta
+  responsenames <- lapply(strsplit(fit$ResponseInfo, '\\s\\('), el , 1)
+  nm <- colnames(fit$RE)
+  b.inds <- lapply(1:K, function(k){ 
+    which(grepl(responsenames[[k]], nm)) - 1
+  })
+  nm <- names(fit$coeff$beta)
+  beta.inds <- lapply(1:K, function(k){
+    which(grepl(responsenames[[k]], nm)) - 1
+  })                                 
+  
+  # Obtain 'denominator' dataset
+  newdata2 <- newdata[newdata$time <= u[1], ]
+  data.t <- prepareData(newdata2, id = id, fit = fit, b.inds = b.inds, beta.inds = beta.inds, u = NULL)
+  
+  u <- u[-1] # Don't want to find preds for first time T_{start}...
+  
+  pi <- structure(matrix(NA, nr = nsim, nc = length(u)),
+                  dimnames = list(as.character(1:nsim), paste0('u=',round(u,3))))
+  MH.accept <- 0
+  b.current <- shift <- data.t$b$par; Sigma <- solve(data.t$b$hessian)
+  if(!is.null(scale)) Sigma <- Sigma * scale
+  if(progress) pb <- utils::txtProgressBar(max = nsim, style = 3)
+  for(i in 1:nsim){
+    O <- Omega.draw(fit)
+    # b.sim <- b.mh(b.current, shift, data.t$long, data.t$surv, O, beta.inds, b.inds, fit, Sigma, b.density, df)
+    # b.current <- b.sim$b.current
+    b.sim <- b.draw(b.current, shift, Sigma, data.t$long, data.t$surv, O, beta.inds, b.inds, fit)
+    b.current <- b.sim$b.current
+    MH.accept <- MH.accept + b.sim$accept
+    St <- Surv_(data.t$surv, rep(O$gamma, sapply(b.inds, length)), O$zeta, b.current)
+    for(uu in seq_along(u)){
+      data.u <- prepareData(newdata2, id = id, b.inds, beta.inds, fit = fit,  u = u[uu])
+      pi[i, uu] <- Surv_(data.u$surv, rep(O$gamma, sapply(b.inds, length)), O$zeta, b.current)/(St + 1e-6)
+    }
+    if(progress) utils::setTxtProgressBar(pb, i)
+  }
+  pi.df <- data.frame(
+    u = colnames(pi),
+    mean = colMeans(pi),
+    median = apply(pi, 2, median),
+    lower  = apply(pi, 2, quantile, prob = 0.025),
+    upper  = apply(pi, 2, quantile, prob = 0.975),
+    id = id
+  )
+  row.names(pi.df) <- NULL
+  return(
+    list(pi = pi.df,
+         MH.accept = MH.accept/nsim)
+  )
+} 
 
 # Reciever Operator Characteristics (ROC) ---------------------------------
 ROC <- function(fit, data, Tstart, delta, control = list()){
@@ -336,48 +407,61 @@ ROC <- function(fit, data, Tstart, delta, control = list()){
   ft <- fit$hazard[, 1]; tmax <- max(ft)
   window <- c(Tstart + 1e-6, Tstart + 1e-6 + delta)
   if(window[2] > tmax) window[2] <- tmax
-  candidate.u <- c(Tstart, ft[ft >= window[1] & ft <= window[2]])
+  candidate.u <- c(Tstart, ft[ft > window[1] & ft <= window[2]])
   
   # Loop over ids and failure times
   probs <- acceptance <- setNames(vector('list', length = length(alive.ids)),
                          paste0('id ', alive.ids))
   pb <- utils::txtProgressBar(max = length(alive.ids), style = 3)
   for(i in seq_along(alive.ids)){
-    ds <- dynSurv(newdata, alive.ids[i], fit, u = candidate.u, progress = F, b.density = b.density, scale = scale, df = df, nsim = nsim)
-    probs[[i]] <- do.call(rbind, ds$pi)
+    ds <- dynSurv2(newdata, alive.ids[i], fit, u = candidate.u, progress = F, b.density = b.density, scale = scale, df = df, nsim = nsim)
+    probs[[i]] <- ds$pi#do.call(rbind, ds$pi)
     acceptance[[i]] <- ds$MH.accept
     utils::setTxtProgressBar(pb, i)
   }
   close(pb)
   
-  # Work out whether alive subjects at Tstart failed in window [Tstart, Tstart + delta]
-  events <- with(newdata, tapply(survtime, id, function(x){
-    x >= window[1] && x <= window[2]   # Either failure or censor in window
-  }))
-  status <- as.logical(with(newdata, tapply(status, id, unique))) 
-  event <- status & events # Specifically experienced failure.
-  n.window.event <- sum(event)
-  
   # Obtaining conditional probabilities for those alove subjects at Tstart.
   infodf <- lapply(alive.ids, function(x){
     p <- as.data.frame(probs[[paste0('id ', x)]])
+    p$mean <- 1 - p$mean     # dynSurv(...) gives Pr(survive)
     p$id <- x
     p
   })
   # pi(u|t)
-  pi <- with(do.call(rbind, infodf), tapply(`50%`, id, min))
+  # pi <- with(do.call(rbind, infodf), tapply(`50%`, id, mean)) # P(survive)
+  infodf <- do.call(rbind, infodf)
+  pi <- with(infodf, tapply(`mean`, id, min)) # Pr(fail in window)
   
-  BS <- ((1-pi)-sapply(event, as.numeric))^2   # Brier score
+  # Work out whether alive subjects at Tstart failed in window [Tstart, Tstart + delta]
+  survtimes <- with(newdata, tapply(survtime, id, unique))
+  failed <- as.logical(with(newdata, tapply(status, id, unique)))
+  failure <- survtimes < window[2] & failed
+  censord <- survtimes < window[2] & !failed 
+  id <- failure | censord
+  if(any(censord)){
+    nm <- names(censord[censord])
+    
+    pi_c <- with(infodf[infodf$id %in% nm,], 
+                 tapply(mean, id, tail, 1)) # probability of surviving until end of window.
+    
+    id[nm] <- censord[nm] * pi_c            # probability they would have failed in the window.
+  }
+  id # Actual Pr(fail).
+  
+  n.window.events <- sum(failure)
+  n.window.censor <- sum(censord)
+  BS <- (pi-sapply(id, as.numeric))^2   # Brier score
   
   # Defining threshold and calculating performance metrics.
   t <- seq(0, 1, length = 101)
   simfail <- structure(outer(pi, t, '<'),
                        dimnames = list(names(pi) , paste0('t: ', t)))
   
-  TP <- colSums(c(event) * simfail)        # True positives
-  FN <- sum(event) - TP                    # False negatives
-  FP <- colSums(c(!event) * simfail)       # False positives
-  TN <- sum(!event) - FP                   # True negatives
+  TP <- colSums(c(id) * simfail)           # True positives
+  FN <- sum(id) - TP                       # False negatives
+  FP <- colSums((1-id) * simfail)          # False positives
+  TN <- sum(1-id) - FP                     # True negatives
   TPR <- TP/(TP + FN)                      # True positive rate (sensitivity)
   FPR <- FP/(FP + TN)                      # False positive rate (1 - specificity)
   Acc <- (TP + TN) / (TP + TN + FP + FN)   # Accuracy
@@ -386,8 +470,8 @@ ROC <- function(fit, data, Tstart, delta, control = list()){
   F1s <- 2*(PPV* TPR) / (PPV + TPR + 1e-6) # F1 score
   
   # Sanity checks -- mainly for internal use.
-  if(!identical(TPR, TP/sum(event))) stop('Something wrong: TP + FN != sum(event)')
-  if(!identical(FP / (FP + TN)  , FP/(sum(!event)))) stop('Something wrong: FP + TN != sum(!event)')
+  if(!all.equal(TPR, TP/sum(id))) stop('Something wrong: TP + FN != sum(event)')
+  if(!all.equal(FP / (FP + TN)  , FP/(sum(1-id)))) stop('Something wrong: FP + TN != sum(!event)')
   
   # Making a nice dataframe to report
   out <- data.frame(threshold = t,
@@ -401,12 +485,14 @@ ROC <- function(fit, data, Tstart, delta, control = list()){
   # Remove duplicated TPR/FPR
   out <- out[!duplicated(out[, c('TPR', 'FPR')]),]
   
-  simulation.info <- paste0('b.density: "', b.density, '" with ', nsim, ' simulations per subject-failure time.')
+  simulation.info <- paste0('b.density: ', b.density, ' with ', nsim, ' simulations per subject-failure time.')
   if(b.density == 't') simulation.info <- paste0(simulation.info, '\nt simulated using proposal covariance scale: ', scale, ' and df: ', df, '.\n')
   
   list(
     Tstart = Tstart, delta = delta, candidate.u = candidate.u,
-    window.failures = n.window.event, Tstart.alive = n.alive,
+    window.failures = n.window.events,
+    window.censors = n.window.censor,
+    Tstart.alive = n.alive,
     metrics = out, BrierScore = mean(BS),
     MH.acceptance.bar = mean(do.call(c, acceptance)),
     simulation.info = simulation.info
@@ -503,37 +589,55 @@ BrierScore <- function(fit, data, Tstart, delta, ...){
 
 
 #' ARCHIVE
-b.draw <- function(b, long, surv, O, beta.inds, b.inds, fit){
-  # Unpack Omega.draw object
+b.draw <- function(b.current, b.hat.t, Sigma.t, long, surv, O, beta.inds, b.inds, fit){
+  #' Unpack \Omega
   beta <- O$beta; D <- O$D; gamma <- rep(O$gamma, sapply(b.inds, length)); zeta <- O$zeta; sigma <- O$sigma
   
-  # Use optim to draw from f(b,Y,T,Delta;Omega^{\ell})
-  b.l <- optim(
-    b, joint_density, joint_density_ddb,
+  #' Use optim to draw from f(\b,\Y,T,\Delta;\Omega^{\ell}). Only thing changing per simulation is \Omega
+  #' Posterior mode and its variance at \Omega^{\ell}
+  b.hat.l <- optim(
+    b.current, joint_density, joint_density_ddb,
     Y = long$Y, X = long$X, Z = long$Z, beta = beta, D = D, sigma = sigma,
     family = fit$family, Delta = surv$Delta, S = surv$S, Fi = surv$Fi, l0i = surv$l0i,
     SS = surv$SS, Fu = surv$Fu, haz = surv$l0u, gamma_rep = gamma, zeta = zeta, beta_inds = beta.inds,
-    b_inds = b.inds, K = length(b.inds), method = 'BFGS', hessian = T
-  )
+    b_inds = b.inds, K = length(b.inds), method = 'BFGS'
+  )$par
   
-  # BELOW IS -- OLD -- draw from b...
-  # b.l <- tryCatch(b.draw(data.t$b, data.t$long, data.t$surv, O, beta.inds, b.inds, fit), error = function(e) NULL)
-  # if(!is.null(b.l)){
-  #   b.hat.l <- b.l$par
-  #   Sigma <- tryCatch(solve(b.l$hessian), error = function(e) c(0,0))
-  #   xx <- sapply(1:length(b.hat.l), function(x){
-  #     pnorm(b.hat.l[x], mean = data.t$b[x], sd = sqrt(data.t$Sigma[x, x]), lower.tail = F)
-  #   })
-  #   if(prod(xx) < 5e-2) sensible <- F else sensible <- T
-  #   if(sum(Sigma) == 0) sensible <- F
-  # }else{
-  #   sensible <- F
-  # }
-  # 
-  # if(sensible == F) fail.count <- fail.count + 1
-  # if(fail.count == 3){ # If this fails three times, just use same b
-  #   b.hat.l <- data.t$b; Sigma <- data.t$Sigma; sensible <- T
-  # }
+  Sigma.hat.l <- solve(joint_density_sdb(b = b.hat.l, Y = long$Y, X = long$X, Z = long$Z, beta = beta, D = D, sigma = sigma,
+                                   family = fit$family, Delta = surv$Delta, S = surv$S, Fi = surv$Fi, l0i = surv$l0i,
+                                   SS = surv$SS, Fu = surv$Fu, haz = surv$l0u, gamma_rep = gamma, zeta = zeta, beta_inds = beta.inds,
+                                   b_inds = b.inds, K = length(b.inds), eps = 1e-4))
   
-  return(b.l)
+  # Draw from N(b.hat.l, Sigma.hat.l)
+  b.prop.l <- MASS::mvrnorm(n = 1, mu = b.hat.l, Sigma = Sigma.hat.l)
+  
+  # MH scheme
+  # Joint data log likelihood on current and proposed values of b
+  current.joint.ll <- logLik.b(b.current, long, surv, O, beta.inds, b.inds, fit)
+  proposed.joint.ll <- logLik.b(b.prop.l, long, surv, O, beta.inds, b.inds, fit)
+  diff.joint.ll <- current.joint.ll - proposed.joint.ll
+
+  # DMNVORM on b draws
+  current.dens <- as.double(dmvnrm_arma_fast(t(b.current), b.hat.t, Sigma.t, T))
+  prop.dens <- as.double(dmvnrm_arma_fast(t(b.prop.l), b.hat.t, Sigma.t, T))
+  diff.dens <- current.dens - prop.dens
+  
+  # Accept/reject scheme
+  accept <- 0
+  a <- exp(diff.joint.ll - diff.dens)
+  if(is.nan(a)){
+    cat(paste0('jointll.diff:', diff.joint.ll, '\n',
+               'dens.diff:', diff.dens,'\n'))
+    cat(paste0('b.prop: ', b.prop.l,'\nb.current: ', b.current,'\n',
+               'joint b.prop: ', logLik.b(b.prop.l, long, surv, O, beta.inds, b.inds, fit), '\n',
+               'joint b.current: ', logLik.b(b.current, long, surv, O, beta.inds, b.inds, fit), '\n'))
+  }
+  a <- min(1, a)
+  u <- runif(1)
+  if(u <= a){
+    accept <- 1
+    b.current <- b.prop.l
+  }
+  
+  list(b.current = c(b.current), accept = accept)
 }
