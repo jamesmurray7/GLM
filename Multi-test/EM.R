@@ -297,7 +297,7 @@ EM <- function(long.formulas, surv.formula, data, family, post.process = T, cont
               long.formulas = long.formulas, 
               surv.formula = surv.formula, 
               totaltime = proc.time()[3] - start.time)
-  out$hazard <- cbind(ft = sv$ft, haz = l0)
+  out$hazard <- cbind(ft = sv$ft, haz = l0, nev = sv$nev)
   out$family <- family
   
   out$ResponseInfo <- sapply(1:K, function(k){
