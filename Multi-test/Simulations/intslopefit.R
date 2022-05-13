@@ -49,8 +49,15 @@ JMbayes2fit <- function(data, k, family){
     for(kk in 1:k){
       long <- as.formula(paste0('Y.', kk, '~time + cont + bin'))
       random <- ~time|id
+      TMBfit <- glmmTMB(as.formula(paste0('Y.',kk,'~time+cont+bin+(1+time|id)')),
+                        data = data, family = family)
+      inits <- list(
+        betas = glmmTMB::fixef(TMBfit)$cond,
+        D = matrix(glmmTMB::VarCorr(TMBfit)$cond$id, 2, 2)
+      )
       M[[kk]] <- mixed_model(fixed = long, random = random,
-                             data = data, family = family)
+                             data = data, family = family,
+                             initial_values = inits)
     }
   }
   
@@ -64,8 +71,18 @@ JMbayes2fit <- function(data, k, family){
               n_iter = 1500,
               n_burnin = 500, cores = 3
             )),error=function(e) NULL)
-  if(!is.null(fit)) rtn <- summary(fit) else rtn <- NULL
-  rtn
+  if(!is.null(fit)){
+    s <- summary(fit)
+    rtn <- list()
+    rtn$Outcome1 <- s$Outcome1
+    rtn$Outcome2 <- s$Outcome2
+    rtn$Outcome3 <- s$Outcome3
+    rtn$survival <- s$Survival
+    rtn$comp.time <- s$time
+    return(rtn)
+  }else{ 
+    return(NA)
+  }
 }
 
 INLAfit <- function(data, k, family){
@@ -76,12 +93,14 @@ INLAfit <- function(data, k, family){
   assocs <- as.list(rep('SRE', k))
   JMINLA <- joint(
     formLong = long.formulas,
-    formSurv = list(surv ~ bin),
-    dataLong = data,
+    formSurv = surv ~ bin,
+    dataLong = data, dataSurv = survdata,
     id = 'id', timeVar = 'time', corLong = T,
     family = rep(family, k), basRisk = 'rw1',
     assoc = assocs,
-    control = list(int.strategy='eb')
+    control = list(int.strategy='eb',
+                   priorRandom = list(r = 6, R = 1),
+                   priorAssoc = list(mean = 0, prec = 0.16))
   )
   s <- summary(JMINLA)
   longi <- s$FixedEff[[1]]
