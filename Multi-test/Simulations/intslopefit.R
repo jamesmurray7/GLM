@@ -103,7 +103,7 @@ INLAfit <- function(data, k, family){
                    priorAssoc = list(mean = 0, prec = 0.16))
   )
   s <- summary(JMINLA)
-  longi <- s$FixedEff[[1]]
+  longi <- do.call(rbind, s$FixedEff)
   survi <- s$SurvEff[[1]]
   gammas <- s$AssocLS
   time <- s$cpu.used   # Just running time?
