@@ -10,7 +10,7 @@ emfit <- function(data, k, family){
   families <- as.list(rep(family, k))
   fit <- tryCatch(suppressMessages(
     EM(long.formulas, surv.formula, data = data, family = families,
-       control = list(hessian = 'auto'))),
+       control = list(hessian = 'manual'))),
     error = function(e) NULL
   )
   fit
@@ -66,6 +66,35 @@ JMbayes2fit <- function(data, k, family){
             )),error=function(e) NULL)
   if(!is.null(fit)) rtn <- summary(fit) else rtn <- NULL
   rtn
+}
+
+INLAfit <- function(data, k, family){
+  long.formulas <- vector('list', k)
+  for(kk in 1:k) long.formulas[[kk]] <- as.formula(paste0('Y.', kk, '~ time + cont + bin + (1 + time|id)'))
+  survdata <- data[!duplicated(data[, 'id']), ]
+  surv <- inla.surv(time = c(survdata$survtime), event = c(survdata$status))
+  assocs <- as.list(rep('SRE', k))
+  JMINLA <- joint(
+    formLong = long.formulas,
+    formSurv = list(surv ~ bin),
+    dataLong = data,
+    id = 'id', timeVar = 'time', corLong = T,
+    family = rep(family, k), basRisk = 'rw1',
+    assoc = assocs,
+    control = list(int.strategy='eb')
+  )
+  s <- summary(JMINLA)
+  longi <- s$FixedEff[[1]]
+  survi <- s$SurvEff[[1]]
+  gammas <- s$AssocLS
+  time <- s$cpu.used   # Just running time?
+  
+  list(
+    fixed = longi,
+    survival = survi,
+    gamma = gammas,
+    comp.time = time
+  )
 }
 
 .loader <- function(file){
