@@ -160,7 +160,7 @@ mat joint_density_sdb(vec& b, List Y, List X, List Z,                  // Longit
     vec bb = b;
     double xi = std::max(b[i], 1.0);
     bb[i] = b[i] + (eps * xi);
-    vec fdiff = joint_density_ddb(bb, Y, X, Z, beta, D, sigma, family, Delta, S, Fi, l0i, SS, Fu, haz, gamma_rep, zeta, beta_inds, b_inds, K);
+    vec fdiff = joint_density_ddb(bb, Y, X, Z, beta, D, sigma, family, Delta, S, Fi, l0i, SS, Fu, haz, gamma_rep, zeta, beta_inds, b_inds, K) - f0;
     out.col(i) = fdiff/(bb[i]-b[i]);
   }
   return 0.5 * (out + out.t()); // Ensure symmetry
@@ -383,7 +383,15 @@ double Surv_ratio(List Lt, List Lu, vec& gamma_rep, vec& zeta, vec& b){
   mat SS_u = Lu["SS"];
   mat Fu_u = Lu["Fu"];
   return as_scalar(exp(-l0u_u * exp(SS_u * zeta + Fu_u * (gamma_rep % b))) / 
-                   (exp(-l0u_t * exp(SS_t * zeta + Fu_t * (gamma_rep % b))) + 1e-6)); // small amount on denominator to avoid NaN (0/0)
+                   (exp(-l0u_t * exp(SS_t * zeta + Fu_t * (gamma_rep % b)))+1e-6)); // small amount on denominator to avoid NaN (0/0)
+}
+
+// [[Rcpp::export]]
+double Surv_(List L, vec& gamma_rep, vec& zeta, vec& b){
+  rowvec l0 = L["l0u"];
+  mat SS = L["SS"];
+  mat Fu = L["Fu"];
+  return as_scalar(exp(-l0 * exp(SS * zeta + Fu * (gamma_rep % b))));
 }
 
 // 9. Fast DMVNORM (https://gallery.rcpp.org/articles/dmvnorm_arma/)
