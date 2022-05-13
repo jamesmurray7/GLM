@@ -100,7 +100,10 @@ INLAfit <- function(data, k, family){
     assoc = assocs,
     control = list(int.strategy='eb',
                    priorRandom = list(r = 6, R = 1),
-                   priorAssoc = list(mean = 0, prec = 0.16))
+                   priorAssoc = list(mean = 0, prec = 0.16),
+                   priorFixed = list(mean = 0, prec = 0.16, 
+                                     mean.intercept = 0,
+                                     prec.intercept = 0.16))
   )
   s <- summary(JMINLA)
   longi <- do.call(rbind, s$FixedEff)
