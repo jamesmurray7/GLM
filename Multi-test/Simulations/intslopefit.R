@@ -60,9 +60,9 @@ JMbayes2fit <- function(data, k, family){
   fit <- tryCatch(
     jm(ph, M, time_var = 'time', id_var = 'id', data_Surv = survdata,
             control = list(
-              n_chains = 1,
+              n_chains = 3,
               n_iter = 1500,
-              n_burnin = 500, cores = 1
+              n_burnin = 500, cores = 3
             )),error=function(e) NULL)
   if(!is.null(fit)) rtn <- summary(fit) else rtn <- NULL
   rtn

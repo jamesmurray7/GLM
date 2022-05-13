@@ -61,12 +61,13 @@ EMfit('alkaline', 'quadratic', poisson) # p >> 0.1
 # spiders -----------------------------------------------------------------
 EMfit('spiders', 'quadratic', binomial)
 EMfit('spiders', 'linear', binomial) # probably just take linear for parsimony
-
+EMfit('spiders', 'intercept', binomial)
 
 # Ascites -----------------------------------------------------------------
 EMfit('ascites', 'spline', binomial)
 EMfit('ascites', 'quadratic', binomial)
 EMfit('ascites', 'linear', binomial)
+EMfit('ascites', 'intercept', binomial)
 
 
 # Hepatomegaly ------------------------------------------------------------

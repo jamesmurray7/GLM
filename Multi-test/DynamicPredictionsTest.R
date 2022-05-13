@@ -6,80 +6,26 @@ pbc$serBilir <- log(pbc$serBilir)
 
 #' Univariate
 long.formulas <- list(serBilir ~ drug * time + (1 + time|id))
-surv.formula <- Surv(survtime, status) ~ drug + age
+surv.formula <- Surv(survtime, status) ~ drug
 family <- list(gaussian)
 my.fit <- EM(long.formulas, surv.formula, pbc, family, control = list(hessian='manual'))
 
-myROC911 <- ROC(my.fit, pbc, Tstart = 9, delta = 2,
-                control = list(
-                  nsim = 20, b.density = 'normal'
-                ))
-
-
-par(mfrow=c(3,1))
-plotROC(myROC35, T)
-plotROC(myROC57, T)
-plotROC(myROC911, T)
-dev.off()
-
-#' Univariate with quadratic fixed and random structure.
-long.formulas.quad <- list(serBilir ~ drug * (time + I(time^2)) + (1 + time + I(time^2)|id))
-my.fit.quad <- EM(long.formulas.quad, surv.formula, pbc, family, control = list(hessian='auto'))
-
-#' ROC for interval (3, 5], (5, 7] and (9, 11] for quadratic specification.
-myROC35.quad <- ROC(my.fit.quad, pbc, Tstart = 3, delta = 2, 
-                    control = list(
-                      nsim = 25, b.dens = 't', scale = 2, df = 4
-                    ))
-
-
-
-myROC57.quad  <- ROC(my.fit.quad, pbc, Tstart = 5, delta = 2, control = list(nsim = 25, b.dens = 't', scale = 2, df = 4))
-myROC911.quad <- ROC(my.fit.quad, pbc, Tstart = 9, delta = 2, control = list(nsim = 25, b.dens = 't', scale = 2, df = 4))
-myROC911.quad2 <- ROC(my.fit.quad, pbc, Tstart = 9, delta = 2, control = list(nsim = 25, b.dens = 'normal'))
-
-par(mfrow = c(3, 2))
-plotROC(myROC35, T); plotROC(myROC35.quad, T)
-plotROC(myROC57, T); plotROC(myROC57.quad, T)
-plotROC(myROC911, T); plotROC(myROC911.quad, T)
-dev.off()
-
-#' Univariate with polynomial (natural cubic splines) time specification in fixed and random effects.
-#' long.formulas2 <- list(serBilir ~ drug * splines::ns(time, df = 3) + (1+splines::ns(time, df = 3)|id))
-#' 
-#' my.fit.ns <- EM(long.formulas2, surv.formula, pbc, family, control = list(hessian='auto'))
-#' 
-#' #' ROC for interval (3, 5], (5, 7] and (9, 11] with this cubic spline specification.
-#' myROC35.ns  <- ROC(my.fit.ns, pbc, Tstart = 3, delta = 2, nsim = 10)
-#' myROC57.ns  <- ROC(my.fit.ns, pbc, Tstart = 5, delta = 2, nsim = 10)
-#' myROC911.ns <- ROC(my.fit.ns, pbc, Tstart = 9, delta = 2, nsim = 10)
-#' 
-#' par(mfrow = c(3,3))
-#' plotROC(myROC35, T);  plotROC(myROC35.quad, T);   plotROC(myROC35.ns, T)
-#' plotROC(myROC57, T);  plotROC(myROC57.quad, T);   plotROC(myROC57.ns, T)
-#' plotROC(myROC911, T); plotROC(myROC911.quad, T);  plotROC(myROC911.ns, T)
-#' dev.off()
-  
-
-# Bivariate any good? ----------------------------------------------------
-pbc$SGOT <- log(pbc$SGOT)
-long.formulas <- list(
-  serBilir ~ drug*time + (1 + time|id),
-  albumin ~ drug * time + (1 + time|id),
-  SGOT ~ drug * time + (1 + time|id)
+library(joineRML)
+jML.fit <- mjoint(
+  formLongFixed = list('1' = serBilir ~ drug * time),
+  formLongRandom = list('1' = ~ time | id),
+  formSurv = Surv(survtime, status) ~ drug,
+  data = pbc, timeVar = 'time', control = list(
+    type = 'sobol', convCrit = 'rel', tol2 = 1e-2, tol.em = 5e-3
+  ), verbose = T
 )
-families <- list(gaussian, gaussian, gaussian)
-fit <- EM(long.formulas, surv.formula, pbc, families, control = list(hessian = 'auto'))  
 
-myROC <- ROC(fit, pbc, Tstart = 8, delta = 4, control = list(nsim = 1, b.dens = 'normal'))
-myROC2 <- ROC(fit, pbc, Tstart = 8, delta = 4, control = list(nsim = 1, b.dens = 't', scale = 2, df = 4))
+test <- pbc[pbc$id == 2 & pbc$time <= 9,]
+my.fit$hazard[,1]->ft
+u <- ft[ft <= 11 & ft > 9]
+jmlsurv <- joineRML::dynSurv(jML.fit, test, u = u, type = 'simulated', M = 200)
+mine_normal <- dynSurv2(data = pbc, id = 2, fit = my.fit, u = u, nsim = 200, b.density = 'normal')
+mine_t <- dynSurv2(data = pbc, id = 2, fit = my.fit, u = u, nsim = 200, b.density = 't', scale = 2, df = 4)
 
-normals <- ts <- vector('list', 4)
-for(i in 1:4){
-  normals[[i]] <- ROC(fit, pbc, Tstart = 8, delta = i, control = list(nsim = 10, b.density = 'normal'))
-  ts[[i]] <- ROC(fit, pbc, Tstart = 8, delta = i, control = list(nsim = 10, b.density = 't'))
-}
-
-par(mfrow=c(2,2))
-lapply(normals, plotROC, T)
-lapply(ts, plotROC, T)
+ROCt <- ROC(my.fit, pbc, 9, 2, control = list(b.density = 't', scale = 2, df = 4, nsim = 25))
+ROCn <- ROC(my.fit, pbc, 9, 2, control = list(b.density = 'normal', nsim = 25)) # t seems to perform a little better here!
