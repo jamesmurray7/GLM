@@ -18,7 +18,7 @@ prepareLongData <- function(data, formulas, responses, u = NULL){
   formulas <- lapply(formulas, parseFormula); K <- length(formulas)
   responses <- lapply(strsplit(responses, '\\s\\('), el, 1)
   
-  if(is.null(u)) data <- data[data$time <= u, ] # Truncate if necessary
+  if(!is.null(u)) data <- data[data$time <= u, ] # Truncate if necessary
   
   X <- lapply(1:K, function(k){
     .DataWorkhorse(data, data$id[1], formulas[[k]]$fixed, formulas[[k]]$random, responses[[k]], what = 'X')
@@ -55,7 +55,7 @@ prepareSurvData <- function(data, fit, formulas, u = NULL, hazard){
   data <- data[1, ]
   # l0 <- predict(lm(l0 ~ splines::ns(ft, knots = quantile(data$longtime, probs = c(0.25, 0.75))))) # Use smoothed cubic spline in hazard for predictions
   
-  if(!is.null(u) && data$time > u) data$time <- u # Don't extrapolate beyond time u
+  if(!is.null(u)) data$time <- u # Don't extrapolate beyond time u
   if(is.null(u) && data$time > max.longtime) data$time <- max.longtime
   
   #' Fi
@@ -108,7 +108,7 @@ prepareData <- function(data, id, fit, b.inds, beta.inds, u = NULL){ # b.inds, b
   
   if(is.null(u)){
     bfit <- optim(
-        b, joint_density, joint_density_ddb, Y = long$Y, X = long$X, Z = long$Z,
+        rep(0, ncol(fit$RE)), joint_density, joint_density_ddb, Y = long$Y, X = long$X, Z = long$Z,
         beta = fit$coeffs$beta, D = fit$coeffs$D, sigma = fit$coeffs$sigma, family = fit$family,
         Delta = surv$Delta, S = surv$S, Fi = surv$Fi, l0i = surv$l0i, SS = surv$SS, Fu = surv$Fu,
         haz = surv$l0u, gamma_rep = gamma.rep, zeta = fit$coeffs$zeta, beta_inds = beta.inds,
@@ -345,8 +345,13 @@ dynSurv2 <- function(data, id, fit, u = NULL, nsim = 200, progress = T,
     MH.accept <- MH.accept + b.sim$accept
     St <- Surv_(data.t$surv, rep(O$gamma, sapply(b.inds, length)), O$zeta, b.current)
     for(uu in seq_along(u)){
+      # cat('uu:', uu, '; u[uu]:', u[uu],  # uncomment for loop debugging
+      #     '\nb:', b.current,'.\n')
       data.u <- prepareData(newdata2, id = id, b.inds, beta.inds, fit = fit,  u = u[uu])
-      pi[i, uu] <- Surv_(data.u$surv, rep(O$gamma, sapply(b.inds, length)), O$zeta, b.current)/(St + 1e-6)
+      pi[i, uu] <- Surv_(data.u$surv, rep(O$gamma, sapply(b.inds, length)), O$zeta, b.current)/(St)# + 1e-6)
+      # cat('pi(uu):', 
+      #     Surv_(data.u$surv, rep(O$gamma, sapply(b.inds, length)), O$zeta, b.current)/(St),
+      #     '\n.pi[i, uu]:', pi[i,uu], '.\n')
     }
     if(progress) utils::setTxtProgressBar(pb, i)
   }
@@ -361,6 +366,7 @@ dynSurv2 <- function(data, id, fit, u = NULL, nsim = 200, progress = T,
   row.names(pi.df) <- NULL
   return(
     list(pi = pi.df,
+         pi.raw = pi,
          MH.accept = MH.accept/nsim)
   )
 } 
@@ -627,3 +633,25 @@ b.draw <- function(b.current, b.hat.t, Sigma.t, long, surv, O, beta.inds, b.inds
   
   list(b.current = c(b.current), accept = accept)
 }
+
+
+# Predictions + plot for one individual -----------------------------------
+
+dynPlot <- function(data, id, fit, Tstart, delta, nsim = 200, progress = T,
+                    b.density = 't', scale = 2, df = 4){
+  
+  ft <- fit$hazard[,1]; tmax <- max(ft)
+  candidate.u <- c(Tstart, ft[ft>Tstart & ft <= (Tstart + delta)])
+  # Obtain pi matrix for subject
+  ds <- dynSurv2(data = data, id = id, fit = fit, u = candidate.u, nsim = nsim,
+                 progress = progress,
+                 b.density = b.density, scale = scale, df = df)
+  
+  # Available longitudinal profile.
+  lhs.data <- data[data$id == id & data$time <= Tstart, ]
+  
+  
+  
+  
+}
+

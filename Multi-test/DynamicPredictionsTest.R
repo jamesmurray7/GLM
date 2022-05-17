@@ -16,16 +16,25 @@ jML.fit <- mjoint(
   formLongRandom = list('1' = ~ time | id),
   formSurv = Surv(survtime, status) ~ drug,
   data = pbc, timeVar = 'time', control = list(
-    type = 'sobol', convCrit = 'rel', tol2 = 1e-2, tol.em = 5e-3
-  ), verbose = T
+    type = 'sobol', convCrit = 'rel', tol2 = 1e-1, tol.em = 5e-3
+  ), verbose = F
 )
 
-test <- pbc[pbc$id == 2 & pbc$time <= 9,]
+test <- pbc[pbc$id == 81 & pbc$time <= 6.9,]
 my.fit$hazard[,1]->ft
-u <- ft[ft <= 11 & ft > 9]
+u <- ft[ft <= 15 & ft > 6.9]
 jmlsurv <- joineRML::dynSurv(jML.fit, test, u = u, type = 'simulated', M = 200)
-mine_normal <- dynSurv2(data = pbc, id = 2, fit = my.fit, u = u, nsim = 200, b.density = 'normal')
-mine_t <- dynSurv2(data = pbc, id = 2, fit = my.fit, u = u, nsim = 200, b.density = 't', scale = 2, df = 4)
+mine_normal <- dynSurv2(data = pbc, id = 81, fit = my.fit, u = u, nsim = 200, b.density = 'normal')
+mine_t <- dynSurv2(data = pbc, id = 81, fit = my.fit, u = u, nsim = 200, b.density = 't', scale = 2, df = 4)
+
+jmlsurv;mine_normal$pi;mine_t$pi
 
 ROCt <- ROC(my.fit, pbc, 9, 2, control = list(b.density = 't', scale = 2, df = 4, nsim = 25))
 ROCn <- ROC(my.fit, pbc, 9, 2, control = list(b.density = 'normal', nsim = 25)) # t seems to perform a little better here!
+
+
+
+
+
+
+
