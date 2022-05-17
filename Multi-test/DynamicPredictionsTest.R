@@ -29,9 +29,11 @@ mine_t <- dynSurv2(data = pbc, id = 81, fit = my.fit, u = u, nsim = 200, b.densi
 
 jmlsurv;mine_normal$pi;mine_t$pi
 
-ROCt <- ROC(my.fit, pbc, 9, 2, control = list(b.density = 't', scale = 2, df = 4, nsim = 25))
-ROCn <- ROC(my.fit, pbc, 9, 2, control = list(b.density = 'normal', nsim = 25)) # t seems to perform a little better here!
+ROCt <- ROC(my.fit, pbc, 9, 2, control = list(b.density = 't', scale = 2, df = 4, nsim = 50))
+ROCn <- ROC(my.fit, pbc, 9, 2, control = list(b.density = 'normal', nsim = 50)) # t seems to perform a little better here!
 
+plotROC(ROCt)
+plotROC(ROCn)
 
 
 

@@ -431,7 +431,7 @@ ROC <- function(fit, data, Tstart, delta, control = list()){
   })
   # pi(u|t)
   infodf <- do.call(rbind, infodf)
-  pi <- 1 - with(infodf, tapply(`mean`, id, min))
+  pi <- with(infodf, tapply(`mean`, id, min))
   
   # Working out whether individuals failed in the window
   survtimes <- with(newdata, tapply(survtime, id, unique))
@@ -440,7 +440,7 @@ ROC <- function(fit, data, Tstart, delta, control = list()){
   event <- status & events # Check if they failed in window.
   
   n.window.events <- sum(event)
-  BS <- (pi-sapply(event, as.numeric))^2   # Brier score
+  BS <- ((1 - pi)-sapply(event, as.numeric))^2   # Brier score
   
   # Defining threshold and calculating performance metrics.
   t <- seq(0, 1, length = 101)
@@ -449,7 +449,7 @@ ROC <- function(fit, data, Tstart, delta, control = list()){
   
   TP <- colSums(c(event) * simfail)        # True positives
   FN <- sum(event) - TP                    # False negatives
-  FP <- colSums(c(!event) * simfail)        # False positives
+  FP <- colSums(c(!event) * simfail)       # False positives
   TN <- sum(!event) - FP                   # True negatives
   TPR <- TP/(TP + FN)                      # True positive rate (sensitivity)
   FPR <- FP/(FP + TN)                      # False positive rate (1 - specificity)
