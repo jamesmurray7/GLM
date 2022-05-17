@@ -8,7 +8,8 @@ pbc$serBilir <- log(pbc$serBilir)
 long.formulas <- list(serBilir ~ drug * time + (1 + time|id))
 surv.formula <- Surv(survtime, status) ~ drug
 family <- list(gaussian)
-my.fit <- EM(long.formulas, surv.formula, pbc, family, control = list(hessian='manual'))
+my.fit <- EM(long.formulas, surv.formula, pbc, family, control = list(hessian='manual',
+                                                                      optimiser='ucminf'))
 
 library(joineRML)
 jML.fit <- mjoint(
@@ -32,11 +33,37 @@ jmlsurv;mine_normal$pi;mine_t$pi
 ROCt <- ROC(my.fit, pbc, 9, 2, control = list(b.density = 't', scale = 2, df = 4, nsim = 50))
 ROCn <- ROC(my.fit, pbc, 9, 2, control = list(b.density = 'normal', nsim = 50)) # t seems to perform a little better here!
 
-plotROC(ROCt)
-plotROC(ROCn)
+plotROC(ROCt, T)
+plotROC(ROCn, T)
+
+Ts <- c(3,5,7,9)
+ROCs <- setNames(vector('list', 4), Ts)
+
+for(t in seq_along(Ts)){
+  ROCs[[t]] <- ROC(my.fit, pbc, Ts[t], delta = 2, 
+                   control = list(b.density = 't', scale = 2, df = 4, nsim = 100))
+}
+
+par(mfrow=c(2,2))
+lapply(ROCs, plotROC, T)
+dev.off()
+
+
+# Bivariate ---------------------------------------------------------------
+rm(list=ls())
+source('EM.R')
+source('DynamicPredictions.R')
+load('../PBC-case-study/PBC.RData')
+pbc <- pbc[!is.na(pbc$spiders) & !is.na(pbc$serBilir),]
+pbc$serBilir <- log(pbc$serBilir)
+long.formulas <- list(serBilir ~ drug * time + (1 + time|id),
+                      spiders ~ drug * time + (1 + time|id))
+surv.formula <- Surv(survtime, status) ~ drug
+family <- list(gaussian, binomial)
+my.fit <- EM(long.formulas, surv.formula, pbc, family, control = list(hessian='manual',
+                                                                      optimiser='optim'))
+my.summary(my.fit)
 
 
 
-
-
-
+ROCt <- ROC(my.fit, pbc, 9, 2, control = list(b.density = 't', scale = 2, df = 4, nsim = 25))

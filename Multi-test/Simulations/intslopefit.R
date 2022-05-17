@@ -274,15 +274,15 @@ data3 <- .loader('Simulations/data/gaussianK-3.RData')
 pb <- utils::txtProgressBar(max = 100, style = 3)
 fit1.INLA <- fit2.INLA <- fit3.INLA <- vector('list', 100)
 for(i in 1:100){
-  d1 <- data1[[i]]; d2 <- data2[[i]]; d3 <- data3[[i]]
-  fit1.INLA[[i]] <- INLAfit(d1, 1, 'gaussian')
-  fit2.INLA[[i]] <- INLAfit(d2, 2, 'gaussian')
-  fit3.INLA[[i]] <- INLAfit(d3, 3, 'gaussian')
+  d1 <- data1[[i]]; d2 <- data2[[i]];# d3 <- data3[[i]]
+  #fit1.INLA[[i]] <- tryCatch(suppressMessages(INLAfit(d1, 1, 'gaussian')), error = function(e) NULL)
+  fit2.INLA[[i]] <- tryCatch(suppressMessages(INLAfit(d2, 2, 'gaussian')), error = function(e) NULL)
+  # fit3.INLA[[i]] <- INLAfit(d3, 3, 'gaussian')
   utils::setTxtProgressBar(pb, i)
 }
-save(fit1.INLA, file = 'Simulations/fits/gaussianK-1_INLA.RData')
+#save(fit1.INLA, file = 'Simulations/fits/gaussianK-1_INLA.RData')
 save(fit2.INLA, file = 'Simulations/fits/gaussianK-2_INLA.RData')
-save(fit3.INLA, file = 'Simulations/fits/gaussianK-3_INLA.RData')
+# save(fit3.INLA, file = 'Simulations/fits/gaussianK-3_INLA.RData')
 
 # Poisson
 data1 <- .loader('Simulations/data/poissonK-1.RData')
@@ -292,10 +292,12 @@ data3 <- .loader('Simulations/data/poissonK-3.RData')
 pb <- utils::txtProgressBar(max = 100, style = 3)
 fit1.INLA <- fit2.INLA <- fit3.INLA <- vector('list', 100)
 for(i in 1:100){
-  d1 <- data1[[i]]; d2 <- data2[[i]]; d3 <- data3[[i]]
+  d1 <- data1[[i]]; 
+  d2 <- data2[[i]];
+ # d3 <- data3[[i]]
   fit1.INLA[[i]] <- INLAfit(d1, 1, 'poisson')
   fit2.INLA[[i]] <- INLAfit(d2, 2, 'poisson')
-  fit3.INLA[[i]] <- INLAfit(d3, 3, 'poisson')
+  #fit3.INLA[[i]] <- INLAfit(d3, 3, 'poisson')
   utils::setTxtProgressBar(pb, i)
 }
 save(fit1.INLA, file = 'Simulations/fits/poissonK-1_INLA.RData')
