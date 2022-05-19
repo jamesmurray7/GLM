@@ -66,11 +66,12 @@ parse.INLA <- function(fit){
 }
 
 parse.jML <- function(fit){
-  f <- fit$coefs.long[, 1]
-  s <- rbind(fit$coefs.surv[-1, ], zeta = fit$coefs.surv[1, ])[, 1] # swap order gamma zeta
-  var <- fit$coefs.sigma
+  f <- fit$coefs.long[, 1:2]
+  s <- rbind(fit$coefs.surv[-1, ], fit$coefs.surv[1, ])[, 1:2] # swap order gamma zeta
+  row.names(s) <- rev(row.names(fit$coefs.surv))
+  var <- cbind(Value = fit$coefs.sigma, `Std.Err` = 0)
   
-  data.frame(est = c(f, s, var^2), method = 'joineRML')
+  data.frame(rbind(f, s, var^2), method = 'joineRML')
 }
 
 
@@ -130,7 +131,7 @@ plot.ests <- function(my.in = NULL, jML.in = NULL, JMb.in = NULL, INLA.in = NULL
     jML <- as.data.frame(do.call(rbind, lapply(jML.in, function(x) if(!is.null(x)) parse.jML(x))))
     jML$method <- 'joineRML'
     jML$param <- rep(names(targets), sum(!unlist(lapply(jML.in, is.null))))
-    jML <- jML %>% select(method, param, estimate = est)
+    jML <- jML %>% select(method, param, estimate = Value)
   }else jML <- NULL
   if(!is.null(JMb.in)){
     JMb <- as.data.frame(do.call(rbind, lapply(JMb.in, function(x) if(!is.null(x)) parse.JMb(x))))
@@ -163,4 +164,110 @@ plot.ests <- function(my.in = NULL, jML.in = NULL, JMb.in = NULL, INLA.in = NULL
     )
 }
 
+
+# Tabulation --------------------------------------------------------------
+toXdp <- function(x, X) format(round(x, X), nsmall = X)
+tabulate <- function(fit, type, f, K){ # fit a sub-list
+  type <- match.arg(type, c('aEM', 'jML', 'JMb', 'INLA'), several.ok = F)
+  f <- match.arg(f, c('gaussian', 'poisson', 'binomial'), several.ok = F)
+  
+  targets <- get.targets(f, K)
+  
+  if(!is.null(fit)){ # Parse
+    if(type == 'aEM') fit <- as.data.frame(parse.aEM(fit))
+    if(type == 'jML') fit <- as.data.frame(parse.jML(fit))
+    if(type == 'JMb') fit <- as.data.frame(parse.JMb(fit))
+    if(type == 'INLA') fit <- as.data.frame(parse.INLA(fit))
+  }else return(NULL)
+  fit$target <- targets
+  # Specific parsing...
+  r <- row.names(fit); qz <- qnorm(.975)
+  # cat(r,'\n',names(targets),'\n\n')
+  switch(type,
+         'aEM' = {
+           fit$is.cp <- fit$lb <= targets & fit$ub >= targets
+           fit$bias <- fit$Omega - fit$target
+           fit$param <- names(targets)
+           fit <- fit %>% select(param = param, target = target, estimate = Omega, SE, bias, is.cp)
+         },
+         'jML' = {
+           lb <- fit$Value - qz * fit$`Std.Err`
+           ub <- fit$Value + qz * fit$`Std.Err`
+           fit$is.cp <- lb <= targets & ub >= targets
+           fit$bias <- fit$Value - fit$target
+           fit$param <- names(targets)
+           fit <- fit %>% select(param = param, target = target, estimate = Value, SE = `Std.Err`, bias, is.cp)
+         },
+         'JMb' = {
+           fit$is.cp <- fit$`2.5%` <= targets & fit$`97.5%` >= targets
+           fit$bias <- fit$Mean - fit$target
+           fit$param <- names(targets)
+           fit <- fit %>% select(param = param, target = target, estimate = Mean, SE = StDev, bias, is.cp)
+         },
+         'INLA' = {
+           fit$is.cp <- fit$`0.025quant` <= targets & fit$`0.975quant` >= targets
+           fit$bias <- fit$mean - fit$target
+           fit$param <- names(targets)
+           fit <- fit %>% select(param = param, target = target, estimate = mean, SE = sd, bias, is.cp)
+         })
+  return(fit)
+}
+ 
+tabulate_wrapper <- function(fit, type, f, K){ # fit a list of lists
+  tab <- do.call(rbind, lapply(fit, tabulate, type = type, f = f, K = K))
+  # print(head(tab))
+  if(type!='jML'){
+    out1 <- tab %>% 
+      group_by(param) %>% 
+      summarise(target = unique(target),
+                mean = mean(estimate),
+                sd = mean(SE),
+                bias.m = mean(bias),
+                bias.s = sd(bias),
+                CP = sum(is.cp)/n(),
+                conv = n()/100) %>% 
+      ungroup
+  }else{
+    out1 <- tab %>% 
+      filter(!grepl('^sigma', param)) %>% 
+      group_by(param) %>% 
+      summarise(target = unique(target),
+                mean = mean(estimate),
+                sd = mean(SE),
+                bias.m = mean(bias),
+                bias.s = sd(bias),
+                CP = sum(is.cp)/n(),
+                conv = n()) %>% 
+      ungroup
+    # print(out1)
+    sigmas <- tab %>% 
+      filter(grepl('^sigma', param)) %>% 
+      group_by(param) %>% 
+      mutate(s = sd(estimate)) %>% 
+      ungroup() %>% 
+      mutate(is.cp = (estimate - qnorm(.975) * s) <= target & 
+               (estimate + qnorm(.975) * s) >= target) %>% 
+      group_by(param) %>% 
+      summarise(
+        target = unique(target),
+        mean = mean(estimate),
+        sd = s,
+        bias.m = mean(bias),
+        bias.s = sd(bias),
+        CP = sum(is.cp)/n(),
+        conv = n()/100
+      ) %>% 
+      ungroup %>% distinct
+    # print(sigmas)
+    out1 <- rbind(out1, sigmas) %>% arrange(param)
+  }
+  
+  out1 %>% mutate_at(c('target', 'mean', 'sd', 'bias.m', 'bias.s'), ~ toXdp(.x, 3)) %>% 
+    mutate_at(c('CP', 'conv'), ~ toXdp(.x, 2)) %>% 
+    mutate(mean.SD = paste0(mean, ' (', sd, ')'),
+           bias.SD = paste0(bias.m, ' (', bias.s, ')')) %>% 
+    select(param, target, mean.SD, bias.SD, CP, conv) %>% 
+    rename_at(c('mean.SD', 'bias.SD', 'CP', 'conv'),
+              ~ paste0(type, '-', .x))
+}
 
