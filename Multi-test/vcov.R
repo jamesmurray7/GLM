@@ -72,7 +72,7 @@ vcov <- function(Omega, dmats, surv, sv,
         for(l in 1:length(w)){
           rhs <- rhs + w[l] * crossprod(Y[[i]][[gj]] - X[[i]][[gj]] %*% beta[beta.inds[[gj]]] - Z[[i]][[gj]] %*% bsplit[[i]][[gj]] - v[l] * tau[[i]])
         }
-        temp[i] <- m[[i]][gj]/(2 * unlist(sigma)[gj]) + 1/(2 * unlist(sigma)[gj]^2) * rhs
+        temp[i] <- -m[[i]][gj]/(2 * unlist(sigma)[gj]) + 1/(2 * unlist(sigma)[gj]^2) * rhs
       }
       Ss[[gj]] <- temp
     }
