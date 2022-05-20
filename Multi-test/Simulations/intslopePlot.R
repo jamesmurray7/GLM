@@ -34,17 +34,19 @@ inj.times <- data.frame(method = 'INLAjoint',
 elapsed.times <- rbind(aEM.times, jML.times, JMb.times, inj.times)
 
 elapsed.times %>% 
-  filter(method!='JMbayes2') %>% 
   pivot_longer(K1:K3, names_to = 'K', values_to = 'elapsed') %>% 
+  # mutate_at('elapsed', log10) %>% # Different to scale_y_log10?
   mutate_at('K', parse_number) %>% 
   mutate(
     s = ifelse(K == 1, '', 's'),
     K_label = paste0('K = ', K, ' Gaussian response', s)
   ) %>% 
-  ggplot(aes(x = method, y = elapsed)) + 
-  geom_boxplot() + 
-  facet_wrap(~ K_label) +
-  scale_y_log10() + 
+  ggplot(aes(x = K_label, y = log10(elapsed))) + 
+  geom_boxplot(outlier.alpha = .50) + 
+  # scale_y_log10() + 
+  stat_summary(fun=median, geom="line", aes(group=1), lty = 5, alpha = .5) +
+  stat_summary(fun=median, geom="point", size = 2) + 
+  facet_wrap(~ method, scales = 'free_y') +
   theme_light() + 
   labs(
     x = NULL, y = 'Elapsed time (seconds, log10)'
@@ -79,13 +81,17 @@ elapsed.times %>%
     s = ifelse(K == 1, '', 's'),
     K_label = paste0('K = ', K, ' count response', s)
   ) %>% 
-  ggplot(aes(x = method, y = elapsed)) + 
+  ggplot(aes(x = K_label, y = log10(elapsed))) + 
   geom_boxplot() + 
-  facet_wrap(~ K_label) +
-  scale_y_log10() + 
+  facet_wrap(~ method, scales = 'free_y') +
+  # scale_y_log10() +
   theme_light() + 
   labs(
     x = NULL, y = 'Elapsed time (seconds, log10)'
+  ) + 
+  theme(
+    strip.background = element_blank(),
+    strip.text = element_text(colour = 'black', size = 13)
   ) -> Pplot
 
 #' Binomial
