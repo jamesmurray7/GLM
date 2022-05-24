@@ -1,4 +1,16 @@
 library(tidyverse)
+theme_csda <- function(base_family = "Arial", base_size = 12){
+  theme_light(base_family = base_family, base_size = base_size) %+replace%
+    theme(
+      strip.background = element_blank(),
+      strip.text = element_text(size = 11, colour = "black", vjust = 1),
+      axis.text = element_text(size = 9),
+      axis.title = element_text(size = 11),
+      legend.background = element_blank(),
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor.x = element_blank()
+    )
+}
 # Functions for elapsed time ----------------------------------------------
 elapsed.aEM <- function(fit, what = 'EM'){
   if(what == 'EM') return(fit$EMtime + fit$postprocess.time)
@@ -270,4 +282,52 @@ tabulate_wrapper <- function(fit, type, f, K){ # fit a list of lists
     rename_at(c('mean.SD', 'bias.SD', 'CP', 'conv'),
               ~ paste0(type, '-', .x))
 }
-
+library(xtable)
+tab.to.xtab <- function(tab, mean.col = F){
+  tab$param <- gsub('\\[', '_{', tab$param)
+  tab$param <- gsub('\\]', '}', tab$param)
+  cn <- colnames(tab)
+  convs <- tab[1,grepl('conv', cn)]
+  print(convs)
+  
+  # Xtable multicolumn stuff
+  if(any(grepl('jML', cn))){
+    methods <- c('Approximate EM', 'joineRML', 'JMbayes2', 'INLAjoint')
+  }else{
+    methods <- c('Approximate EM', 'JMbayes2', 'INLAjoint')
+  }
+  addtorow <- list()
+  addtorow$pos <- list(-1)
+  addtorow$command <- paste0(paste0('& \\multicolumn{3}{c}{', methods, '}', collapse=''), '\\\\')
+  
+  if(mean.col){
+    tab <- tab %>% 
+      select(-ends_with('conv')) %>% 
+      rename_at(vars(`aEM-mean.SD`:`aEM-CP`), ~gsub('aEM\\-','a',.x)) %>% 
+      rename_at(vars(`JMb-mean.SD`:`JMb-CP`), ~gsub('JMb\\-','b',.x)) %>% 
+      rename_at(vars(`INLA-mean.SD`:`INLA-CP`), ~gsub('INLA\\-','c',.x))
+    if(any(grepl('jML', cn))) tab <- tab %>% rename_at(vars(`jML-mean.SD`:`jML-CP`), ~gsub('jML\\-','d',.x)) 
+    addtorow$command <- paste0(paste0('& \\multicolumn{3}{c}{', methods, '}', collapse=''), '\\\\')
+  }else{
+    tab <- tab %>% select(-ends_with('mean.SD'))
+    tab <- tab %>% 
+      select(-ends_with('conv')) %>% 
+      rename_at(vars(`aEM-bias.SD`:`aEM-CP`), ~gsub('aEM\\-','a',.x)) %>% 
+      rename_at(vars(`JMb-bias.SD`:`JMb-CP`), ~gsub('JMb\\-','b',.x)) %>% 
+      rename_at(vars(`INLA-bias.SD`:`INLA-CP`), ~gsub('INLA\\-','c',.x))
+    if(any(grepl('jML', cn))) tab <- tab %>% rename_at(vars(`jML-bias.SD`:`jML-CP`), ~gsub('jML\\-','d',.x)) 
+    addtorow$command <- paste0(paste0('& \\multicolumn{2}{c}{', methods, '}', collapse=''), '\\\\')
+  }
+  
+  xt <- tab %>% 
+    mutate(
+      param = paste0('$\\', param, '=', target,'$')
+    ) %>% select(-target) %>% 
+    rename_at(vars(contains('bias.SD')), ~gsub('bias.SD', 'Bias (SD)', .x)) %>% 
+    xtable::xtable()
+    
+  print(xt,
+        include.rownames = FALSE,
+        sanitize.text.function = identity,
+        add.to.row = addtorow)
+}

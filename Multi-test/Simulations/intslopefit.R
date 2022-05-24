@@ -306,3 +306,30 @@ save(fit3.INLA, file = 'Simulations/fits/poissonK-3_INLA.RData')
 
 # END COUNTS --------
 # Binary ------------------------------------------------------------------
+data1 <- .loader('Simulations/data/binomialK-1.RData')
+data2 <- .loader('Simulations/data/binomialK-2.RData')
+data3 <- .loader('Simulations/data/binomialK-3.RData')
+
+fit1 <- fit2 <-fit3 <-  vector('list', 100)
+pb <- utils::txtProgressBar(max = 100, style = 3)
+for(i in 1:100){
+  d1 <- data1[[i]]; d2 <- data2[[i]]; d3 <- data3[[i]]
+  #fit1[[i]] <- emfit(d1, 1, 'binomial')
+  # fit2[[i]] <- emfit(d2, 2, 'binomial')
+  fit3[[i]] <- emfit(d3, 3, 'binomial')
+  utils::setTxtProgressBar(pb, i)
+}
+save(fit3, file = 'Simulations/fits/binomialK-3.RData')
+
+library(INLA)
+library(INLAjoint)
+fit1.INLA <- fit2.INLA <- fit3.INLA <- vector('list', 100)
+pb <- utils::txtProgressBar(max = 100, style = 3)
+for(i in 1:100){
+  d1 <- data1[[i]]; d2 <- data2[[i]]; d3 <- data3[[i]]
+  # fit1.INLA[[i]] <- INLAfit(d1, 1, 'binomial')
+  fit2.INLA[[i]] <- INLAfit(d2, 2, 'binomial')
+  # fit3[[i]] <- emfit(d3, 3, 'binomial')
+  utils::setTxtProgressBar(pb, i)
+}
+save(fit2.INLA, file = 'Simulations/fits/binomialK-2_INLA.RData')
