@@ -8,8 +8,7 @@ pbc$serBilir <- log(pbc$serBilir)
 long.formulas <- list(serBilir ~ drug * time + (1 + time|id))
 surv.formula <- Surv(survtime, status) ~ drug
 family <- list(gaussian)
-my.fit <- EM(long.formulas, surv.formula, pbc, family, control = list(hessian='manual',
-                                                                      optimiser='ucminf'))
+my.fit <- EM(long.formulas, surv.formula, pbc, family, control = list(hessian='manual'))
 
 library(joineRML)
 jML.fit <- mjoint(
