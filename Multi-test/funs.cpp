@@ -198,6 +198,41 @@ vec Sbeta(vec& beta, List X, List Y, List Z, List b, List sigma, List family, Li
 }
 
 // [[Rcpp::export]]
+vec Sbeta2(vec& beta, List X, List Y, List Z, List b, List sigma, List family, List beta_inds, int K){
+  int p = beta.size();
+  int n = X.size(); // i in 1...n
+  vec Score = vec(p);
+  
+  for(int i = 0; i < n; i++){
+    List Yi = Y[i];
+    List Xi = X[i];
+    List Zi = Z[i];
+    List bi = b[i];
+    for(int k = 0; k < K; k++){
+      vec Yk = Yi[k];
+      mat Xk = Xi[k];
+      mat Zk = Zi[k];
+      std::string f = family[k];
+      double sigmak = sigma[k];
+      uvec beta_k_inds = beta_inds[k];
+      vec beta_k = beta.elem(beta_k_inds); // Ensure indexing from zero!!
+      vec b_k = bi[k];
+      vec eta = Xk * beta_k + Zk * b_k;
+      if(f == "gaussian"){
+        Score.elem(beta_k_inds) += Xk.t() * Score_eta_gauss(Yk, eta, sigmak);
+      }else if(f == "binomial"){
+        Score.elem(beta_k_inds) += Xk.t() * Score_eta_binom(Yk, eta);
+      }else if(f == "poisson"){
+        Score.elem(beta_k_inds) += Xk.t() * Score_eta_poiss(Yk, eta);
+      }else if(f == "negative.binomial"){
+        Score.elem(beta_k_inds) += Xk.t() * Score_eta_negbin(Yk, eta, sigmak);
+      }
+    }
+  }
+  return Score;
+}
+
+// [[Rcpp::export]]
 mat Hbeta(vec& beta, List X, List Y, List Z, List b, List sigma, List family, List beta_inds, int K, double eps){
   int p = beta.size();
   mat out = zeros<mat>(p, p);
@@ -211,6 +246,21 @@ mat Hbeta(vec& beta, List X, List Y, List Z, List b, List sigma, List family, Li
   }
   return 0.5 * (out + out.t()); // Ensure symmetry
 }
+// [[Rcpp::export]]
+mat Hbeta2(vec& beta, List X, List Y, List Z, List b, List sigma, List family, List beta_inds, int K, double eps){
+  int p = beta.size();
+  mat out = zeros<mat>(p, p);
+  vec S0 = Sbeta2(beta, X, Y, Z, b, sigma, family, beta_inds, K);
+  for(int i = 0; i < p; i++){
+    vec bb = beta;
+    double xi = std::max(beta[i], 1.0);
+    bb[i] = beta[i] + eps * xi;
+    vec Sdiff = Sbeta2(bb, X, Y, Z, b, sigma, family, beta_inds, K) - S0;
+    out.col(i) = Sdiff/(bb[i]-beta[i]);
+  }
+  return 0.5 * (out + out.t()); // Ensure symmetry
+}
+
 
 // 5. Defining updates to dispersion/scale parameters ---------------------
 

@@ -71,12 +71,14 @@ EMupdate <- function(Omega, family, X, Y, Z, b, S, SS, Fi, Fu, l0i, l0u, Delta, 
   D.update <- mapply(function(Sigma, b) Sigma + tcrossprod(b), Sigma = Sigma, b = b.hat, SIMPLIFY = F)
   
   #' \beta ------------------------------------
-  Sb <- mapply(function(X, Y, Z, b){
-    Sbeta(beta, X, Y, Z, b, sigma, family, beta.inds2, K)
-  }, X = X, Y = Y, Z = Z, b = bsplit, SIMPLIFY = F)
-  Hb <- mapply(function(X, Y, Z, b){
-    Hbeta(beta, X, Y, Z, b, sigma, family, beta.inds2, K, .Machine$double.eps^(1/4))
-  }, X = X, Y = Y, Z = Z, b = bsplit, SIMPLIFY = F)
+  # Sb <- mapply(function(X, Y, Z, b){
+  #   Sbeta(beta, X, Y, Z, b, sigma, family, beta.inds2, K)
+  # }, X = X, Y = Y, Z = Z, b = bsplit, SIMPLIFY = F)
+  # Hb <- mapply(function(X, Y, Z, b){
+  #   Hbeta(beta, X, Y, Z, b, sigma, family, beta.inds2, K, .Machine$double.eps^(1/4))
+  # }, X = X, Y = Y, Z = Z, b = bsplit, SIMPLIFY = F)
+  Sb <- Sbeta2(beta, X, Y, Z, bsplit, sigma, family, beta.inds2, K)
+  Hb <- Hbeta2(beta, X, Y, Z, bsplit, sigma, family, beta.inds2, K, .Machine$double.eps^(1/4))
   
   #' Dispersion ('\sigma') --------------------
   if(any(unlist(family) %in% c('gaussian', 'negative.binomial'))){
@@ -123,7 +125,8 @@ EMupdate <- function(Omega, family, X, Y, Z, b, S, SS, Fi, Fu, l0i, l0u, Delta, 
   D.new <- Reduce('+', D.update)/n
   
   # beta
-  beta.new <- beta - solve(Reduce('+', Hb), Reduce('+', Sb))
+  # beta.new <- beta - solve(Reduce('+', Hb), Reduce('+', Sb))
+  beta.new <- beta-solve(Hb,Sb)
   
   # Dispersion
   ms <- colSums(do.call(rbind, m))
