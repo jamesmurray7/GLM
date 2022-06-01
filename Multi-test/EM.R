@@ -339,6 +339,9 @@ EM <- function(long.formulas, surv.formula, data, family, post.process = T, cont
     out$vcov <- I
     out$RE <- do.call(rbind, b)
     out$postprocess.time <- round(proc.time()[3]-start.time, 2)
+    # Calculate log-likelihood. Done separately as EMtime + postprocess.time is for EM + SEs.
+    out$logLik <- log.lik(coeffs, dmats, b, surv, sv, l0u, l0i, gamma.rep, beta.inds2, b.inds2, K, q, family)
+    out$lltime <- round(proc.time()[3] - start.time, 2) - out$postprocess.time
   }
   out
 }

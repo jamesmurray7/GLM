@@ -338,3 +338,33 @@ my.summary <- function(myfit, printD = F){
   invisible(1+1)
 }
 
+log.lik <- function(coeffs, dmats, b, surv, sv, l0u, l0i, gamma.rep, beta.inds, b.inds, K, q, family){
+  # joint density - REs; Marginal ll of Y(s) added to f(T_i,\Delta_i|...).
+  Y <- dmats$Y; X <- dmats$X; Z <- dmats$Z
+  beta <- coeffs$beta; D <- coeffs$D; sigma <- coeffs$sigma; zeta <- coeffs$zeta
+  S <- sv$S; SS <- sv$SS; Delta <- surv$Delta
+  Fu <- sv$Fu; Fi <- sv$Fi; 
+
+  #' "Full" joint density ----
+  ll1 <- mapply(function(Y, X, Z, b, S, SS, Fu, Fi, Delta, l0i, l0u){
+    joint_density(b = b, Y = Y, X = X, Z = Z, beta = beta, D = D, sigma = sigma, family = family, 
+                  Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS, Fu = Fu, haz = l0u, gamma_rep = gamma.rep, zeta = zeta,
+                  beta_inds = beta.inds, b_inds = b.inds, K = K) * -1
+  }, Y = Y, X = X, Z = Z, b = b, S = S, SS = SS, Fu = Fu, Fi = Fi, Delta = Delta, l0i = l0i, l0u = l0u)
+  
+  #' Only the joint density associated with REs ----
+  ll2 <- mapply(function(b) dmvnrm_arma_fast(t(b), rep(0, q), D), b = b)
+  #' Calculate the marginal ll of the Yks and the survival density.
+  out <- sum(ll1 - ll2)
+  
+  #' Calculate AIC and BIC
+  N <- sum(colSums(do.call(rbind, lapply(Y, function(y) sapply(y, length)))))
+  P <- sum(sapply(1:K, function(k) ncol(X[[1]][[k]]) - 1))
+  Ps <- ncol(S[[1]])
+  df <- P + Ps + 2 * K + (q * (q + 1)/2)
+  
+  attr(out, 'df') <- df; attr(out, 'N') <- N
+  attr(out, 'AIC') <- -2 * c(out) + 2 * df
+  attr(out, 'BIC') <- -2 * c(out) + log(N) * df
+  out
+}
