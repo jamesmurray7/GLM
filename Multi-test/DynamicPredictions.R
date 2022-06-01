@@ -647,11 +647,62 @@ dynPlot <- function(data, id, fit, Tstart, delta, nsim = 200, progress = T,
                  progress = progress,
                  b.density = b.density, scale = scale, df = df)
   
+  # Get indices for \b and \beta
+  K <- length(fit$family)
+  responsenames <- lapply(strsplit(fit$ResponseInfo, '\\s\\('), el , 1)
+  nm <- colnames(fit$RE)
+  b.inds <- lapply(1:K, function(k){ 
+    which(grepl(responsenames[[k]], nm)) - 1
+  })
+  nm <- names(fit$coeff$beta)
+  beta.inds <- lapply(1:K, function(k){
+    which(grepl(responsenames[[k]], nm)) - 1
+  })                                 
   # Available longitudinal profile.
-  lhs.data <- data[data$id == id & data$time <= Tstart, ]
+  newdata <- data[data$id == id & data$time <= Tstart,]
+  data.t <- prepareData(newdata, id = id, fit = fit, b.inds = b.inds, beta.inds = beta.inds, u = NULL)
+
+  #' The plotting grid ----
+  .par <- par(no.readonly = T)
+  nr <-  cbind(c(1:K), rep(K + 1, K))
+  widths <- c(max(newdata$time), max(candidate.u) - max(newdata$time))
+  widths <- widths/sum(widths)
+  layout(nr, widths)
+  par(mar = c(0, 4.5, 0, 0), oma = c(4, 0, 3, 0))
   
+  #' Plotting longitudinal outcomes
+  for(k in 1:K){
+    plot(
+      newdata$time,
+      data.t$long$Y[[k]], type = 'o',
+      col = 'red', las = 1, xaxt = 'n',
+      ylab = responsenames[[k]], pch = 8
+    )
+    if(k == K) axis(side = 1, at = round(newdata$time, 2))
+    grid()
+  }
   
+  #' Plotting survival probabilities
+  ylim <- c(min(ds$pi$lower), max(ds$pi$upper))
+  par(mar = c(0, 0, 0, 4.5))
+  plot(
+    ds$pi$u,
+    ds$pi$median,
+    ylim = ylim,
+    xlim = c(Tstart, Tstart + delta + 0.5),
+    type = 's', yaxt = 'n'
+  )
+  axis(side = 4, las = 1)
+  lines(ds$pi$u,
+        ds$pi$lower, lty = 5)
+  lines(ds$pi$u,
+        ds$pi$upper, lty = 5)
+  grid()
+  grid(col = 'white')
   
+  mtext("time", 1, line = 2.5, outer = TRUE)
+  mtext("Survival probability", 4, line = 2.5)
   
+  par(.par)
 }
 
