@@ -95,7 +95,7 @@ simData_joint <- function(n = 250, ntms = 10, summax = 100,
                           beta = c(1, 0.10, 0.33, -0.50),           # Coeffs FE lin. pred
                           delta = c(-0.6, -0.1),     
                           D = matrix(c(0.5^2, 0, 0, 0.2^2), 2, 2), 
-                          gamma = 0.5, surv.eta = c(0.05, -0.30), theta = c(-4, 0.2),
+                          gamma = 0.5, zeta = c(0.05, -0.30), theta = c(-4, 0.2),
                           cens.rate = exp(-3.5)){
   #' Necessary parameters & data generation ----
   time <- 0:(ntms-1); tau <- (ntms - 1) + 0.1 # time variable and truncation time tau.
@@ -109,7 +109,7 @@ simData_joint <- function(n = 250, ntms = 10, summax = 100,
   b <- MASS::mvrnorm(n, mu=c(0, 0), Sigma = D)
   #' Survival ----
   theta0 <- theta[1]; theta1 <- theta[2]
-  Keta <- cbind(cont, bin) %*% surv.eta
+  Keta <- cbind(cont, bin) %*% zeta
   U <- runif(n); 
   b0 <- b[, 1, drop = F]; b1 <- b[, 2, drop = F]
   # Generate survival times (Austin et al 2012)

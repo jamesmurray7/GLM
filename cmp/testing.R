@@ -3,18 +3,29 @@
 #' Run-through of E- and M- steps 
 #' #######
 
+library(survival)
 source('ll.R')
+source('survFns.R')
 
 # Data and data matrices
 test <- simData_joint()
-data <- test$data
+data <- test$data; survdata <- test$surv.data
 n <- length(unique(data$id))
-X <- Z <- G <- Y <- list()
+ph <- coxph(Surv(survtime, status) ~ cont + bin, survdata)
+sv <- surv.mod(ph, survdata, NULL)
+S <- X <- Z <- G <- Y <- list()
 for(i in 1:n){
   X[[i]] <- model.matrix(~ time + cont + bin, data[data$id == i, ])
   Z[[i]] <- G[[i]] <- model.matrix(~ time, data[data$id == i, ])
   Y[[i]] <- data[data$id == i, 'Y']
+  S[[i]] <- t(unname(cbind(data[data$id, 'cont'], data[data$id, 'bin']))[1, ])
 }
+Fu <- sv$Fu; Fi <- sv$Fi; l0u <- sv$l0u; l0i <- as.list(sv$l0i); Delta <- as.list(sv$Di)
+SS <- lapply(1:n, function(i){
+  x <- apply(S[[i]],2,rep,nrow(Fu[[i]]))
+  if(class(x)=='numeric')x <- t(x)
+  x
+})
 
 # Initial conditions (Using negbinom2 until can think of something better!)
 fit <- glmmTMB::glmmTMB(Y ~ time + cont + bin + (1 + time|id), 
@@ -22,10 +33,17 @@ fit <- glmmTMB::glmmTMB(Y ~ time + cont + bin + (1 + time|id),
                         data, 
                         family = glmmTMB::nbinom2)
 beta <- glmmTMB::fixef(fit)$cond
-delta <- glmmTMB::fixef(fit)$disp # delta <- c(1, 0)
+delta <- delta <- c(0,0) # glmmTMB::fixef(fit)$disp # delta <- c(1, 0)
 b <- glmmTMB::ranef(fit)$cond$id
 bl <- lapply(1:n, function(i) as.numeric(b[i,]))
 D <- matrix(glmmTMB::VarCorr(fit)$cond$id,2,2)
+
+mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = bl, SIMPLIFY = F)
+nus <- mapply(function(G) exp(G %*% delta), G = G, SIMPLIFY = F)
+
+lambdas <- mapply(getlambda, mus, nus, 10)
+
+
 
 # b.hat ----
 .bfits <- mapply(function(b, X, Y, Z, G){
