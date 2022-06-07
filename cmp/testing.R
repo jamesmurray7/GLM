@@ -2,10 +2,13 @@
 #' testing.R
 #' Run-through of E- and M- steps 
 #' #######
-
+rm(list=ls())
 library(survival)
+library(Rcpp)
+library(RcppArmadillo)
 source('ll.R')
 source('survFns.R')
+sourceCpp('cmp.cpp')
 
 # Data and data matrices
 test <- simData_joint()
@@ -21,12 +24,13 @@ for(i in 1:n){
   S[[i]] <- t(unname(cbind(data[data$id, 'cont'], data[data$id, 'bin']))[1, ])
 }
 Fu <- sv$Fu; Fi <- sv$Fi; l0u <- sv$l0u; l0i <- as.list(sv$l0i); Delta <- as.list(sv$Di)
+Fi <- lapply(1:n, function(i) Fi[i,,drop = F])
 SS <- lapply(1:n, function(i){
   x <- apply(S[[i]],2,rep,nrow(Fu[[i]]))
   if(class(x)=='numeric')x <- t(x)
   x
 })
-
+gamma <- 0.4; zeta <- c(0.1, -0.2)
 # Initial conditions (Using negbinom2 until can think of something better!)
 fit <- glmmTMB::glmmTMB(Y ~ time + cont + bin + (1 + time|id), 
                         dispformula = ~ time,
@@ -41,37 +45,100 @@ D <- matrix(glmmTMB::VarCorr(fit)$cond$id,2,2)
 mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = bl, SIMPLIFY = F)
 nus <- mapply(function(G) exp(G %*% delta), G = G, SIMPLIFY = F)
 
-lambdas <- mapply(getlambda, mus, nus, 10)
+lambdas <- mapply(function(mu, nu) lambda_uniroot_wrap(1e-6, 1e3, mu, nu, 10), mu = mus, nu = nus, SIMPLIFY = F)
+lY <- lapply(Y, lfactorial)
+
+# No gradient function
+b.fit <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
+  optim(b, joint_density, NULL,
+        X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
+        S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
+        gamma = gamma, zeta = zeta, summax = 10, method = 'BFGS')
+}, b = bl, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
+   l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
+
+# With gradient function -- appears to be much faster !!
+b.fit.grad <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
+  optim(b, joint_density, joint_density_ddb,
+        X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
+        S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
+        gamma = gamma, zeta = zeta, summax = 10, method = 'BFGS')$par
+}, b = bl, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
+l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
+
+Sigma <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
+  solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
+        S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
+        gamma = gamma, zeta = zeta, summax = 5, eps = 1e-3))
+}, b = b.fit.grad, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
+l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
+
+apply(do.call(rbind, lapply(Sigma, diag)),2,function(x)any(x<0)) # Check, setting summax ~20 seems to alleviate issue here.
+                                                                 # unsure as to why this is the case(!)
+which(do.call(rbind, lapply(Sigma, diag))<0,arr.ind=T)           # For checking which id is going weird.
+
+# \beta -------------------------------------------------------------------
+
+Sbeta <- function(beta, X, Y, Z, G, b, delta, summax){
+  mu <- exp(X %*% beta + Z %*% b)
+  nu <- exp(G %*% delta)
+  lambda <- lambda_uniroot_wrap(1e-6, 1e3, mu, nu, summax)
+  V <- V_mu_lambda(mu, lambda, nu, summax)
+  if(length(mu) > 1) lhs <- diag(c(mu)) else lhs <- diag(mu)
+  crossprod(lhs %*% X, ((Y-mu) / V))
+}
+
+Sb <- mapply(function(X, Y, Z, G, b){
+  Sbeta(beta, X, Y, Z, G, b, delta, summax = 100)
+}, X = X, Y = Y, Z = Z, G = G, b = b.fit.grad, SIMPLIFY = F)
+
+Hb <- mapply(function(X, Y, Z, G, b){
+  GLMMadaptive:::fd_vec(beta, Sbeta, X, Y, Z, G, b, delta, summax = 100)
+}, X = X, Y = Y, Z = Z, G = G, b = b.fit.grad, SIMPLIFY = F)
+
+# How does this compare to "W1" in Huang paper.
+W1 <- mapply(function(X, Z, G, b){
+  mu <- exp(X %*% beta + Z %*% b)
+  nu <- exp(G %*% delta)
+  lambda <- lambda_uniroot_wrap(1e-6, 1e3, mu, nu, 10)
+  V <- V_mu_lambda(mu, lambda, nu, 10)
+  if(length(mu) > 1) lhs <- diag(c(mu^2)/c(V)) else lhs <- diag(mu^2/V)
+  -crossprod(X, lhs) %*% X
+}, X = X, Z = Z, G = G, b= b.fit.grad, SIMPLIFY = F)
+Hb[[1]]
+W1[[1]]
+beta-solve(Reduce('+', Hb), Reduce('+', Sb))
+beta-solve(Reduce('+', W1), Reduce('+', Sb))
 
 
+# \delta ------------------------------------------------------------------
+Sdelta <- function(delta, X, Y, lY, Z, b, G, beta, summax){
+  mu <- exp(X %*% beta + Z %*% b)
+  nu <- exp(G %*% delta)
+  lambda <- lambda_uniroot_wrap(1e-6, 1e3, mu, nu, summax)
+  V <- V_mu_lambda(mu, lambda, nu, summax)
+  AB <- calc.AB(mu, nu, lambda, summax)
+  Snu <- AB$A * (Y-mu) / V - (lY-AB$B)
+  if(length(nu) > 1) lhs <- diag(c(nu)) else lhs <- diag(nu)
+  crossprod(lhs %*% G, Snu)
+}
 
-# b.hat ----
-.bfits <- mapply(function(b, X, Y, Z, G){
-  u <- ucminf::ucminf(b, .ll, Score_b,  
-                      X = X, Y = Y, Z = Z, G = G, beta = beta, delta = delta, D = D, summax = 10)
-  list(u$par, u$invhessian.lt)
-}, b = bl, X = X, Y = Y, Z = Z, G = G, SIMPLIFY = F)
+Sd <- mapply(function(X, Y, lY, Z, G, b){
+  Sdelta(delta, X, Y, lY, Z, b, G, beta, summax = 100)
+}, X = X, Y = Y, lY=lY, Z = Z, G = G, b = b.fit.grad, SIMPLIFY = F)
 
-# Posterior mode of b ~ N(bhat, Sigma)
-b.hat <- lapply(.bfits, el, 1)
-# And posterior variance 
-Sigmai <- mapply(function(b, X, Y, Z, G){
-  solve(pracma::hessian(.ll, b, X = X, Y = Y, Z = Z, G = G, beta = beta, delta = delta, D = D, summax = 10))
-}, b = b.hat, X = X, Y = Y, Z = Z, G = G, SIMPLIFY = F)
+Hd <- mapply(function(X, Y, lY, Z, G, b){
+  GLMMadaptive:::fd_vec(delta, Sdelta, X = X, Y = Y, lY = lY, Z = Z, b = b, G = G, beta = beta, summax = 100)
+}, X = X, Y = Y, lY=lY, Z = Z, G = G, b = b.fit.grad, SIMPLIFY = F)
 
-Sigmai <- lapply(Sigmai, function(x){
-  if(det(x) <= 0) return(as.matrix(Matrix::nearPD(x)$mat))
-  else return(x)
-})
+delta - solve(Reduce('+', Hd), Reduce('+', Sd))
 
-# objects for mu and nu
-mu <- mapply(function(X, Z, b){
-  exp(X %*% beta + Z %*% b)
-}, X = X, Z = Z, b = b.hat, SIMPLIFY = F)
+#'------------------------------------------
+#'  OLD VERSION BELOW ----------------------
+#'------------------------------------------
+#'------------------------------------------
 
-nu <- mapply(function(G){
-  exp(G %*% delta)
-}, G = G, SIMPLIFY = F)
+  */
 
 # lambda, from uniroot on mu and nu
 lambda <- mapply(getlambda, mu, nu, summax = 50, SIMPLIFY = F)

@@ -198,7 +198,8 @@ vec lambda_uniroot_wrap(double lower, double upper, vec& mu, vec& nu, int summax
 
 /*  ------------------------------------------------------------------------ 
  *  2.
- *  Functions used to define constituent log-likelihoods and the joint denisty.
+ *  Functions used to define constituent log-likelihoods and the joint density,
+ *             along with the score for the log-likelihood wrt mu.
  *  ------------------------------------------------------------------------ 
  */
 static double log2pi = log(2.0 * M_PI); 
@@ -230,3 +231,68 @@ double joint_density(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Dat
                                 temp + Delta * (S * zeta + Fi * (gamma * b)) - haz * exp(SS * zeta + Fu * (gamma * b)));
 }
 
+// Scores --------------------------------------------------------------
+double calc_V(double mu, double lambda, double nu, int summax){
+  double out = 0.0;
+  double Z = exp(logZ_c_scalar(log(lambda), nu, summax));
+  vec js = SEQ_Z(summax);
+  for(int j = 0; j < summax; j++){
+    out += pow(js[j] - mu, 2.0) * pow(lambda, js[j]) / (pow(tgamma(js[j] + 1.0), nu) * Z);
+  }
+  return out;
+}
+
+// [[Rcpp::export]]
+vec V_mu_lambda(vec& mu, vec& lambda, vec& nu, int summax){
+  vec out(lambda.size());
+  for(int i = 0; i < lambda.size(); i++){
+    out[i] = calc_V(mu[i], lambda[i], nu[i], summax);
+  }
+  return out;
+}
+
+// [[Rcpp::export]]
+vec mu_score(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Data matrices
+             vec& beta, vec& delta, int summax){
+  vec mu = exp(X * beta + Z * b);
+  vec nu = exp(G * delta);
+  vec lambda = lambda_uniroot_wrap(1e-6, 1e3, mu, nu, summax);
+  vec V = V_mu_lambda(mu, lambda, nu, summax);
+  return (Y - mu) / V;
+}
+
+// [[Rcpp::export]]
+vec joint_density_ddb(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Data matrices
+                      vec& beta, vec& delta, mat& D,                       // Longit. + RE parameters
+                      rowvec& S, mat& SS, rowvec& Fi, mat& Fu, double l0i, rowvec& haz,
+                      int Delta, double gamma, vec& zeta, int summax){
+  // Score of CMP
+  vec mu = exp(X * beta + Z * b);
+  vec nu = exp(G * delta);
+  vec lambda = lambda_uniroot_wrap(1e-6, 1e3, mu, nu, summax);
+  vec V = V_mu_lambda(mu, lambda, nu, summax);
+  mat lhs_mat = diagmat(mu) * Z;        // Could just be Z.t() * y-mu/V, but think it should be this.
+  vec Score = lhs_mat.t() * ((Y-mu) / V);   //                  **                                     
+  
+  return -Score + -1.0 * (-D.i() * b + Delta * (Fi.t() * gamma) - 
+    gamma * (Fu.t() * (haz.t() % exp(SS * zeta + Fu * (gamma * b)))));
+  
+}
+
+// [[Rcpp::export]]
+mat joint_density_sdb(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Data matrices
+                      vec& beta, vec& delta, mat& D,                       // Longit. + RE parameters
+                      rowvec& S, mat& SS, rowvec& Fi, mat& Fu, double l0i, rowvec& haz,
+                      int Delta, double gamma, vec& zeta, int summax, double eps){
+  int q = b.size();
+  mat out = zeros<mat>(q, q);
+  vec f0 = joint_density_ddb(b, X, Y, lY, Z, G, beta, delta, D, S, SS, Fi, Fu, l0i, haz, Delta, gamma, zeta, summax);
+  for(int i = 0; i <q; i++){
+    vec bb = b;
+    double xi = std::max(1.0, b[i]);
+    bb[i] = b[i] + (xi * eps);
+    vec fdiff = joint_density_ddb(bb, X, Y, lY, Z, G, beta, delta, D, S, SS, Fi, Fu, l0i, haz, Delta, gamma, zeta, summax) - f0;
+    out.col(i) = fdiff/(bb[i]-b[i]);
+  }
+  return 0.5 * (out + out.t()); // Ensure symmetry
+}

@@ -67,3 +67,31 @@ Score_beta_quad <- function(beta, Y, X, Z, b, nu, tau){
   crossprod(lhs, X) 
 }
 
+# Functions for expectations ----------------------------------------------
+E.lfactorialY <- function(lambda, nu, Z, summax){ # mu, nu, vectors
+  out <- matrix(0, nr = length(lambda), nc = summax)
+  for(j in 1:summax){
+    out[, j] <- lgamma(j) * exp((j-1) * log(lambda) - nu * lgamma(j) - Z)
+  }
+  apply(out, 1, sum)
+}
+#  # very diff. results for t->oo as summax is increased...
+E.YlfactorialY <- function(lambda, nu, Z, summax){
+  out <- matrix(0, nr = length(lambda), nc = summax)
+  for(j in 1:summax){
+    out[, j] <- exp(
+      log(j - 1) + log(lgamma(j)) + (j - 1) * log(lambda) - nu * lgamma(j) - Z
+    )
+  }
+  apply(out, 1, sum)
+}
+
+calc.AB <- function(mu, nu, lambda, summax){
+  # lambda <- lambda_uniroot_wrap(1e-6, 1e3, mu, nu, summax)
+  Z <- calcZ(log(lambda), nu, summax)
+  B <- E.lfactorialY(lambda, nu, Z, summax)
+  A <- E.YlfactorialY(lambda, nu, Z, summax) - mu * B
+  list(A = A, B = B)
+}
+
+

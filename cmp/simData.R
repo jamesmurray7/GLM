@@ -91,14 +91,15 @@ simData <- function(n = 250, ntms = 10, summax = 100,
 
 # fit <- glmmTMB::glmmTMB(Y~time+cont+bin+(1+time|id), data=test, family = glmmTMB::nbinom2, dispformula = ~1)
 
-simData_joint <- function(n = 250, ntms = 10, summax = 100,
+simData_joint <- function(n = 250, ntms = 10, summax = 100,  fup = 5,
                           beta = c(1, 0.10, 0.33, -0.50),           # Coeffs FE lin. pred
                           delta = c(-0.6, -0.1),     
                           D = matrix(c(0.5^2, 0, 0, 0.2^2), 2, 2), 
                           gamma = 0.5, zeta = c(0.05, -0.30), theta = c(-4, 0.2),
                           cens.rate = exp(-3.5)){
   #' Necessary parameters & data generation ----
-  time <- 0:(ntms-1); tau <- (ntms - 1) + 0.1 # time variable and truncation time tau.
+  time <- seq(0,fup,length.out=ntms); tau <- fup + 0.1
+  # time <- 0:(ntms-1); tau <- (ntms - 1) + 0.1 # time variable and truncation time tau.
   cont <- rnorm(n); bin <- rbinom(n, 1, 0.5)  # Continuous and binary covariates.
   
   df <- data.frame(id = rep(1:n, each = ntms),
