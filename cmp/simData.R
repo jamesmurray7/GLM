@@ -93,7 +93,7 @@ simData <- function(n = 250, ntms = 10, summax = 100,
 
 simData_joint <- function(n = 250, ntms = 10, summax = 100,  fup = 5,
                           beta = c(1, 0.10, 0.33, -0.50),           # Coeffs FE lin. pred
-                          delta = c(-0.6, -0.1),     
+                          delta = c(-0.1, -0.2),     
                           D = matrix(c(0.5^2, 0, 0, 0.2^2), 2, 2), 
                           gamma = 0.5, zeta = c(0.05, -0.30), theta = c(-4, 0.2),
                           cens.rate = exp(-3.5)){

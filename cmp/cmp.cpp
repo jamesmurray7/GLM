@@ -209,7 +209,7 @@ static double log2pi = log(2.0 * M_PI);
 // [[Rcpp::export]]
 double ll_cmp(vec& lambda, vec& nu, int summax, vec& Y, vec& lY){
   vec loglambda = log(lambda);
-  vec Z = exp(logZ_c(loglambda, nu, summax));
+  vec Z = logZ_c(loglambda, nu, summax);
   double lhs = as_scalar(Y.t() * log(lambda) - nu.t() * lY);
   return lhs - sum(Z);
 }

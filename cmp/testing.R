@@ -6,6 +6,7 @@ rm(list=ls())
 library(survival)
 library(Rcpp)
 library(RcppArmadillo)
+library(glmmTMB)
 source('ll.R')
 source('survFns.R')
 sourceCpp('cmp.cpp')
@@ -21,7 +22,7 @@ for(i in 1:n){
   X[[i]] <- model.matrix(~ time + cont + bin, data[data$id == i, ])
   Z[[i]] <- G[[i]] <- model.matrix(~ time, data[data$id == i, ])
   Y[[i]] <- data[data$id == i, 'Y']
-  S[[i]] <- t(unname(cbind(data[data$id, 'cont'], data[data$id, 'bin']))[1, ])
+  S[[i]] <- t(unname(cbind(data[data$id==i, 'cont'], data[data$id==i, 'bin']))[1, ])
 }
 Fu <- sv$Fu; Fi <- sv$Fi; l0u <- sv$l0u; l0i <- as.list(sv$l0i); Delta <- as.list(sv$Di)
 Fi <- lapply(1:n, function(i) Fi[i,,drop = F])
@@ -31,13 +32,13 @@ SS <- lapply(1:n, function(i){
   x
 })
 gamma <- 0.4; zeta <- c(0.1, -0.2)
-# Initial conditions (Using negbinom2 until can think of something better!)
-fit <- glmmTMB::glmmTMB(Y ~ time + cont + bin + (1 + time|id), 
-                        dispformula = ~ time,
-                        data, 
-                        family = glmmTMB::nbinom2)
-beta <- glmmTMB::fixef(fit)$cond
-delta <- delta <- c(0,0) # glmmTMB::fixef(fit)$disp # delta <- c(1, 0)
+# Initial conditions 
+fitP <- glmmTMB(Y ~ time + cont + bin + (1 + time|id),
+               data, family = poisson)
+fit <- glmmTMB(Y ~ time + cont + bin + (1 + time|id), dispformula=~time,
+               data, family = glmmTMB::nbinom2)
+beta <- glmmTMB::fixef(fitP)$cond
+delta <- delta <- c(0,0) # glmmTMB::fixef(fit)$disp # delta <- c(1, 0) ## True value -0.1, 0.2
 b <- glmmTMB::ranef(fit)$cond$id
 bl <- lapply(1:n, function(i) as.numeric(b[i,]))
 D <- matrix(glmmTMB::VarCorr(fit)$cond$id,2,2)
@@ -48,34 +49,26 @@ nus <- mapply(function(G) exp(G %*% delta), G = G, SIMPLIFY = F)
 lambdas <- mapply(function(mu, nu) lambda_uniroot_wrap(1e-6, 1e3, mu, nu, 10), mu = mus, nu = nus, SIMPLIFY = F)
 lY <- lapply(Y, lfactorial)
 
-# No gradient function
-b.fit <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
-  optim(b, joint_density, NULL,
-        X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
-        S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-        gamma = gamma, zeta = zeta, summax = 10, method = 'BFGS')
-}, b = bl, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
-   l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
-
-# With gradient function -- appears to be much faster !!
-b.fit.grad <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
+# bhat
+b.hat <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
   optim(b, joint_density, joint_density_ddb,
         X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
         S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-        gamma = gamma, zeta = zeta, summax = 10, method = 'BFGS')$par
+        gamma = gamma, zeta = zeta, summax = 50, method = 'BFGS')$par
 }, b = bl, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
 l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
 
 Sigma <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
   solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
         S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-        gamma = gamma, zeta = zeta, summax = 5, eps = 1e-3))
-}, b = b.fit.grad, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
+        gamma = gamma, zeta = zeta, summax = 100, eps = 1e-3))
+}, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
 l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
 
 apply(do.call(rbind, lapply(Sigma, diag)),2,function(x)any(x<0)) # Check, setting summax ~20 seems to alleviate issue here.
                                                                  # unsure as to why this is the case(!)
 which(do.call(rbind, lapply(Sigma, diag))<0,arr.ind=T)           # For checking which id is going weird.
+which(sapply(Sigma, det) < 0)                                    # Checking non- semi-pos-def'ness
 
 # \beta -------------------------------------------------------------------
 
@@ -90,28 +83,31 @@ Sbeta <- function(beta, X, Y, Z, G, b, delta, summax){
 
 Sb <- mapply(function(X, Y, Z, G, b){
   Sbeta(beta, X, Y, Z, G, b, delta, summax = 100)
-}, X = X, Y = Y, Z = Z, G = G, b = b.fit.grad, SIMPLIFY = F)
+}, X = X, Y = Y, Z = Z, G = G, b = b.hat, SIMPLIFY = F)
 
 Hb <- mapply(function(X, Y, Z, G, b){
   GLMMadaptive:::fd_vec(beta, Sbeta, X, Y, Z, G, b, delta, summax = 100)
-}, X = X, Y = Y, Z = Z, G = G, b = b.fit.grad, SIMPLIFY = F)
+}, X = X, Y = Y, Z = Z, G = G, b = b.hat, SIMPLIFY = F)
 
 # How does this compare to "W1" in Huang paper.
 W1 <- mapply(function(X, Z, G, b){
   mu <- exp(X %*% beta + Z %*% b)
   nu <- exp(G %*% delta)
-  lambda <- lambda_uniroot_wrap(1e-6, 1e3, mu, nu, 10)
-  V <- V_mu_lambda(mu, lambda, nu, 10)
+  lambda <- lambda_uniroot_wrap(1e-6, 1e3, mu, nu, 50)
+  V <- V_mu_lambda(mu, lambda, nu, 50)
   if(length(mu) > 1) lhs <- diag(c(mu^2)/c(V)) else lhs <- diag(mu^2/V)
   -crossprod(X, lhs) %*% X
-}, X = X, Z = Z, G = G, b= b.fit.grad, SIMPLIFY = F)
+}, X = X, Z = Z, G = G, b= b.hat, SIMPLIFY = F)
 Hb[[1]]
 W1[[1]]
 beta-solve(Reduce('+', Hb), Reduce('+', Sb))
-beta-solve(Reduce('+', W1), Reduce('+', Sb))
-
+beta-solve(Reduce('+', W1), Reduce('+', Sb))  # Looks good no matter what approach - likely a matter of benchmarking & choosing.
 
 # \delta ------------------------------------------------------------------
+tau <- mapply(function(Z,S){
+  unname(sqrt(diag(tcrossprod(Z %*% S, Z))))
+}, Z = Z, S = Sigma, SIMPLIFY = F)
+
 Sdelta <- function(delta, X, Y, lY, Z, b, G, beta, summax){
   mu <- exp(X %*% beta + Z %*% b)
   nu <- exp(G %*% delta)
@@ -125,11 +121,11 @@ Sdelta <- function(delta, X, Y, lY, Z, b, G, beta, summax){
 
 Sd <- mapply(function(X, Y, lY, Z, G, b){
   Sdelta(delta, X, Y, lY, Z, b, G, beta, summax = 100)
-}, X = X, Y = Y, lY=lY, Z = Z, G = G, b = b.fit.grad, SIMPLIFY = F)
+}, X = X, Y = Y, lY=lY, Z = Z, G = G, b = b.hat, SIMPLIFY = F)
 
 Hd <- mapply(function(X, Y, lY, Z, G, b){
   GLMMadaptive:::fd_vec(delta, Sdelta, X = X, Y = Y, lY = lY, Z = Z, b = b, G = G, beta = beta, summax = 100)
-}, X = X, Y = Y, lY=lY, Z = Z, G = G, b = b.fit.grad, SIMPLIFY = F)
+}, X = X, Y = Y, lY=lY, Z = Z, G = G, b = b.hat, SIMPLIFY = F)
 
 delta - solve(Reduce('+', Hd), Reduce('+', Sd))
 
