@@ -104,10 +104,6 @@ beta-solve(Reduce('+', Hb), Reduce('+', Sb))
 beta-solve(Reduce('+', W1), Reduce('+', Sb))  # Looks good no matter what approach - likely a matter of benchmarking & choosing.
 
 # \delta ------------------------------------------------------------------
-tau <- mapply(function(Z,S){
-  unname(sqrt(diag(tcrossprod(Z %*% S, Z))))
-}, Z = Z, S = Sigma, SIMPLIFY = F)
-
 Sdelta <- function(delta, X, Y, lY, Z, b, G, beta, summax){
   mu <- exp(X %*% beta + Z %*% b)
   nu <- exp(G %*% delta)
@@ -127,8 +123,22 @@ Hd <- mapply(function(X, Y, lY, Z, G, b){
   GLMMadaptive:::fd_vec(delta, Sdelta, X = X, Y = Y, lY = lY, Z = Z, b = b, G = G, beta = beta, summax = 100)
 }, X = X, Y = Y, lY=lY, Z = Z, G = G, b = b.hat, SIMPLIFY = F)
 
-delta - solve(Reduce('+', Hd), Reduce('+', Sd))
+W2 <- mapply(function(X, Z, G, b){
+  mu <- exp(X %*% beta + Z %*% b)
+  nu <- exp(G %*% delta)
+  lambda <- lambda_uniroot_wrap(1e-6, 1e3, mu, nu, 50)
+  V <- V_mu_lambda(mu, lambda, nu, 50)
+  ABC <- calc.ABC(mu, nu, lambda, 50)
+  lhs <- (ABC$A/V + ABC$C) # brace in Huang (2016)
+  if(length(nu) > 1) lhs <- diag(c(nu^2)) %*% lhs else lhs <- diag(nu^2) %*% lhs
+  crossprod(G, lhs)
+}, SIMPLIFY = F)
 
+Hd[[1]]
+W2[[1]]
+
+delta - solve(Reduce('+', Hd), Reduce('+', Sd))
+delta - solve(Reduce('+', W2), Reduce('+', Sd))
 #'------------------------------------------
 #'  OLD VERSION BELOW ----------------------
 #'------------------------------------------

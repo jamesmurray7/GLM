@@ -1,27 +1,23 @@
 #' ####
 #' inits.R // Initial conditions for longitudinal and survival sub-models
-#'                   for binary (univariate currently) sub-model.
-#' ---
-#' Survival part STOPs here.
-#' Longitudinal then undergoes MVLME fit
+#'                   for poisson (univariate currently) sub-model.
 #' ####
 
-if(!'glmmTMB'%in%loadedNamespaces()) library(glmmTMB)
-if(!'dplyr'%in%loadedNamespaces()) library(dplyr)
 
-# beta, D inits using lme4 -----------------------------------------
+# Obtain fixed and random effects -----------------------------------------
+Longit.inits <- function(long.formula, disp.formula, data){
+ 
+  
+  #' Fit using glmmTMB ----
+  fit <- glmmTMB(long.formula,
+                 family = poisson, data = data)
 
-Longit.inits <- function(data){
-  fit <- glmmTMB(as.formula(paste0('Y ~ time + cont + bin + (1 + time|id)')),
-                 family = compois, data = data, dispformula = ~ 1,
-                 control = glmmTMBControl(optCtrl = list(rel.tol = 1e-3)))
-
-  # \beta and D
+  #' Extract & Return ----
   beta <- glmmTMB::fixef(fit)$cond
   names(beta) <- paste0('beta', '_', names(beta))
   
-  D <- matrix(glmmTMB::VarCorr(fit)$c$id, 2, 2)
-  
+  D <- glmmTMB::VarCorr(fit)$c$id; dimD <- dim(D)
+  D <- matrix(D, nr = dimD[1], nc = dimD[2])
   # Checking pos-def. on D, if not then use Matrix::nearPD()$mat
   if(any(eigen(D)$values < 0) || (det(D) <= 0)){
     message("Generated covariance matrix not positive semi-definite")
@@ -29,34 +25,34 @@ Longit.inits <- function(data){
     D <- as.matrix(Matrix::nearPD(D, maxit = 1e4)$mat)
   }
   
-  list(beta.init = beta,
-       D.init = D,
-       theta.init = glmmTMB::sigma(fit),
-       fit = fit)
-}
-
-# Populate REs matrix -----------------------------------------------------
-Ranefs <- function(longfits){
-  fit <- longfits$fit
-  out <- as.matrix(glmmTMB::ranef(fit)$cond$id)
-  colnames(out) <- c('(intercept)', '(slope)')
-  out
+  #' Random effects
+  b <- as.matrix(glmmTMB::ranef(fit)$cond$id)
+  
+  # delta - start at zero
+  disp <- el(strsplit(gsub('\\s','',as.character(disp.formula)[2]), '\\+|\\*|\\:|\\-'))
+  if(disp!="1"){
+    ld <- length(disp) + 1 
+    nd <- c('(Intercept)', disp)
+  }else{
+    ld <- 1
+    nd <- c('(Intercept)')
+  }
+  list(
+    beta.init = beta,
+    D.init = D,
+    sigma.init = sigma,
+    b = b,                              # + 1 for intercept!
+    delta.init = setNames(rep(0, ld), paste0('delta_', nd))
+  )
 }
 
 # Survival Inits ----------------------------------------------------------
-
 # Getting data into time1/time2 format...
-ToStartStop <- function(data){
+.ToStartStop <- function(data){
   this.subj <- list()
   uids <- unique(data$id)
-  
   for(i in uids){
     i.dat <- data[data$id == i, c('id', 'time', 'survtime')]
-    df <- as.data.frame(cbind(
-      id = i.dat$id,
-      time1 = i.dat$time,
-      time2 = c(i.dat$time[-1], unique(i.dat$survtime))
-    ))
     this.subj[[i]] <- cbind(
       id = i.dat$id,
       time1 = i.dat$time,
@@ -66,27 +62,39 @@ ToStartStop <- function(data){
   as.data.frame(do.call(rbind, this.subj))
 }
 
+.ToRanefForm <- function(time, random.formula, q){
+  if(attr(random.formula, 'special') == 'none'){
+    out <- sapply(1:q, function(i) time^(i - 1))
+  }else if(attr(random.formula, 'special') == 'spline'){
+    out <- model.matrix(as.formula(paste0('~', random.formula)), as.data.frame(time))
+  }
+  as.data.frame(out)
+}
+ 
 # Using this StartStop and getting timevarying coxph...
-TimeVarCox <- function(data, REs){
+TimeVarCox <- function(data, b, ph, formulas){
   # Prepare data
-  ss <- ToStartStop(data)
-  REs <- as.data.frame(REs); REs$id <- 1:nrow(REs)
-  ss2 <- dplyr::left_join(ss, REs, 'id')
-  ss2 <- dplyr::distinct(dplyr::left_join(ss2, data[, c('id', 'cont', 'bin', 'survtime', 'status')], 'id'))
+  ss <- .ToStartStop(data); q <- ncol(b) # send to Start-Stop (ss) format
+  REs <- as.data.frame(b); REs$id <- 1:nrow(b)
+  ss2 <- merge(ss, REs, 'id')
+  ss3 <- merge(ss2, data[, c('id', colnames(ph$x), 'survtime', 'status')], 'id')
+  ss3 <- ss3[!duplicated.matrix(ss3), ]
   
-  # Create \gamma_k variables
-  gamma <- matrix(NA, nrow(ss2), 1)
-  gamma[,1] <- ss2[,'(intercept)'] + ss2[,'(slope)'] * ss2[, 'time1']
-  
+  # Create gamma variable
+  lhs <- .ToRanefForm(ss3[,'time1'], formulas$random, q) #sapply(1:q, function(i) ss3[, 'time1']^(i-1))
+  gamma <- unname(rowSums(lhs * b[ss3$id,]))
+  # gamma2 <- lhs * ss3[,(4:(3+q))]
+  # gamma <- unname(rowSums(lhs * rhs))
+
   # And join on ...
-  ss3 <- cbind(ss2, gamma)
+  ss3 <- cbind(ss3, gamma)
   # Update this to deal with ties too?
   ss3$status2 <- ifelse(ss3$survtime == ss3$time2, ss3$status, 0)
   
   # Time Varying coxph
   # Formula
   timevar.formula <- as.formula(
-    paste0('Surv(time1, time2, status2) ~ ', paste0(c('cont', 'bin'), collapse = ' + '), ' + gamma')
+    paste0('Surv(time1, time2, status2) ~ ', paste0(colnames(ph$x), collapse = ' + '), ' + gamma')
   )
   ph <- coxph(timevar.formula, data = ss3)
   
