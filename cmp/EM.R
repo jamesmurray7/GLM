@@ -26,17 +26,17 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
     optim(b, joint_density, joint_density_ddb,
           X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
           S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-          gamma = gamma, zeta = zeta, summax = summax, method = 'BFGS')$par
+          gamma = gamma, zeta = zeta, summax = 10, method = 'BFGS')$par
   }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
   l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
   
   Sigma <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
     solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
                             S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-                            gamma = gamma, zeta = zeta, summax = summax, eps = 1e-3))
+                            gamma = gamma, zeta = zeta, summax = 100, eps = 1e-3))
   }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
   l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
-  if(debug){DEBUG.b.hat <- b.hat; DEBUG.Sigma <- Sigma}
+  if(debug){DEBUG.b.hat <<- b.hat; DEBUG.Sigma <<- Sigma}
   #' #########
   #' E-step ##
   #' #########
@@ -153,11 +153,27 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, con
   if(!is.null(control$maxit)) maxit <- control$maxit else maxit <- 200
   if(!is.null(control$conv)) conv <- control$conv else conv <- "relative"
   if(!conv%in%c('absolute', 'relative')) stop('Only "absolute" and "relative" difference convergence criteria implemented.')
+  if(!is.null(control$summax.override)) summax.override <- control$summax.override else summax.override <- F
+  
   
   if(debug){DEBUG.inits <<- params; DEBUG.dmats <<- dmats}
   #' Gauss-hermite quadrature ----
   GH <- statmod::gauss.quad.prob(.gh, 'normal', sigma = .sigma)
   w <- GH$w; v <- GH$n
+  
+  #' Overwrite summax if too low ----
+  summax.old <- summax
+  summax.new <- max(ceiling(c(max(data[, formulas$response]) + 20 * sqrt(var(data[, formulas$response])))), 100)
+  if(!summax.override){
+    if(summax.new>summax.old){
+      if(verbose){
+        cat(sprintf('Original summax %d too low, running with new value --> %d.\n', summax.old, summax.new))
+      }
+    summax <- summax.new
+    }
+  }else{
+    summax <- summax.old
+  }
   
   #' Begin EM ----
   diff <- 100; iter <- 0
@@ -191,6 +207,11 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, con
               EMtime = round(EMend - EMstart, 3),
               iter = iter,
               comp.time <- round(proc.time()[3]-start.time, 3))
+  modelInfo <- list(
+    summax = summax, 
+    forms = formulas
+  )
+  rtn$modelInfo <- modelInfo
   rtn$hazard <- cbind(ft = sv$ft, haz = l0)
   rtn$stepmat <- cbind(iter = 1:iter, time = step.times)
   rtn

@@ -28,25 +28,24 @@ Fu <- sv$Fu; Fi <- sv$Fi; l0u <- sv$l0u; l0i <- as.list(sv$l0i); Delta <- as.lis
 Fi <- lapply(1:n, function(i) Fi[i,,drop = F])
 SS <- lapply(1:n, function(i){
   x <- apply(S[[i]],2,rep,nrow(Fu[[i]]))
-  if(class(x)=='numeric')x <- t(x)
+  if(any(class(x)=='numeric'))x <- t(x)
   x
 })
 gamma <- 0.4; zeta <- c(0.1, -0.2)
 # Initial conditions 
 fitP <- glmmTMB(Y ~ time + cont + bin + (1 + time|id),
                data, family = poisson)
-fit <- glmmTMB(Y ~ time + cont + bin + (1 + time|id), dispformula=~time,
-               data, family = glmmTMB::nbinom2)
 beta <- glmmTMB::fixef(fitP)$cond
 delta <- delta <- c(0,0) # glmmTMB::fixef(fit)$disp # delta <- c(1, 0) ## True value -0.1, 0.2
-b <- glmmTMB::ranef(fit)$cond$id
+b <- glmmTMB::ranef(fitP)$cond$id
 bl <- lapply(1:n, function(i) as.numeric(b[i,]))
-D <- matrix(glmmTMB::VarCorr(fit)$cond$id,2,2)
+D <- matrix(glmmTMB::VarCorr(fitP)$cond$id,2,2)
 
 mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = bl, SIMPLIFY = F)
 nus <- mapply(function(G) exp(G %*% delta), G = G, SIMPLIFY = F)
 
 lambdas <- mapply(function(mu, nu) lambda_uniroot_wrap(1e-6, 1e3, mu, nu, 10), mu = mus, nu = nus, SIMPLIFY = F)
+sapply(1:10, function(i) uniroot(mu_lambdaZ_eq2, interval=c(1e-6, 1e3), mus[[2]][i], nus[[2]][i], summax = 100)$root)
 lY <- lapply(Y, lfactorial)
 
 # bhat
@@ -54,7 +53,7 @@ b.hat <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
   optim(b, joint_density, joint_density_ddb,
         X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
         S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-        gamma = gamma, zeta = zeta, summax = 50, method = 'BFGS')$par
+        gamma = gamma, zeta = zeta, summax = 100, method = 'BFGS')$par
 }, b = bl, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
 l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
 
@@ -89,15 +88,11 @@ Hb <- mapply(function(X, Y, Z, G, b){
   GLMMadaptive:::fd_vec(beta, Sbeta, X, Y, Z, G, b, delta, summax = 100)
 }, X = X, Y = Y, Z = Z, G = G, b = b.hat, SIMPLIFY = F)
 
-# How does this compare to "W1" in Huang paper.
+# Huang (2016) W1 asymp. variance of \beta
 W1 <- mapply(function(X, Z, G, b){
-  mu <- exp(X %*% beta + Z %*% b)
-  nu <- exp(G %*% delta)
-  lambda <- lambda_uniroot_wrap(1e-6, 1e3, mu, nu, 50)
-  V <- V_mu_lambda(mu, lambda, nu, 50)
-  if(length(mu) > 1) lhs <- diag(c(mu^2)/c(V)) else lhs <- diag(mu^2/V)
-  -crossprod(X, lhs) %*% X
-}, X = X, Z = Z, G = G, b= b.hat, SIMPLIFY = F)
+  getW1(X, Z, G, b, beta, delta, summax = 100)
+}, X = X, G = G, Z = Z, b = b.hat, SIMPLIFY = F)
+
 Hb[[1]]
 W1[[1]]
 beta-solve(Reduce('+', Hb), Reduce('+', Sb))
@@ -109,8 +104,8 @@ Sdelta <- function(delta, X, Y, lY, Z, b, G, beta, summax){
   nu <- exp(G %*% delta)
   lambda <- lambda_uniroot_wrap(1e-6, 1e3, mu, nu, summax)
   V <- V_mu_lambda(mu, lambda, nu, summax)
-  AB <- calc.AB(mu, nu, lambda, summax)
-  Snu <- AB$A * (Y-mu) / V - (lY-AB$B)
+  ABC <- calc.ABC(mu, nu, lambda, summax)
+  Snu <- ABC$A * (Y-mu) / V - (lY-ABC$B)
   if(length(nu) > 1) lhs <- diag(c(nu)) else lhs <- diag(nu)
   crossprod(lhs %*% G, Snu)
 }
@@ -123,16 +118,33 @@ Hd <- mapply(function(X, Y, lY, Z, G, b){
   GLMMadaptive:::fd_vec(delta, Sdelta, X = X, Y = Y, lY = lY, Z = Z, b = b, G = G, beta = beta, summax = 100)
 }, X = X, Y = Y, lY=lY, Z = Z, G = G, b = b.hat, SIMPLIFY = F)
 
+# Testing for W2 from Huang paper ...
+m <- mus[[2]]
+n <- nus[[2]]
+l <- lambda_uniroot_wrap(1e-6, 1e3, m, n, 10)
+v <- V_mu_lambda(m, l, n, 50)
+ABC <- calc.ABC(m,n,l,100)
+one <- ABC$A/v+ABC$C
+nu.prime <- diag(x=c(n),nr=length(n),nc=length(n)) %*% g
+
+# From https://github.com/thomas-fung/mpcmp/blob/main/R/fit_glm_cmp_vary_nu.R
+# update_score <- ((Aterm * (y - muold) / variances - lgamma(y + 1) + logfactorialy) * nuold) %*% S
+s <- crossprod(((ABC$A * (Y[[2]] - m) / v - lgamma(Y[[2]] + 1) + ABC$B) * n),g)
+W2 <- matrix(0, ncol(g), ncol(g))
+for(j in 1:length(n)){
+  W2 <- W2 - ((-(ABC$A[j])^2/v[j]+ABC$C[j])*n[j]^2)*g[j,] %*% t(g[j,])
+}
+
+
 W2 <- mapply(function(X, Z, G, b){
   mu <- exp(X %*% beta + Z %*% b)
   nu <- exp(G %*% delta)
   lambda <- lambda_uniroot_wrap(1e-6, 1e3, mu, nu, 50)
   V <- V_mu_lambda(mu, lambda, nu, 50)
   ABC <- calc.ABC(mu, nu, lambda, 50)
-  lhs <- (ABC$A/V + ABC$C) # brace in Huang (2016)
-  if(length(nu) > 1) lhs <- diag(c(nu^2)) %*% lhs else lhs <- diag(nu^2) %*% lhs
-  crossprod(G, lhs)
-}, SIMPLIFY = F)
+  lhs <- (-(ABC$A)^2/V + ABC$C) # brace in Huang (2016)
+  -crossprod(crossprod(lhs*nu^2,G))
+}, X = X, Z = Z, G = G, b = b.hat, SIMPLIFY = F)
 
 Hd[[1]]
 W2[[1]]
@@ -144,7 +156,6 @@ delta - solve(Reduce('+', W2), Reduce('+', Sd))
 #'------------------------------------------
 #'------------------------------------------
 
-  */
 
 # lambda, from uniroot on mu and nu
 lambda <- mapply(getlambda, mu, nu, summax = 50, SIMPLIFY = F)

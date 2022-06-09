@@ -252,7 +252,6 @@ calc.ABC <- function(mu, nu, lambda, summax){
   list(A = A, B = B, C = C)
 }
 
-
 # Score for \beta and \delta ----------------------------------------------
 Sbeta <- function(beta, X, Y, Z, G, b, delta, summax){
   mu <- exp(X %*% beta + Z %*% b)
@@ -261,6 +260,16 @@ Sbeta <- function(beta, X, Y, Z, G, b, delta, summax){
   V <- V_mu_lambda(mu, lambda, nu, summax)
   if(length(mu) > 1) lhs <- diag(c(mu)) else lhs <- diag(mu)
   crossprod(lhs %*% X, ((Y-mu) / V))
+}
+
+# This the same as forward differencing, and probably slightly more preferrable given it's analytic!
+getW1 <- function(X, Z, G, b, beta, delta, summax){
+  mu <- exp(X %*% beta + Z %*% b)
+  nu <- exp(G %*% delta)
+  lambda <- lambda_uniroot_wrap(1e-6, 1e3, mu, nu, summax)
+  V <- V_mu_lambda(mu, lambda, nu, summax)
+  if(length(mu) > 1) lhs <- diag(c(mu^2)/c(V)) else lhs <- diag(mu^2/V)
+  -crossprod(X, lhs) %*% X
 }
 
 Sdelta <- function(delta, X, Y, lY, Z, b, G, beta, summax){
@@ -273,6 +282,10 @@ Sdelta <- function(delta, X, Y, lY, Z, b, G, beta, summax){
   if(length(nu) > 1) lhs <- diag(c(nu)) else lhs <- diag(nu)
   crossprod(lhs %*% G, Snu)
 }
+
+#' MESSY -- TEMP ##########################################################
+
+
 
 # Taking difference -------------------------------------------------------
 difference <- function(params.old, params.new, type){
@@ -288,7 +301,12 @@ difference <- function(params.old, params.new, type){
   rtn
 }
 
+#' ########################################################################
+# Misc functions ----------------------------------------------------------
+#' ########################################################################
 
-
+.safevar <- function(x) ifelse(length(x)>1, var(x, na.rm =T), 1)
+.summax <- function(x) ceiling(max(x) + 20 * sqrt(.safevar(x)))
+.any <- function(x, f) any(f(x))
 
 

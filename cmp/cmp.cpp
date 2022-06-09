@@ -12,7 +12,6 @@ using namespace arma;
  *  ------------------------------------------------------------------------ 
 */
 
-// 
 arma::vec SEQ_Z(long double summax){ // Shorthand for Z_(lambda_i, nu_i)
   return arma::linspace(0, summax, summax + 1.0);
 }
@@ -65,6 +64,18 @@ double mu_lambdaZ_eq(double lambda, double mu, double nu, int summax){
     rhs += (js[j] * pow(lambda, js[j])) / (pow(tgamma(js[j] + 1.0), nu) * Z);
   }
   return mu - rhs;
+}
+
+// [[Rcpp::export]]
+double mu_lambdaZ_eq2(double lambda, double mu, double nu, int summax){
+  vec js = SEQ_Z(summax);
+  // double Z = exp(logZ_c_scalar(log(lambda), nu, summax));
+  double rhs = 0.0;
+  for(int j = 0; j < js.size(); j++){
+    rhs += (js[j] - mu) * pow(lambda, js[j]) / pow(tgamma(js[j] + 1.0), nu);
+    // rhs += (js[j] * pow(lambda, js[j])) / (pow(tgamma(js[j] + 1.0), nu) * Z);
+  }
+  return rhs;
 }
 
 // UNIROOT ----------------------------------------------------------------
