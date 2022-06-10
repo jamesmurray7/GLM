@@ -7,7 +7,7 @@ disp.formula <- ~time
 data <- simData_joint(n = 150)
 data <- data$data
 
-test <- EM(long.formula, disp.formula, surv.formula, data, control = list(verbose = T),summax=50)
+test <- EM(long.formula, disp.formula, surv.formula, data, control = list(verbose = T, summax.override = T),summax=100)
 plot(test$stepmat)
 
 

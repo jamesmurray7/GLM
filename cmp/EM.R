@@ -11,7 +11,7 @@ library(RcppArmadillo)
 source('_Functions.R')
 source('simData.R')
 source('inits.R')
-# source('vcov.R') // NYI
+source('vcov.R')
 sourceCpp('cmp.cpp')
 vech <- function(x) x[lower.tri(x, T)]
 
@@ -26,14 +26,14 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
     optim(b, joint_density, joint_density_ddb,
           X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
           S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-          gamma = gamma, zeta = zeta, summax = 10, method = 'BFGS')$par
+          gamma = gamma, zeta = zeta, summax = summax, method = 'BFGS')$par
   }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
   l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
   
   Sigma <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
     solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
                             S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-                            gamma = gamma, zeta = zeta, summax = 100, eps = 1e-3))
+                            gamma = gamma, zeta = zeta, summax = summax, eps = 1e-3))
   }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
   l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
   if(debug){DEBUG.b.hat <<- b.hat; DEBUG.Sigma <<- Sigma}
@@ -41,25 +41,48 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   #' E-step ##
   #' #########
   
+  mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b.hat, SIMPLIFY = F)
+  nus <- mapply(function(G) exp(G %*% delta), G = G, SIMPLIFY = F)
+  lambdas <- mapply(function(mu, nu) lambda_uniroot_wrap(1e-6, 1e3, mu, nu, summax), mu = mus, nu = nus, SIMPLIFY = F)
+  V <- mapply(V_mu_lambda, mus, lambdas, nus, summax = summax, SIMPLIFY = F)
+  ABC <- mapply(calc.ABC, mus, nus, lambdas, summax, SIMPLIFY = F)
+  tau <- mapply(function(Z, S) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), Z = Z, S = Sigma, SIMPLIFY = F)
+  # ABC <- mapply(function(mu, nu, lambda, tau){
+  #   suppressWarnings(calc2.ABC(mu, nu, lambda, summax, tau, w, v))
+  # }, mu = mus, nu = nus, lambda = lambdas, tau = tau, SIMPLIFY = F)
   # D
   D.update <- mapply(function(Sigma, b) Sigma + tcrossprod(b), Sigma = Sigma, b = b.hat, SIMPLIFY = F)
   
   # \beta
-  Sb <- mapply(function(X, Y, Z, G, b){
-    Sbeta(beta, X, Y, Z, G, b, delta, summax = summax)
-  }, X = X, Y = Y, Z = Z, G = G, b = b.hat, SIMPLIFY = F)
-  Hb <- mapply(function(X, Y, Z, G, b){
-    GLMMadaptive:::fd_vec(beta, Sbeta, X, Y, Z, G, b, delta, summax = summax)
-  }, X = X, Y = Y, Z = Z, G = G, b = b.hat, SIMPLIFY = F)
+  Sb <- mapply(Sbeta, X, Y, mus, nus, lambdas, V, SIMPLIFY = F)
+  Hb <- mapply(getW1, X, mus, nus, lambdas, V, SIMPLIFY = F)
+  # Sb <- mapply(function(X, Y, Z, G, b){
+  #   Sbeta(beta, X, Y, Z, G, b, delta, summax = summax)
+  # }, X = X, Y = Y, Z = Z, G = G, b = b.hat, SIMPLIFY = F)
+  # Hb <- mapply(function(X, Z, G, b){
+  #   getW1(X, Z, G, b, beta, delta, summax)
+  # }, X = X, Z = Z, G = G, b = b.hat, SIMPLIFY = F)
+  # Hb <- mapply(function(X, Y, Z, G, b){
+  #   GLMMadaptive:::fd_vec(beta, Sbeta, X, Y, Z, G, b, delta, summax = summax)
+  # }, X = X, Y = Y, Z = Z, G = G, b = b.hat, SIMPLIFY = F)
   
   # \delta
+  # Sd <- mapply(function(ABC, Y, mu, V, nu, G){
+  #   crossprod(((ABC$A * (Y - mu) / V - lgamma(Y + 1) + ABC$B) * nu), G)
+  # }, ABC = ABC, Y = Y, mu = mus, V = V, nu = nus, G = G)
+  Sd <- mapply(function(ABC, Y, mu, V, nu, G, tau){
+    lhs <- numeric(length(mu))
+    for(l in 1:length(w)) lhs <- lhs + w[l] * ABC$A * (Y - mu * exp(tau * v[l])) / V
+    crossprod(((lhs - lgamma(Y + 1) + ABC$B) * nu), G)
+  }, ABC = ABC, Y = Y, mu = mus, V = V, nu = nus, G = G, tau= tau, SIMPLIFY = F)
+  Hd <- mapply(getW2, ABC, V, nus, G, SIMPLIFY = F)
   # tau <- mapply(function(Z, S) sqrt(diag(tcrossprod(Z %*% S, Z))), Z = Z, S = Sigma, SIMPLIFY = F)
-  Sd <- mapply(function(X, Y, lY, Z, b, G){
-    Sdelta(delta, X, Y, lY, Z, b, G, beta, summax)
-  }, X = X, Y = Y, lY = lY, Z = Z, b = b.hat, G = G, SIMPLIFY = F)
-  Hd <- mapply(function(X, Y, lY, Z, b, G){
-    GLMMadaptive:::fd_vec(delta, Sdelta, X, Y, lY, Z, b, G, beta, summax)
-  }, X = X, Y = Y, lY = lY, Z = Z, b = b.hat, G = G, SIMPLIFY = F)
+  # Sd <- mapply(function(X, Y, lY, Z, b, G){
+  #   Sdelta(delta, X, Y, lY, Z, b, G, beta, summax)
+  # }, X = X, Y = Y, lY = lY, Z = Z, b = b.hat, G = G, SIMPLIFY = F)
+  # Hd <- mapply(function(X, Y, lY, Z, b, G){
+  #   GLMMadaptive:::fd_vec(delta, Sdelta, X, Y, lY, Z, b, G, beta, summax)
+  # }, X = X, Y = Y, lY = lY, Z = Z, b = b.hat, G = G, SIMPLIFY = F)
   
   # Survival parameters (\gamma, \zeta)
   Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
@@ -105,7 +128,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   
 }
 
-EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, control = list()){
+EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, post.process = T, control = list()){
   start.time <- proc.time()[3]
   
   #' Parsing formula objects ----
@@ -156,7 +179,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, con
   if(!is.null(control$summax.override)) summax.override <- control$summax.override else summax.override <- F
   
   
-  if(debug){DEBUG.inits <<- params; DEBUG.dmats <<- dmats}
+  if(debug){DEBUG.inits <<- params; DEBUG.dmats <<- dmats; DEBUG.sv <<- sv; DEBUG.surv <<- surv}
   #' Gauss-hermite quadrature ----
   GH <- statmod::gauss.quad.prob(.gh, 'normal', sigma = .sigma)
   w <- GH$w; v <- GH$n
@@ -202,17 +225,55 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, con
     params <- params.new
     step.times[iter] <- update$t # Store timings, as this could be interesting(?)
   }
+  if(debug) DEBUG.Omega <<- Omega
   EMend <- proc.time()[3]
-  rtn <- list(coeffs = Omega,
+  out <- list(coeffs = Omega,
               EMtime = round(EMend - EMstart, 3),
               iter = iter,
-              comp.time <- round(proc.time()[3]-start.time, 3))
+              comp.time = round(proc.time()[3]-start.time, 3))
   modelInfo <- list(
     summax = summax, 
     forms = formulas
   )
-  rtn$modelInfo <- modelInfo
-  rtn$hazard <- cbind(ft = sv$ft, haz = l0)
-  rtn$stepmat <- cbind(iter = 1:iter, time = step.times)
-  rtn
+  out$modelInfo <- modelInfo
+  out$hazard <- cbind(ft = sv$ft, haz = l0)
+  out$stepmat <- cbind(iter = 1:iter, time = step.times)
+  
+  if(post.process){
+    message('\nCalculating SEs...')
+    start.time <- proc.time()[3]
+    #' Calculating \b and \Sigma at MLEs
+    b.hat <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
+      optim(b, joint_density, joint_density_ddb,
+            X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
+            S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
+            gamma = gamma, zeta = zeta, summax = summax, method = 'BFGS')$par
+    }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
+    l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
+    
+    Sigma <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
+      solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
+                              S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
+                              gamma = gamma, zeta = zeta, summax = summax, eps = 1e-3))
+    }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
+    l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
+  
+    # The Information matrix
+    I <- structure(vcov(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax),
+                   dimnames = list(names(params), names(params)))
+    I.inv <- tryCatch(solve(I), error = function(e) e)
+    if(inherits(I.inv, 'error')) I.inv <- structure(MASS::ginv(I),
+                                                    dimnames = dimnames(I))
+    out$SE <- sqrt(diag(I.inv))
+    out$vcov <- I
+    out$RE <- do.call(rbind, b)
+    out$postprocess.time <- round(proc.time()[3]-start.time, 2)
+    
+    #' Calculate the log-likelihood.
+    # Timing done separately as EMtime + postprocess.time is for EM + SEs.
+    out$logLik <- log.lik(Omega, dmats, b, surv, sv, l0u, l0i, summax)
+    out$lltime <- round(proc.time()[3] - start.time, 2) - out$postprocess.time
+  }
+  
+  out
 }

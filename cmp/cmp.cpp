@@ -308,7 +308,7 @@ mat joint_density_sdb(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Da
   return 0.5 * (out + out.t()); // Ensure symmetry
 }
 
-// 6. Defining updates for the survival pair (gamma, zeta)
+// Defining updates for the survival pair (gamma, zeta) ----------------
 // Define the conditional expectation and then take Score AND Hessian via forward differencing
 double Egammazeta(vec& gammazeta, vec& b, mat& Sigma,
                   rowvec& S, mat& SS, mat& Fu, rowvec& Fi, vec& haz, int Delta, vec& w, vec& v){
@@ -351,7 +351,7 @@ mat Hgammazeta(vec& gammazeta, vec& b, mat& Sigma,
   return 0.5 * (out + out.t());
 }
 
-// 7. Defining update to the baseline hazard lambda_0.
+// Defining update to the baseline hazard lambda_0 ---------------------
 // [[Rcpp::export]]
 mat lambdaUpdate(List survtimes, mat& ft, double gamma, vec& zeta,
                  List S, List Sigma, List b, vec& w, vec& v){
@@ -375,3 +375,23 @@ mat lambdaUpdate(List survtimes, mat& ft, double gamma, vec& zeta,
   }
   return store;
 }
+
+// Update for \delta ---------------------------------------------------
+// [[Rcpp::export]]
+mat getW2(List ABC, vec& V, vec& nu, mat& G){
+  int a = G.n_cols, m = G.n_rows;
+  vec A = ABC["A"];
+  vec B = ABC["B"];
+  vec C = ABC["C"];
+  mat out = zeros<mat>(a, a);
+  for(int g = 0; g < m; g++){
+    out += ((-pow(A[g], 2.0)/V[g]+C[g]) * pow(nu[g], 2.0)) * G.row(g).t() * G.row(g);
+  }
+  return -1.0 * out;
+}
+
+  
+  
+  
+  
+  

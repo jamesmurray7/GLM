@@ -252,26 +252,49 @@ calc.ABC <- function(mu, nu, lambda, summax){
   list(A = A, B = B, C = C)
 }
 
+calc2.ABC <- function(mu, nu, lambda, summax, tau, w, v){
+  # lambda <- lambda_uniroot_wrap(1e-6, 1e3, mu, nu, summax)
+  Z <- calcZ(log(lambda), nu, summax)
+  B <- E.lfactorialY(lambda, nu, Z, summax)
+  rhs <- numeric(length(mu))
+  for(l in 1:length(w)) rhs <- rhs + w[l] * mu * exp(tau * v[l]) * B
+  A <- E.YlfactorialY(lambda, nu, Z, summax) - rhs # mu * B
+  C <- V.lfactorialY(lambda, nu, Z, summax, B) # c is potentially needed in W2 matrix creation, remove if not!
+  list(A = A, B = B, C = C)
+}
+
 # Score for \beta and \delta ----------------------------------------------
-Sbeta <- function(beta, X, Y, Z, G, b, delta, summax){
-  mu <- exp(X %*% beta + Z %*% b)
-  nu <- exp(G %*% delta)
-  lambda <- lambda_uniroot_wrap(1e-6, 1e3, mu, nu, summax)
-  V <- V_mu_lambda(mu, lambda, nu, summax)
+# Sbeta <- function(beta, X, Y, Z, G, b, delta, summax){
+#   mu <- exp(X %*% beta + Z %*% b)
+#   nu <- exp(G %*% delta)
+#   lambda <- lambda_uniroot_wrap(1e-6, 1e3, mu, nu, summax)
+#   V <- V_mu_lambda(mu, lambda, nu, summax)
+#   if(length(mu) > 1) lhs <- diag(c(mu)) else lhs <- diag(mu)
+#   crossprod(lhs %*% X, ((Y-mu) / V))
+# }
+
+Sbeta <- function(X, Y, mu, nu, lambda, V){
   if(length(mu) > 1) lhs <- diag(c(mu)) else lhs <- diag(mu)
   crossprod(lhs %*% X, ((Y-mu) / V))
 }
 
 # This the same as forward differencing, and probably slightly more preferrable given it's analytic!
-getW1 <- function(X, Z, G, b, beta, delta, summax){
-  mu <- exp(X %*% beta + Z %*% b)
-  nu <- exp(G %*% delta)
-  lambda <- lambda_uniroot_wrap(1e-6, 1e3, mu, nu, summax)
-  V <- V_mu_lambda(mu, lambda, nu, summax)
+# getW1 <- function(X, Z, G, b, beta, delta, summax){
+#   mu <- exp(X %*% beta + Z %*% b)
+#   nu <- exp(G %*% delta)
+#   lambda <- lambda_uniroot_wrap(1e-6, 1e3, mu, nu, summax)
+#   V <- V_mu_lambda(mu, lambda, nu, summax)
+#   if(length(mu) > 1) lhs <- diag(c(mu^2)/c(V)) else lhs <- diag(mu^2/V)
+#   -crossprod(X, lhs) %*% X
+# }
+
+getW1 <- function(X, mu, nu, lambda, V){
   if(length(mu) > 1) lhs <- diag(c(mu^2)/c(V)) else lhs <- diag(mu^2/V)
   -crossprod(X, lhs) %*% X
 }
 
+
+# Correct, but no longer in use...
 Sdelta <- function(delta, X, Y, lY, Z, b, G, beta, summax){
   mu <- exp(X %*% beta + Z %*% b)
   nu <- exp(G %*% delta)
@@ -282,10 +305,6 @@ Sdelta <- function(delta, X, Y, lY, Z, b, G, beta, summax){
   if(length(nu) > 1) lhs <- diag(c(nu)) else lhs <- diag(nu)
   crossprod(lhs %*% G, Snu)
 }
-
-#' MESSY -- TEMP ##########################################################
-
-
 
 # Taking difference -------------------------------------------------------
 difference <- function(params.old, params.new, type){
@@ -301,6 +320,40 @@ difference <- function(params.old, params.new, type){
   rtn
 }
 
+
+# Calculating the log-likelihood ------------------------------------------
+log.lik <- function(coeffs, dmats, b, surv, sv, l0u, l0i, summax){
+  # joint density - REs; Marginal ll of Y(s) added to f(T_i,\Delta_i|...).
+  Y <- dmats$Y; X <- dmats$X; Z <- dmats$Z; G <- dmats$G; lY <- lapply(Y, lfactorial)
+  beta <- coeffs$beta; D <- coeffs$D; delta <- coeffs$delta; zeta <- coeffs$zeta; gamma <- coeffs$gamma
+  S <- sv$S; SS <- sv$SS; Delta <- surv$Delta
+  Fu <- sv$Fu; Fi <- sv$Fi; 
+  q <- ncol(Z[[1]]); K <- 1; n <- length(Z)
+  
+  #' "Full" joint density ----
+  ll1 <- numeric(n)
+  for(i in 1:n){ # For some reason mapply() not liking this as it was in Multi-test(?)
+    ll1[i] <- -joint_density(b[[i]],X[[i]],Y[[i]],lY[[i]],Z[[i]],G[[i]],beta, delta,D,S[[i]],SS[[i]],Fi[[i]], Fu[[i]],l0i[[i]],l0u[[i]],Delta[[i]],gamma,zeta,100)
+  }
+  
+  #' Only the joint density associated with REs ----
+  ll2 <- mapply(function(b) mvtnorm::dmvnorm(b, rep(0, q), D, log = T), b = b)
+  #' Calculate the marginal ll of the Yks and the survival density.
+  out <- sum(ll1 - ll2)
+  
+  #' Calculate AIC and BIC
+  N <- sum(sapply(Y, length))
+  P <- ncol(X[[1]]-1)
+  Ps <- ncol(S[[1]])
+  df <- P + Ps + 2 * K + (q * (q + 1)/2)
+  
+  attr(out, 'df') <- df; attr(out, 'N') <- N
+  attr(out, 'AIC') <- -2 * c(out) + 2 * df
+  attr(out, 'BIC') <- -2 * c(out) + log(N) * df
+  out
+}
+
+
 #' ########################################################################
 # Misc functions ----------------------------------------------------------
 #' ########################################################################
@@ -309,4 +362,5 @@ difference <- function(params.old, params.new, type){
 .summax <- function(x) ceiling(max(x) + 20 * sqrt(.safevar(x)))
 .any <- function(x, f) any(f(x))
 
+plot.stepmat <- function(fit) plot(fit$stepmat, type = 'o', col = 'blue', ylab = 'Time (s)', xlab = 'Iteration #', pch = 20)
 

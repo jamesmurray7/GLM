@@ -118,39 +118,49 @@ Hd <- mapply(function(X, Y, lY, Z, G, b){
   GLMMadaptive:::fd_vec(delta, Sdelta, X = X, Y = Y, lY = lY, Z = Z, b = b, G = G, beta = beta, summax = 100)
 }, X = X, Y = Y, lY=lY, Z = Z, G = G, b = b.hat, SIMPLIFY = F)
 
+delta - solve(Reduce('+', Hd), Reduce('+', Sd))
+
+
 # Testing for W2 from Huang paper ...
-m <- mus[[2]]
-n <- nus[[2]]
-l <- lambda_uniroot_wrap(1e-6, 1e3, m, n, 10)
-v <- V_mu_lambda(m, l, n, 50)
-ABC <- calc.ABC(m,n,l,100)
-one <- ABC$A/v+ABC$C
-nu.prime <- diag(x=c(n),nr=length(n),nc=length(n)) %*% g
+# Get all ABC vectors
+mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b.hat, SIMPLIFY = F)
+nus <- mapply(function(G) exp(G %*% delta), G = G, SIMPLIFY = F)
+lambdas <- mapply(function(mu, nu) lambda_uniroot_wrap(1e-6, 1e3, mu, nu, 10), mu = mus, nu = nus, SIMPLIFY = F)
 
-# From https://github.com/thomas-fung/mpcmp/blob/main/R/fit_glm_cmp_vary_nu.R
-# update_score <- ((Aterm * (y - muold) / variances - lgamma(y + 1) + logfactorialy) * nuold) %*% S
-s <- crossprod(((ABC$A * (Y[[2]] - m) / v - lgamma(Y[[2]] + 1) + ABC$B) * n),g)
-W2 <- matrix(0, ncol(g), ncol(g))
-for(j in 1:length(n)){
-  W2 <- W2 - ((-(ABC$A[j])^2/v[j]+ABC$C[j])*n[j]^2)*g[j,] %*% t(g[j,])
-}
+ABCs <- mapply(calc.ABC, mu = mus, nu = nus, lambda = lambdas, summax = 100, SIMPLIFY = F)
+Vs <- mapply(V_mu_lambda, mu = mus, lambda = lambdas, nu = nus, summax = 100, SIMPLIFY = F)
 
+Sd2 <- mapply(function(ABC, Y, mu, V, nu, G){
+  crossprod(((ABC$A * (Y - mu) / V - lgamma(Y + 1) + ABC$B) * nu), G)
+}, ABC = ABCs, Y = Y, mu = mus, V = Vs, nu = nus, G = G) ## VERY similar to Sd as calculated above! A matter of benchmarking ...
 
-W2 <- mapply(function(X, Z, G, b){
-  mu <- exp(X %*% beta + Z %*% b)
-  nu <- exp(G %*% delta)
-  lambda <- lambda_uniroot_wrap(1e-6, 1e3, mu, nu, 50)
-  V <- V_mu_lambda(mu, lambda, nu, 50)
-  ABC <- calc.ABC(mu, nu, lambda, 50)
-  lhs <- (-(ABC$A)^2/V + ABC$C) # brace in Huang (2016)
-  -crossprod(crossprod(lhs*nu^2,G))
-}, X = X, Z = Z, G = G, b = b.hat, SIMPLIFY = F)
+Hd2 <- mapply(function(ABC, nu, V, G){
+  W2 <- matrix(0, ncol(G), ncol(G))
+  for(j in 1:nrow(G)){
+    W2 <- W2 + ((-(ABC$A[j])^2/V[j]+ABC$C[j])*nu[j]^2)*G[j,] %*% t(G[j,])
+  }
+  -W2
+}, ABC = ABCs, nu = nus, V = Vs, G = G, SIMPLIFY = F)
 
 Hd[[1]]
-W2[[1]]
+Hd2[[1]]
+
 
 delta - solve(Reduce('+', Hd), Reduce('+', Sd))
-delta - solve(Reduce('+', W2), Reduce('+', Sd))
+delta - solve(Reduce('+', Hd2), rowSums(Sd2))
+
+GH <- statmod::gauss.quad.prob(3,'normal')
+w <- GH$w;v <- GH$n
+tau <- mapply(function(Z, S) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), Z = Z, S = Sigma, SIMPLIFY = F)
+ABCs2 <- mapply(calc2.ABC, mus, nus, lambdas, 100, tau, w, v, SIMPLIFY = F)
+calc2.ABC(mus[[1]], nus[[1]], lambdas[[1]], 100, tau[[1]], w, v)
+
+Sd2q <- mapply(function(ABC, Y, mu, V, nu, G, tau){
+  lhs <- numeric(length(mu))
+  for(l in 1:length(w)) lhs <- lhs + w[l] * ABC$A * (Y - mu * exp(tau * v[l])) / V
+  crossprod(((lhs - lgamma(Y + 1) + ABC$B) * nu), G)
+}, ABC = ABCs, Y = Y, mu = mus, V = Vs, nu = nus, G = G, tau= tau, SIMPLIFY = F) ## VERY similar to Sd as calculated above! A matter of benchmarking ...
+
 #'------------------------------------------
 #'  OLD VERSION BELOW ----------------------
 #'------------------------------------------
