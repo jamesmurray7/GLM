@@ -61,11 +61,9 @@ vcov <- function(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax){
   #' Score for the fixed effects, \beta 
   Sb <- mapply(Sbeta, X, Y, mus, nus, lambdas, V, SIMPLIFY = F)
   #' Score for the dispersion parameter(s), \delta 
-  Sd <- mapply(function(ABC, Y, mu, V, nu, G, tau){
-    lhs <- numeric(length(mu))
-    for(l in 1:length(w)) lhs <- lhs + w[l] * ABC$A * (Y - mu * exp(tau * v[l])) / V
-    crossprod(((lhs - lgamma(Y + 1) + ABC$B) * nu), G)
-  }, ABC = ABC, Y = Y, mu = mus, V = V, nu = nus, G = G, tau= tau, SIMPLIFY = F)
+  Sd <- mapply(function(ABC, Y, mu, V, nu, G){
+    crossprod(((ABC$A * (Y - mu) / V - lgamma(Y + 1) + ABC$B) * nu), G)
+  }, ABC = ABC, Y = Y, mu = mus, V = V, nu = nus, G = G, SIMPLIFY = F)
 
   #' Survival parameters (\gamma, \zeta)
   Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){

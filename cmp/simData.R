@@ -170,7 +170,7 @@ simData_joint <- function(n = 250, ntms = 10, summax = 100,  fup = 5,
   sf <- 1
   Y <- try(.rcomp(lambdas, nu, summax), silent = T)
   while('try-error' %in% class(Y)){
-    sf <- sf * .90
+    sf <- sf * 1.1
     cat(sprintf("Attempting with new summax: %.1f\n", sf * summax))
     Y <- try(.rcomp(lambdas, nu, summax * sf), silent = T)
   }

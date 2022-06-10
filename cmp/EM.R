@@ -67,14 +67,14 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   # }, X = X, Y = Y, Z = Z, G = G, b = b.hat, SIMPLIFY = F)
   
   # \delta
-  # Sd <- mapply(function(ABC, Y, mu, V, nu, G){
-  #   crossprod(((ABC$A * (Y - mu) / V - lgamma(Y + 1) + ABC$B) * nu), G)
-  # }, ABC = ABC, Y = Y, mu = mus, V = V, nu = nus, G = G)
-  Sd <- mapply(function(ABC, Y, mu, V, nu, G, tau){
-    lhs <- numeric(length(mu))
-    for(l in 1:length(w)) lhs <- lhs + w[l] * ABC$A * (Y - mu * exp(tau * v[l])) / V
-    crossprod(((lhs - lgamma(Y + 1) + ABC$B) * nu), G)
-  }, ABC = ABC, Y = Y, mu = mus, V = V, nu = nus, G = G, tau= tau, SIMPLIFY = F)
+  Sd <- mapply(function(ABC, Y, mu, V, nu, G){
+    crossprod(((ABC$A * (Y - mu) / V - lgamma(Y + 1) + ABC$B) * nu), G)
+  }, ABC = ABC, Y = Y, mu = mus, V = V, nu = nus, G = G, SIMPLIFY = F)
+  # Sd <- mapply(function(ABC, Y, mu, V, nu, G, tau){
+  #   lhs <- numeric(length(mu))
+  #   for(l in 1:length(w)) lhs <- lhs + w[l] * ABC$A * (Y - mu * exp(tau * v[l])) / V
+  #   c(crossprod(((lhs - lgamma(Y + 1) + ABC$B) * nu), G))
+  # }, ABC = ABC, Y = Y, mu = mus, V = V, nu = nus, G = G, tau= tau, SIMPLIFY = F)
   Hd <- mapply(getW2, ABC, V, nus, G, SIMPLIFY = F)
   # tau <- mapply(function(Z, S) sqrt(diag(tcrossprod(Z %*% S, Z))), Z = Z, S = Sigma, SIMPLIFY = F)
   # Sd <- mapply(function(X, Y, lY, Z, b, G){
@@ -102,7 +102,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   
   # \beta and \delta
   beta.new <- beta - solve(Reduce('+', Hb), Reduce('+', Sb))
-  delta.new <- delta - solve(Reduce('+', Hd), Reduce('+', Sd))
+  delta.new <- delta - solve(Reduce('+', Hd), c(Reduce('+', Sd)))
 
   # Survival parameters (gamma, zeta)
   gammazeta.new <- c(gamma, zeta) - solve(Reduce('+', Hgz), rowSums(Sgz))
