@@ -382,4 +382,72 @@ mat getW2(List ABC, vec& V, vec& nu, mat& G){
   }
   return -1.0 * out;
 }
+
+// Defining updates for the survival pair (gamma, zeta) ----------------
+// Define the conditional expectation and then take Score AND Hessian via forward differencing
+double Egammazeta(vec& gammazeta, vec& b, mat& Sigma,
+                  rowvec& S, mat& SS, mat& Fu, rowvec& Fi, vec& haz, int Delta, vec& w, vec& v){
+  double g = as_scalar(gammazeta.head(1)); // gamma will always be scalar and the first element
+  vec z = gammazeta.subvec(1, gammazeta.size() - 1);  // with the rest of the vector constructed by zeta
+  // determine tau
+  vec tau = pow(g, 2.0) * diagvec(Fu * Sigma * Fu.t());
+  double rhs = 0.0;
+  for(int l = 0; l < w.size(); l++){
+    rhs += w[l] * as_scalar(haz.t() * exp(SS * z + Fu * (g * b) + v[l] * pow(tau, 0.5)));
+  }
+  return as_scalar(Delta * (S * z + Fi * (g * b)) - rhs);
+}
+// [[Rcpp::export]]
+vec Sgammazeta(vec& gammazeta, vec& b, mat& Sigma,
+               rowvec& S, mat& SS, mat& Fu, rowvec& Fi, vec& haz, int Delta, vec& w, vec& v, long double eps){
+  vec out = vec(gammazeta.size());
+  double f0 = Egammazeta(gammazeta, b, Sigma, S, SS, Fu, Fi, haz, Delta, w, v);
+  for(int i = 0; i < gammazeta.size(); i++){
+    vec ge = gammazeta;
+    double xi = std::max(ge[i], 1.0);
+    ge[i] = gammazeta[i] + xi * eps;
+    double fdiff = Egammazeta(ge, b, Sigma, S, SS, Fu, Fi, haz, Delta, w, v) - f0;
+    out[i] = fdiff/(ge[i]-gammazeta[i]);
+  }
+  return out;
+}
+// [[Rcpp::export]]
+mat Hgammazeta(vec& gammazeta, vec& b, mat& Sigma,
+               rowvec& S, mat& SS, mat& Fu, rowvec& Fi, vec& haz, int Delta, vec& w, vec& v, long double eps){
+  mat out = zeros<mat>(gammazeta.size(), gammazeta.size());
+  vec f0 = Sgammazeta(gammazeta, b, Sigma, S, SS, Fu, Fi, haz, Delta, w, v, eps);
+  for(int i = 0; i < gammazeta.size(); i++){
+    vec ge = gammazeta;
+    double xi = std::max(ge[i], 1.0);
+    ge[i] = gammazeta[i] + xi * eps;
+    vec fdiff = Sgammazeta(ge, b, Sigma, S, SS, Fu, Fi, haz, Delta, w, v, eps) - f0;
+    out.col(i) = fdiff/(ge[i]-gammazeta[i]);
+  }
+  return 0.5 * (out + out.t());
+}
+
+// Defining update to the baseline hazard lambda_0 ---------------------
+// [[Rcpp::export]]
+mat lambdaUpdate(List survtimes, mat& ft, double gamma, vec& zeta,
+                 List S, List Sigma, List b, vec& w, vec& v){
+  int gh = w.size();
+  int id = b.size();
+  mat store = zeros<mat>(ft.n_rows, id);
+  for(int i = 0; i < id; i++){
+    vec survtimes_i = survtimes[i];
+    mat Sigma_i = Sigma[i];
+    vec b_i = b[i];
+    rowvec S_i = S[i];
+    for(int j = 0; j < survtimes_i.size(); j++){
+      rowvec Fst = ft.row(j);
+      double tau = as_scalar(pow(gamma, 2.0) * Fst * Sigma_i * Fst.t());
+      vec rhs = gamma * b_i; //vec(b_i.size());
+      double mu = as_scalar(exp(S_i * zeta + Fst * rhs));
+      for(int l = 0; l < gh; l++){
+        store(j, i) += as_scalar(w[l] * mu * exp(v[l] * sqrt(tau)));
+      }
+    }
+  }
+  return store;
+}
   
