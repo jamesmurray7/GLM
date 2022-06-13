@@ -1,0 +1,8 @@
+rm(list=ls())
+sourceCpp('grid-test.cpp')
+lambda.mat <- gen_lambda_mat(1000,10)
+V.mat <- gen_V_mat(1000, 100, lambda.mat)
+logZ.mat <- gen_logZ_mat(1000, 100, lambda.mat)
+save(lambda.mat, file = 'data.nosync/lambda.RData')
+save(V.mat, file = 'data.nosync/V.RData')
+save(logZ.mat, file = 'data.nosync/logZ.RData')
