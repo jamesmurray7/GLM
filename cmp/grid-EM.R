@@ -15,13 +15,14 @@ source('inits.R')
 source('ll.R')
 source('grid-vcov.R')
 sourceCpp('grid-test.cpp')
-
-# Load parameter matrices
-load('data.nosync/lambda.RData')
-load('data.nosync/V.RData')
-load('data.nosync/logZ.RData')
 vech <- function(x) x[lower.tri(x, T)]
+# Load parameter matrices
+save.dir <- unname(ifelse(Sys.info()[1]=='Linux', '/data/c0061461/cmp-grids/', './data.nosync/'))
+load(paste0(save.dir, 'lambda.RData'))
+load(paste0(save.dir, 'V.RData'))
+load(paste0(save.dir, 'logZ.RData'))
 
+# Updated functions to take mean/variances (these from Thomas Fung's github.)
 E.lfactorialY <- function(lambda, nu, Z, summax){ # mu, nu, vectors
   out <- matrix(0, nr = length(lambda), nc = summax)
   for(j in 1:summax){
@@ -92,36 +93,37 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b.hat, SIMPLIFY = F)
   nus <- mapply(function(G) exp(G %*% delta), G = G, SIMPLIFY = F)
   mus2 <- lapply(mus, mu_fix)
+  nu2 <- lapply(nus, mu_fix)
   
   #' Grid lookups ----
   lambdas <- mapply(function(mu, nu){
     m <- (mu/0.01) - 0.01; n <- (nu/0.01) - 0.01
     getlambda(m, n, lambda.mat)
-  }, mu = mus2, nu = nus, SIMPLIFY = F)
+  }, mu = mus2, nu = nus2, SIMPLIFY = F)
   
   Vs <- mapply(function(mu, nu){
     m <- (mu/0.01) - 0.01; n <- (nu/0.01) - 0.01
     getV(m, n, V.mat)
-  }, mu = mus2, nu = nus, SIMPLIFY = F)
+  }, mu = mus2, nu = nus2, SIMPLIFY = F)
   
   logZ <- mapply(function(mu, nu){
     m <- (mu/0.01) - 0.01; n <- (nu/0.01) - 0.01
     getlogZ(m, n, logZ.mat)
-  }, mu = mus2, nu = nus, SIMPLIFY = F)
+  }, mu = mus2, nu = nus2, SIMPLIFY = F)
   ABC <- mapply(calc.ABC, mus2, nus, lambdas, logZ, 100, SIMPLIFY=F)
 
   # D
   D.update <- mapply(function(Sigma, b) Sigma + tcrossprod(b), Sigma = Sigma, b = b.hat, SIMPLIFY = F)
   
   # \beta
-  Sb <- mapply(Sbeta, X, Y, mus2, nus, lambdas, Vs, SIMPLIFY = F)
-  Hb <- mapply(getW1, X, mus2, nus, lambdas, Vs, SIMPLIFY = F)
+  Sb <- mapply(Sbeta, X, Y, mus2, nus2, lambdas, Vs, SIMPLIFY = F)
+  Hb <- mapply(getW1, X, mus2, nus2, lambdas, Vs, SIMPLIFY = F)
   
   # \delta
   Sd <- mapply(function(ABC, Y, mu, V, nu, G){
     crossprod(((ABC$A * (Y - mu) / V - lgamma(Y + 1) + ABC$B) * nu), G)
-  }, ABC = ABC, Y = Y, mu = mus2, V = Vs, nu = nus, G = G, SIMPLIFY = F)
-  Hd <- mapply(getW2, ABC, Vs, nus, G, SIMPLIFY = F)
+  }, ABC = ABC, Y = Y, mu = mus2, V = Vs, nu = nus2, G = G, SIMPLIFY = F)
+  Hd <- mapply(getW2, ABC, Vs, nus2, G, SIMPLIFY = F)
   
   # Survival parameters (\gamma, \zeta)
   Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){

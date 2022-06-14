@@ -220,7 +220,12 @@ mat gen_lambda_mat(int N, int summax){
   mat out = zeros<mat>(N, N);
   for(int m = 0; m < N; m ++){
     for(int n = 0; n < N; n++){
-      out(m, n) += lambda_uniroot(1e-6, 1e3, mus[m], nus[n], summax);
+      double l = lambda_uniroot(1e-6, 1e3, mus[m], nus[n], summax);
+      if(l == 1e-6){
+        out(m, n) += out(m-1, n);
+      }else{
+        out(m, n) += l;  
+      }
     }
     if (m % 100 == 0) Rcout << m << std::endl;
   }
@@ -341,8 +346,8 @@ vec joint_density_ddb(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Da
   vec loglambda = log(lambda);
   vec V = getV(m, n, Vmat);
   //vec logZ = getlogZ(m, n, logZmat);
-  mat lhs_mat = diagmat(mu2) * Z;        // Could just be Z.t() * y-mu/V, but think it should be this.
-  vec Score = lhs_mat.t() * ((Y-mu) / V);   //                  **                                     
+  mat lhs_mat = diagmat(mu2) * Z;            // Could just be Z.t() * y-mu/V, but think it should be this.
+  vec Score = lhs_mat.t() * ((Y-mu2) / V);   //                  **                                     
   
   return -Score + -1.0 * (-D.i() * b + Delta * (Fi.t() * gamma) - 
                           gamma * (Fu.t() * (haz.t() % exp(SS * zeta + Fu * (gamma * b)))));
