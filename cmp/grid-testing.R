@@ -8,9 +8,13 @@ source('survFns.R')
 sourceCpp('grid-test.cpp')
 
 # Load parameter matrices
-load('data.nosync/lambda.RData')
-load('data.nosync/V.RData')
-load('data.nosync/logZ.RData')
+save.dir <- unname(ifelse(Sys.info()[1]=='Linux', '/data/c0061461/cmp-grids/', './data.nosync/'))
+# load(paste0(save.dir, 'lambda.RData'))
+# load(paste0(save.dir, 'V.RData'))     
+# load(paste0(save.dir, 'logZ.RData'))      #  Choose my or Pete's \lambda grid and associated quantities.
+assign('lambda.mat', get(load(paste0(save.dir, 'grid_1K.RData'))))
+load(paste0(save.dir, 'V_Pete.RData'))
+load(paste0(save.dir, 'logZ_Pete.RData'))
 
 # Data and data matrices
 test <- simData_joint(n = 250, delta = c(-0.5, 0.1), ntms = 15, theta = c(-3, .25))
@@ -62,36 +66,40 @@ l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
 Sigma <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
   solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
                           S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-                          gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, eps = 1e-3))
+                          gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, eps = 0.05))
 }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
 l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
 
 # Check \Sigma for any non-pos-definite-ness 
-which(sapply(Sigma, det) < 0)
-which(apply(sapply(Sigma, diag), 1, function(x) any(x<0)), arr.ind = T)
-
+(inds <- which(sapply(Sigma, det) < 0))
+lapply(inds, function(i){ # i = 1
+  x <- cbind(c(mus2[[i]]), c(nus2[[i]]), c(lambdas[[i]]), c(Vs[[i]]), c(logZ[[i]]))
+  colnames(x) <- c('mu', 'nu', 'lambda', 'V', 'logZ')
+  x
+})
 
 # Update for \beta --------------------------------------------------------
 mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b.hat, SIMPLIFY = F)
 mus2 <- lapply(mus, mu_fix)
+nus2 <- lapply(nus, mu_fix)
 lambdas <- mapply(function(mu, nu){
-  m <- (mu/0.01) - 0.01; n <- (nu/0.01) - 0.01
+  m <- (mu/0.01) - 1; n <- (nu/0.01) - 1
   getlambda(m, n, lambda.mat)
-}, mu = mus2, nu = nus, SIMPLIFY = F)
+}, mu = mus2, nu = nus2, SIMPLIFY = F)
 
 Vs <- mapply(function(mu, nu){
-  m <- (mu/0.01) - 0.01; n <- (nu/0.01) - 0.01
+  m <- (mu/0.01) - 1; n <- (nu/0.01) - 1
   getV(m, n, V.mat)
-}, mu = mus2, nu = nus, SIMPLIFY = F)
+}, mu = mus2, nu = nus2, SIMPLIFY = F)
 
 logZ <- mapply(function(mu, nu){
-  m <- (mu/0.01) - 0.01; n <- (nu/0.01) - 0.01
+  m <- (mu/0.01) - 1; n <- (nu/0.01) - 1
   getV(m, n, logZ.mat)
-}, mu = mus2, nu = nus, SIMPLIFY = F)
+}, mu = mus2, nu = nus2, SIMPLIFY = F)
 
 
-Sb <- mapply(Sbeta, X, Y, mus2, nus, lambdas, Vs, SIMPLIFY = F)
-Hb <- mapply(getW1, X, mus, nus, lambdas, Vs, SIMPLIFY = F)
+Sb <- mapply(Sbeta, X, Y, mus2, nus2, lambdas, Vs, SIMPLIFY = F)
+Hb <- mapply(getW1, X, mus2, nus2, lambdas, Vs, SIMPLIFY = F)
 beta - solve(Reduce('+', Hb), Reduce('+', Sb))
 
 # Update for \delta -------------------------------------------------------
@@ -127,11 +135,11 @@ calc.ABC <- function(mu, nu, lambda, Z, summax){ # NB: Z is log(Z)...
   list(A = A, B = B, C = C)
 }
 
-ABC <- mapply(calc.ABC, mus2, nus, lambdas, logZ, 100, SIMPLIFY=F)
+ABC <- mapply(calc.ABC, mus2, nus2, lambdas, logZ, 100, SIMPLIFY=F)
 
 Sd <- mapply(function(ABC, Y, mu, V, nu, G){
   crossprod(((ABC$A * (Y - mu) / V - lgamma(Y + 1) + ABC$B) * nu), G)
-}, ABC = ABC, Y = Y, mu = mus2, V = Vs, nu = nus, G = G, SIMPLIFY = F)
-Hd <- mapply(getW2, ABC, Vs, nus, G, SIMPLIFY = F)
+}, ABC = ABC, Y = Y, mu = mus2, V = Vs, nu = nus2, G = G, SIMPLIFY = F)
+Hd <- mapply(getW2, ABC, Vs, nus2, G, SIMPLIFY = F)
 
 delta-solve(Reduce('+', Hd), c(Reduce('+', Sd)))
