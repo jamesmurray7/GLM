@@ -18,7 +18,7 @@ sourceCpp('grid-test.cpp')
 vech <- function(x) x[lower.tri(x, T)]
 # Load parameter matrices
 save.dir <- unname(ifelse(Sys.info()[1]=='Linux', '/data/c0061461/cmp-grids/', './data.nosync/'))
-load(paste0(save.dir, 'lambda.RData'))
+load(paste0(save.dir, 'lambda.RData')) # Change these to me or Pete grid
 load(paste0(save.dir, 'V.RData'))
 load(paste0(save.dir, 'logZ.RData'))
 
@@ -74,7 +74,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   Sigma <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
     solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
                             S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-                            gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, eps = 1e-3))
+                            gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, eps = 0.01))
   }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
   l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
   if(debug){DEBUG.b.hat <<- b.hat; DEBUG.Sigma <<- Sigma}
@@ -93,24 +93,24 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b.hat, SIMPLIFY = F)
   nus <- mapply(function(G) exp(G %*% delta), G = G, SIMPLIFY = F)
   mus2 <- lapply(mus, mu_fix)
-  nu2 <- lapply(nus, mu_fix)
+  nus2 <- lapply(nus, mu_fix)
   
   #' Grid lookups ----
   lambdas <- mapply(function(mu, nu){
-    m <- (mu/0.01) - 0.01; n <- (nu/0.01) - 0.01
+    m <- (mu/0.01) - 1; n <- (nu/0.01) - 1
     getlambda(m, n, lambda.mat)
   }, mu = mus2, nu = nus2, SIMPLIFY = F)
   
   Vs <- mapply(function(mu, nu){
-    m <- (mu/0.01) - 0.01; n <- (nu/0.01) - 0.01
+    m <- (mu/0.01) - 1; n <- (nu/0.01) - 1
     getV(m, n, V.mat)
   }, mu = mus2, nu = nus2, SIMPLIFY = F)
   
   logZ <- mapply(function(mu, nu){
-    m <- (mu/0.01) - 0.01; n <- (nu/0.01) - 0.01
+    m <- (mu/0.01) - 1; n <- (nu/0.01) - 1
     getlogZ(m, n, logZ.mat)
   }, mu = mus2, nu = nus2, SIMPLIFY = F)
-  ABC <- mapply(calc.ABC, mus2, nus, lambdas, logZ, 100, SIMPLIFY=F)
+  ABC <- mapply(calc.ABC, mus2, nus2, lambdas, logZ, 100, SIMPLIFY=F)
 
   # D
   D.update <- mapply(function(Sigma, b) Sigma + tcrossprod(b), Sigma = Sigma, b = b.hat, SIMPLIFY = F)

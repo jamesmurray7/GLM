@@ -3,7 +3,9 @@ library(survival)
 library(Rcpp)
 library(RcppArmadillo)
 library(glmmTMB)
+source('_Functions.R')
 source('ll.R')
+source('simData.R')
 source('survFns.R')
 sourceCpp('grid-test.cpp')
 
@@ -47,10 +49,31 @@ bl <- lapply(1:n, function(i) as.numeric(b[i,]))
 D <- matrix(glmmTMB::VarCorr(fitP)$cond$id,2,2)
 lY <- lapply(Y, lfactorial)
 mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = bl, SIMPLIFY = F)
+mus2 <- lapply(mus, mu_fix)
 nus <- mapply(function(G) exp(G %*% delta), G = G, SIMPLIFY = F)
+nus2 <- lapply(nus, mu_fix)
 
 # See plot of min and max values
 plot(do.call(rbind, lapply(mus, range)), pch = 20,xlab='min',ylab='max'); abline(h=10,v=10,lty=5,col='red')
+
+# Log-likelihood at initial conditions ----
+lambdas <- mapply(function(mu, nu){
+  m <- (mu/0.01) - 1; n <- (nu/0.01) - 1
+  getlambda(m, n, lambda.mat)
+}, mu = mus2, nu = nus2, SIMPLIFY = F)
+
+Vs <- mapply(function(mu, nu){
+  m <- (mu/0.01) - 1; n <- (nu/0.01) - 1
+  getV(m, n, V.mat)
+}, mu = mus2, nu = nus2, SIMPLIFY = F)
+
+logZ <- mapply(function(mu, nu){
+  m <- (mu/0.01) - 1; n <- (nu/0.01) - 1
+  getV(m, n, logZ.mat)
+}, mu = mus2, nu = nus2, SIMPLIFY = F)
+
+log.lik <- sum(mapply(function(l,n,Z,Y,lY) ll_cmp(log(l), n, Z, Y, lY), l = lambdas, n = nus2, Z = logZ, Y = Y, lY = lY))
+ll.old <- min(log.lik/2, log.lik * 2)
 
 # Optim for b.hat
 # bhat
@@ -66,7 +89,7 @@ l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
 Sigma <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
   solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
                           S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-                          gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, eps = 0.05))
+                          gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, eps = 0.01))
 }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
 l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
 
@@ -82,6 +105,7 @@ lapply(inds, function(i){ # i = 1
 mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b.hat, SIMPLIFY = F)
 mus2 <- lapply(mus, mu_fix)
 nus2 <- lapply(nus, mu_fix)
+# Get lambda, V and logZ; NB the functions used are all the same, so could do with a rewrite!
 lambdas <- mapply(function(mu, nu){
   m <- (mu/0.01) - 1; n <- (nu/0.01) - 1
   getlambda(m, n, lambda.mat)
@@ -100,7 +124,7 @@ logZ <- mapply(function(mu, nu){
 
 Sb <- mapply(Sbeta, X, Y, mus2, nus2, lambdas, Vs, SIMPLIFY = F)
 Hb <- mapply(getW1, X, mus2, nus2, lambdas, Vs, SIMPLIFY = F)
-beta - solve(Reduce('+', Hb), Reduce('+', Sb))
+(beta.new <- beta - solve(Reduce('+', Hb), Reduce('+', Sb)))
 
 # Update for \delta -------------------------------------------------------
 E.lfactorialY <- function(lambda, nu, Z, summax){ # mu, nu, vectors
@@ -142,4 +166,40 @@ Sd <- mapply(function(ABC, Y, mu, V, nu, G){
 }, ABC = ABC, Y = Y, mu = mus2, V = Vs, nu = nus2, G = G, SIMPLIFY = F)
 Hd <- mapply(getW2, ABC, Vs, nus2, G, SIMPLIFY = F)
 
-delta-solve(Reduce('+', Hd), c(Reduce('+', Sd)))
+(delta.new <- delta-solve(Reduce('+', Hd), c(Reduce('+', Sd))))
+# update mus, lambdas, logZ
+mus <- mapply(function(X, Z, b) exp(X %*% beta.new + Z %*% b), X = X, Z = Z, b = b.hat, SIMPLIFY = F)
+nus <- mapply(function(G) G %*% delta.new, G = G, SIMPLIFY = F)
+mus2 <- lapply(mus, mu_fix)
+nus2 <- lapply(nus, mu_fix)
+lambdas <- mapply(function(mu, nu){
+  m <- (mu/0.01) - 1; n <- (nu/0.01) - 1
+  getlambda(m, n, lambda.mat)
+}, mu = mus2, nu = nus2, SIMPLIFY = F)
+logZ <-  mapply(function(mu, nu){
+  m <- (mu/0.01) - 1; n <- (nu/0.01) - 1
+  getlambda(m, n, logZ.mat)
+}, mu = mus2, nu = nus2, SIMPLIFY = F)
+
+
+ll.new <- sum(mapply(function(l,n,Z,Y,lY) ll_cmp(log(l), n, Z, Y, lY), l = lambdas, n = nus2, Z = logZ, Y = Y, lY = lY))
+n.half <- 0
+while(ll.new < ll.old && n.half <= 20 && max(delta.new - delta) > 1e-6){
+  n.half <- n.half + 1
+  beta.new <- (beta.new + beta)/2
+  delta.new <- (delta.new + delta)/2
+  mus <- mapply(function(X, Z, b) exp(X %*% beta.new + Z %*% b), X = X, Z = Z, b = b.hat, SIMPLIFY = F)
+  nus <- mapply(function(G) G %*% delta.new, G = G, SIMPLIFY = F)
+  mus2 <- lapply(mus, mu_fix)
+  nus2 <- lapply(nus, mu_fix)
+  lambdas <- mapply(function(mu, nu){
+    m <- (mu/0.01) - 1; n <- (nu/0.01) - 1
+    getlambda(m, n, lambda.mat)
+  }, mu = mus2, nu = nus2, SIMPLIFY = F)
+  logZ <-  mapply(function(mu, nu){
+    m <- (mu/0.01) - 1; n <- (nu/0.01) - 1
+    getlambda(m, n, logZ.mat)
+  }, mu = mus2, nu = nus2, SIMPLIFY = F)
+  ll.new <- sum(mapply(function(l,n,Z,Y,lY) ll_cmp(log(l), n, Z, Y, lY), l = lambdas, n = nus2, Z = logZ, Y = Y, lY = lY))
+  cat(sprintf("%d: delta.new: (%.3f, %.3f)", n.half, delta.new[1], delta.new[2]), '\n')
+}

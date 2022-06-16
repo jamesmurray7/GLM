@@ -215,7 +215,7 @@ vec round_hundreth(vec& x){
 
 //[[Rcpp::export]]
 mat gen_lambda_mat(int N, int summax){
-  vec mus = linspace(0.01, 10.00, N);
+  vec mus = linspace((1/((double)N/10.0), 10.00, N);
   vec nus = mus;
   mat out = zeros<mat>(N-1, N);
   for(int m = 0; m < (N-1); m ++){
