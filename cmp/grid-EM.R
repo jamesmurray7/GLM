@@ -4,7 +4,6 @@
 #' This largely based on my PBC-case-study/EM, inits, _Functions.R files
 #' ######
 
-rm(list=ls())
 library(survival)
 library(Rcpp)
 library(RcppArmadillo)
@@ -18,9 +17,13 @@ sourceCpp('grid-test.cpp')
 vech <- function(x) x[lower.tri(x, T)]
 # Load parameter matrices
 save.dir <- unname(ifelse(Sys.info()[1]=='Linux', '/data/c0061461/cmp-grids/', './data.nosync/'))
-load(paste0(save.dir, 'lambda.RData')) # Change these to me or Pete grid
-load(paste0(save.dir, 'V.RData'))
-load(paste0(save.dir, 'logZ.RData'))
+if(!"N"%in%ls()) message("======\n======\n======\n======N MUST BE DEFINED PRE-SOURCE!")
+if(!N%in%c(1e3,1e4)) message("======\n======\n======\n======N MUST EITHER 1000 OR 10,000!")  
+# Load parameter matrices
+lambda.mat <- load.grid(N, 'lambda')
+V.mat <- load.grid(N, 'V')
+logZ.mat <- load.grid(N, 'logZ')
+message('Parameter matrices loaded...')
 
 # Updated functions to take mean/variances (these from Thomas Fung's github.)
 E.lfactorialY <- function(lambda, nu, Z, summax){ # mu, nu, vectors
@@ -56,59 +59,63 @@ calc.ABC <- function(mu, nu, lambda, Z, summax){ # NB: Z is log(Z)...
 }
 
 EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
-                     sv, w, v, n, m, summax, debug){
+                     sv, w, v, n, m, summax, debug, N){
   s <- proc.time()[3]
   #' Unpack Omega, the parameter vector
   D <- Omega$D; beta <- Omega$beta; delta <- Omega$delta; gamma <- Omega$gamma; zeta <- Omega$zeta
   
   #' Find b.hat and Sigma
   b.hat <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
-    optim(b, joint_density, joint_density_ddb,
+    optim(c(0,0), joint_density, joint_density_ddb,
           X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
           S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
           gamma = gamma, zeta = zeta, 
-          lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, method = 'BFGS')$par
+          lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, N = N, method = 'BFGS')$par#, hessian = T)
   }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
   l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
-  
+
+  # Sigma <- lapply(b.hat, function(s) solve(s$hessian))
+  # b.hat <- lapply(b.hat, function(s) s$par)
+    
   Sigma <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
     solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
                             S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-                            gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, eps = 0.01))
+                            gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, N = N, eps = 10/N))
   }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
   l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
   if(debug){DEBUG.b.hat <<- b.hat; DEBUG.Sigma <<- Sigma}
   
-  check <- sapply(Sigma, det)
-  if(any(check < 0)){
-    ind <- which(check<0)
-    for(i in seq_along(ind)){
-      Sigma[[ind[i]]] <- as.matrix(Matrix::nearPD(Sigma[[ind[i]]])$mat)
-    }
-  }
+  # check <- sapply(Sigma, det)
+  # if(any(check < 0)){
+  #   message('Some non pos def Sigma...')
+  #   ind <- which(check<0)
+  #   for(i in seq_along(ind)){
+  #     Sigma[[ind[i]]] <- as.matrix(Matrix::nearPD(Sigma[[ind[i]]])$mat)
+  #   }
+  # }
   #' #########
   #' E-step ##
   #' #########
   
   mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b.hat, SIMPLIFY = F)
   nus <- mapply(function(G) exp(G %*% delta), G = G, SIMPLIFY = F)
-  mus2 <- lapply(mus, mu_fix)
-  nus2 <- lapply(nus, mu_fix)
+  mus2 <- lapply(mus, mu_fix, N)
+  nus2 <- lapply(nus, mu_fix, N)
   
   #' Grid lookups ----
   lambdas <- mapply(function(mu, nu){
-    m <- (mu/0.01) - 1; n <- (nu/0.01) - 1
-    getlambda(m, n, lambda.mat)
+    m <- (mu*(N/10)) - 1; n <- (nu*(N/10)) - 1
+    mat_lookup(m, n, lambda.mat)
   }, mu = mus2, nu = nus2, SIMPLIFY = F)
   
   Vs <- mapply(function(mu, nu){
-    m <- (mu/0.01) - 1; n <- (nu/0.01) - 1
-    getV(m, n, V.mat)
+    m <- (mu*(N/10)) - 1; n <- (nu*(N/10)) - 1
+    mat_lookup(m, n, V.mat)
   }, mu = mus2, nu = nus2, SIMPLIFY = F)
   
   logZ <- mapply(function(mu, nu){
-    m <- (mu/0.01) - 1; n <- (nu/0.01) - 1
-    getlogZ(m, n, logZ.mat)
+    m <- (mu*(N/10)) - 1; n <- (nu*(N/10)) - 1
+    mat_lookup(m, n, logZ.mat)
   }, mu = mus2, nu = nus2, SIMPLIFY = F)
   ABC <- mapply(calc.ABC, mus2, nus2, lambdas, logZ, 100, SIMPLIFY=F)
 
@@ -127,11 +134,17 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   
   # Survival parameters (\gamma, \zeta)
   Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
-    Sgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, .Machine$double.eps^(1/3))
+    if(det(Sigma) < 0) 
+      return(rep(0, length(c(gamma, zeta)))) 
+    else
+      return(Sgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, .Machine$double.eps^(1/3)))
   }, b = b.hat, Sigma = Sigma, S = S, SS = SS, Fu = Fu, Fi = Fi, l0u = l0u, Delta = Delta)
   
   Hgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
-    Hgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, .Machine$double.eps^(1/4))
+    if(det(Sigma) < 0) 
+      return(rep(0, length(c(gamma, zeta)))) 
+    else
+      return(Hgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, .Machine$double.eps^(1/4)))
   }, b = b.hat, Sigma = Sigma, S = S, SS = SS, Fu = Fu, Fi = Fi, l0u = l0u, Delta = Delta, SIMPLIFY = F)
   
   #' #########
@@ -169,7 +182,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   
 }
 
-EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, post.process = T, control = list()){
+EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, N, post.process = T, control = list()){
   start.time <- proc.time()[3]
   
   #' Parsing formula objects ----
@@ -226,18 +239,18 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   w <- GH$w; v <- GH$n
   
   #' Overwrite summax if too low ----
-  summax.old <- summax
-  summax.new <- max(ceiling(c(max(data[, formulas$response]) + 20 * sqrt(var(data[, formulas$response])))), 100)
-  if(!summax.override){
-    if(summax.new>summax.old){
-      if(verbose){
-        cat(sprintf('Original summax %d too low, running with new value --> %d.\n', summax.old, summax.new))
-      }
-    summax <- summax.new
-    }
-  }else{
-    summax <- summax.old
-  }
+  # summax.old <- summax
+  # summax.new <- max(ceiling(c(max(data[, formulas$response]) + 20 * sqrt(var(data[, formulas$response])))), 100)
+  # if(!summax.override){
+  #   if(summax.new>summax.old){
+  #     if(verbose){
+  #       cat(sprintf('Original summax %d too low, running with new value --> %d.\n', summax.old, summax.new))
+  #     }
+  #   summax <- summax.new
+  #   }
+  # }else{
+  #   summax <- summax.old
+  # }
   
   #' Begin EM ----
   diff <- 100; iter <- 0
@@ -245,7 +258,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   step.times <- c()
   while(diff > tol && iter < maxit){
     update <- EMupdate(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
-                       sv, w, v, n, m, summax, debug)
+                       sv, w, v, n, m, summax, debug, N)
     if(debug) DEBUG.update <<- update
     params.new <- c(vech(update$D), update$beta, update$delta, update$gamma, update$zeta)
     names(params.new) <- names(params)
@@ -254,6 +267,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
     if(verbose){
       print(sapply(params.new, round, 4))
       message("Iteration ", iter + 1, ' maximum ', conv, ' difference: ', round(diff, 4))
+      message("Largest RE relative difference: ", round(max(difference(do.call(cbind, update$b), do.call(cbind, b), conv)), 4))
     }
     
     #' Set new estimates as current
@@ -289,19 +303,19 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
             X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
             S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
             gamma = gamma, zeta = zeta, 
-            lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, method = 'BFGS')$par
+            lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, N = N, method = 'BFGS')$par
     }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
     l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
     
     Sigma <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
       solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
                               S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-                              gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, eps = 1e-3))
+                              gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, N = N, eps = 10/N))
     }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
     l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
   
     # The Information matrix
-    I <- structure(vcov(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax),
+    I <- structure(vcov(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, n, N, summax),
                    dimnames = list(names(params), names(params)))
     I.inv <- tryCatch(solve(I), error = function(e) e)
     if(inherits(I.inv, 'error')) I.inv <- structure(MASS::ginv(I),

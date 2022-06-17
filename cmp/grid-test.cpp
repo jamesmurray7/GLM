@@ -209,13 +209,15 @@ double calc_V(double mu, double lambda, double nu, int summax){
 }
 
 //[[Rcpp::export]]
-vec round_hundreth(vec& x){
-  return floor(x*100.0 + 0.50)/100.0;
+vec round_N(vec& x, int N){
+  // If N is 1000, then round x to hundreths; if X is 10,000 then round x to thousandths.
+  double nn = (double)N/10.0;
+  return floor(x*nn + 0.50)/nn;
 }
 
 //[[Rcpp::export]]
 mat gen_lambda_mat(int N, int summax){
-  vec mus = linspace((1/((double)N/10.0), 10.00, N);
+  vec mus = linspace(1.0/((double)N/10.0), 10.00, N);
   vec nus = mus;
   mat out = zeros<mat>(N-1, N);
   for(int m = 0; m < (N-1); m ++){
@@ -234,7 +236,7 @@ mat gen_lambda_mat(int N, int summax){
 
 //[[Rcpp::export]]
 mat gen_V_mat(int N, int summax, mat& lambdamat){
-  vec mus = linspace(0.01, 10.00, N);
+  vec mus = linspace(1.0/((double)N/10.0), 10.00, N);
   vec nus = mus;
   mat out = zeros<mat>(N-1, N);
   if((N-1) != lambdamat.n_rows){
@@ -254,7 +256,7 @@ mat gen_V_mat(int N, int summax, mat& lambdamat){
 
 // [[Rcpp::export]]
 mat gen_logZ_mat(int N, int summax, mat& lambdamat){
-  vec mus = linspace(0.01, 10.00, N);
+  vec mus = linspace(1.0/((double)N/10.0), 10.00, N);
   vec nus = mus;
   mat out = zeros<mat>(N-1, N);
   if((N-1) != lambdamat.n_rows){
@@ -273,9 +275,10 @@ mat gen_logZ_mat(int N, int summax, mat& lambdamat){
 }
 
 // [[Rcpp::export]]
-vec mu_fix(vec &b){
-  vec x = round_hundreth(b);
-  return clamp(x, 0.010, 9.990);
+vec mu_fix(vec &b, int N){
+  double small = 1./((double)N/10.0);
+  vec x = round_N(b, N);
+  return clamp(x, 0.0+small, 10.0-small);
 }  
 
 // The joint density ---------------------------------------------------
@@ -283,33 +286,14 @@ static double log2pi = log(2.0 * M_PI);
 
 // [[Rcpp::export]]
 double ll_cmp(vec& loglambda, vec& nu, vec& logZ, vec& Y, vec& lY){
-  return as_scalar(Y.t() * loglambda - nu.t() * lY) - sum(logZ);
+  return sum(Y % loglambda - nu % lY - logZ);
 }
 
 // [[Rcpp::export]]
-vec getlambda(vec &m, vec &n, mat& lambdamat){
+vec mat_lookup(vec &m, vec &n, mat& MAT){ // Simply change what matrix is supplied as third argument.
   vec out = vec(m.size());
   for(int i = 0; i < m.size(); i++){
-    // Rcout << "lambda(" << m[i] << "," << n[i] << "): " << (double)lambdamat((int)m[i], (int)n[i]) << std::endl;
-    out[i] += (double)lambdamat((int)m[i], (int)n[i]);
-  }
-  return out;
-}
-
-// [[Rcpp::export]]
-vec getV(vec &m, vec &n, mat& Vmat){
-  vec out = vec(m.size());
-  for(int i = 0; i < m.size(); i++){
-    out[i] = (double)Vmat((int)m[i], (int)n[i]);
-  }
-  return out;
-}
-
-// [[Rcpp::export]]
-vec getlogZ(vec &m, vec &n, mat& logZmat){
-  vec out = vec(m.size());
-  for(int i = 0; i < m.size(); i++){
-    out[i] = (double)logZmat((int)m[i], (int)n[i]);
+    out[i] += (double)MAT((int)m[i], (int)n[i]);
   }
   return out;
 }
@@ -318,20 +302,22 @@ vec getlogZ(vec &m, vec &n, mat& logZmat){
 double joint_density(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Data matrices
                      vec& beta, vec& delta, mat& D,                       // Longit. + RE parameters
                      rowvec& S, mat& SS, rowvec& Fi, mat& Fu, double l0i, rowvec& haz,
-                     int Delta, double gamma, vec& zeta, mat& lambdamat, mat& Vmat, mat& logZmat){
+                     int Delta, double gamma, vec& zeta, mat& lambdamat, mat& Vmat, mat& logZmat, int N){
   vec mu = exp(X * beta + Z * b);
   vec nu = exp(G * delta);
-  vec mu2 = mu_fix(mu), nu2 = mu_fix(nu);          // Fix \mu s.t. it lies [0.01,10.00]. Shouldn't be necessary with \nu
-  vec m = (mu2/0.01) - 1.00, n = (nu2/0.01) - 1.00; // Convert to indices for matrix lookup (+ zero-indexing!!)
-  vec lambda = getlambda(m, n, lambdamat);
+  vec mu2 = mu_fix(mu, N), nu2 = mu_fix(nu, N);          // Fix \mu s.t. it lies (0.01,10.00). Rounding is controlled by N (1e3 or 1e5).
+  // Convert to indices for matrix lookup (+ zero-indexing!!)
+  vec m = (mu2/(1./((double)N/10.))) - 1.00, n = (nu2/(1./((double)N/10.))) - 1.00;      
+  // Lookup lambda
+  vec lambda = mat_lookup(m, n, lambdamat);
   vec loglambda = log(lambda);
   //vec V = getV(m, n, Vmat);
-  vec logZ = getlogZ(m, n, logZmat);
+  vec logZ = mat_lookup(m, n, logZmat);
   double ll = ll_cmp(loglambda, nu2, logZ, Y, lY);
   int q = b.size();
   double temp = 0.0;
   if(Delta == 1) temp = log(l0i);
-  return -ll + -1.0 * as_scalar(-q/2.0 * log2pi - 0.5 * log(det(D)) - 0.5 * b.t() * D.i() * b + 
+  return -ll + -1.0 * as_scalar(-(double)q/2.0 * log2pi - 0.5 * log(det(D)) - 0.5 * b.t() * D.i() * b + 
                                 temp + Delta * (S * zeta + Fi * (gamma * b)) - haz * exp(SS * zeta + Fu * (gamma * b)));
 }
   
@@ -339,15 +325,16 @@ double joint_density(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Dat
 vec joint_density_ddb(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Data matrices
                       vec& beta, vec& delta, mat& D,                       // Longit. + RE parameters
                       rowvec& S, mat& SS, rowvec& Fi, mat& Fu, double l0i, rowvec& haz,
-                      int Delta, double gamma, vec& zeta, mat& lambdamat, mat& Vmat, mat& logZmat){
+                      int Delta, double gamma, vec& zeta, mat& lambdamat, mat& Vmat, mat& logZmat, int N){
   // Score of CMP
   vec mu = exp(X * beta + Z * b);
   vec nu = exp(G * delta);
-  vec mu2 = mu_fix(mu), nu2 = mu_fix(nu);          // Fix \mu s.t. it lies [0.01,10.00]. Shouldn't be necessary with \nu
-  vec m = (mu2/0.01) - 1.00, n = (nu2/0.01) - 1.00; // Convert to indices for matrix lookup (+ zero-indexing!!)
-  vec lambda = getlambda(m, n, lambdamat);
+  vec mu2 = mu_fix(mu, N), nu2 = mu_fix(nu, N);          // Fix \mu s.t. it lies (0.01,10.00). Rounding is controlled by N (1e3 or 1e5).
+  // Convert to indices for matrix lookup (+ zero-indexing!!)
+  vec m = (mu2/(1./((double)N/10.))) - 1.00, n = (nu2/(1./((double)N/10.))) - 1.00;    
+  vec lambda = mat_lookup(m, n, lambdamat);
   vec loglambda = log(lambda);
-  vec V = getV(m, n, Vmat);
+  vec V = mat_lookup(m, n, Vmat);
   //vec logZ = getlogZ(m, n, logZmat);
   mat lhs_mat = diagmat(mu2) * Z;            // Could just be Z.t() * y-mu/V, but think it should be this.
   vec Score = lhs_mat.t() * ((Y-mu2) / V);   //                  **                                     
@@ -361,15 +348,15 @@ vec joint_density_ddb(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Da
 mat joint_density_sdb(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Data matrices
                       vec& beta, vec& delta, mat& D,                       // Longit. + RE parameters
                       rowvec& S, mat& SS, rowvec& Fi, mat& Fu, double l0i, rowvec& haz,
-                      int Delta, double gamma, vec& zeta, mat& lambdamat, mat& Vmat, mat& logZmat, double eps){
+                      int Delta, double gamma, vec& zeta, mat& lambdamat, mat& Vmat, mat& logZmat, int N, double eps){
   int q = b.size();
   mat out = zeros<mat>(q, q);
-  vec f0 = joint_density_ddb(b, X, Y, lY, Z, G, beta, delta, D, S, SS, Fi, Fu, l0i, haz, Delta, gamma, zeta, lambdamat, Vmat, logZmat);
+  vec f0 = joint_density_ddb(b, X, Y, lY, Z, G, beta, delta, D, S, SS, Fi, Fu, l0i, haz, Delta, gamma, zeta, lambdamat, Vmat, logZmat, N);
   for(int i = 0; i < q; i++){
     vec bb = b;
     double xi = std::max(1.0, b[i]);
     bb[i] = b[i] + (xi * eps);
-    vec fdiff = joint_density_ddb(bb, X, Y, lY, Z, G, beta, delta, D, S, SS, Fi, Fu, l0i, haz, Delta, gamma, zeta, lambdamat, Vmat, logZmat) - f0;
+    vec fdiff = joint_density_ddb(bb, X, Y, lY, Z, G, beta, delta, D, S, SS, Fi, Fu, l0i, haz, Delta, gamma, zeta, lambdamat, Vmat, logZmat, N) - f0;
     out.col(i) = fdiff/(bb[i]-b[i]);
   }
   return 0.5 * (out + out.t()); // Ensure symmetry

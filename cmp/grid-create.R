@@ -30,3 +30,18 @@ V.mat <- gen_V_mat(1000, 100, grid_1K)
 logZ.mat <- gen_logZ_mat(1000, 100, grid_1K)
 save(V.mat, file =  paste0(save.dir, 'V_Pete.RData'))
 save(logZ.mat, file =  paste0(save.dir, 'logZ_Pete.RData'))
+
+
+# 10K version -------------------------------------------------------------
+lambda.mat <- gen_lambda_mat(10000, 10)
+save(lambda.mat, file = paste0(save.dir, 'lambda10K.RData'))
+logZ.mat <- gen_logZ_mat(10000, 100, lambda.mat)
+save(logZ.mat, file = paste0(save.dir, 'logZ10K.RData'))
+V.mat <- gen_V_mat(10000, 100, lambda.mat)
+save(V.mat, file = paste0(save.dir, 'V10K.RData'))
+
+# Generate these using Pete's lambda grid instead? ----
+V.mat <- gen_V_mat(10000, 100, grid_10K)
+logZ.mat <- gen_logZ_mat(10000, 100, grid_10K)
+save(V.mat, file =  paste0(save.dir, 'V10K_Pete.RData'))
+save(logZ.mat, file =  paste0(save.dir, 'logZ10K_Pete.RData'))

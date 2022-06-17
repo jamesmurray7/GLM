@@ -1,5 +1,5 @@
 
-vcov <- function(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax){
+vcov <- function(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, n, N, summax){
   #' Unpack Omega ----
   D <- Omega$D
   beta <- c(Omega$beta)
@@ -51,33 +51,35 @@ vcov <- function(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax){
   sD <- lapply(1:nrow(sD), function(x) sD[x, ]) # Cast to list
   
   #' Calculate things we need for scores on \beta and \delta
-  mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b.hat, SIMPLIFY = F)
+  mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b, SIMPLIFY = F)
   nus <- mapply(function(G) exp(G %*% delta), G = G, SIMPLIFY = F)
-  mus2 <- lapply(mus, mu_fix)
+  mus2 <- lapply(mus, mu_fix, N)
+  nus2 <- lapply(nus, mu_fix, N)
   
   #' Grid lookups ----
+  #' Grid lookups ----
   lambdas <- mapply(function(mu, nu){
-    m <- (mu/0.01) - 0.01; n <- (nu/0.01) - 0.01
-    getlambda(m, n, lambda.mat)
-  }, mu = mus2, nu = nus, SIMPLIFY = F)
+    m <- (mu*(N/10)) - 1; n <- (nu*(N/10)) - 1
+    mat_lookup(m, n, lambda.mat)
+  }, mu = mus2, nu = nus2, SIMPLIFY = F)
   
   Vs <- mapply(function(mu, nu){
-    m <- (mu/0.01) - 0.01; n <- (nu/0.01) - 0.01
-    getV(m, n, V.mat)
-  }, mu = mus2, nu = nus, SIMPLIFY = F)
+    m <- (mu*(N/10)) - 1; n <- (nu*(N/10)) - 1
+    mat_lookup(m, n, V.mat)
+  }, mu = mus2, nu = nus2, SIMPLIFY = F)
   
   logZ <- mapply(function(mu, nu){
-    m <- (mu/0.01) - 0.01; n <- (nu/0.01) - 0.01
-    getlogZ(m, n, logZ.mat)
-  }, mu = mus2, nu = nus, SIMPLIFY = F)
-  ABC <- mapply(calc.ABC, mus2, nus, lambdas, logZ, 100, SIMPLIFY=F)
+    m <- (mu*(N/10)) - 1; n <- (nu*(N/10)) - 1
+    mat_lookup(m, n, logZ.mat)
+  }, mu = mus2, nu = nus2, SIMPLIFY = F)
+  ABC <- mapply(calc.ABC, mus2, nus2, lambdas, logZ, 100, SIMPLIFY=F)
   
   #' Score for the fixed effects, \beta 
-  Sb <- mapply(Sbeta, X, Y, mus2, nus, lambdas, Vs, SIMPLIFY = F)
+  Sb <- mapply(Sbeta, X, Y, mus2, nus2, lambdas, Vs, SIMPLIFY = F)
   #' Score for the dispersion parameter(s), \delta 
   Sd <- mapply(function(ABC, Y, mu, V, nu, G){
     crossprod(((ABC$A * (Y - mu) / V - lgamma(Y + 1) + ABC$B) * nu), G)
-  }, ABC = ABC, Y = Y, mu = mus2, V = Vs, nu = nus, G = G, SIMPLIFY = F)
+  }, ABC = ABC, Y = Y, mu = mus2, V = Vs, nu = nus2, G = G, SIMPLIFY = F)
 
   #' Survival parameters (\gamma, \zeta)
   Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
