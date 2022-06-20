@@ -356,12 +356,13 @@ log.lik <- function(coeffs, dmats, b, surv, sv, l0u, l0i, summax){
 # Load grid ---------------------------------------------------------------
 save.dir <- unname(ifelse(Sys.info()[1]=='Linux', '/data/c0061461/cmp-grids/', './data.nosync/'))
 
-load.grid <- function(N, what = 'lambda', pete = F){
+load.grid <- function(N, what = 'lambda', pete = pete.flag){
   what <- match.arg(what, c('lambda', 'V', 'logZ'))
   if(pete) append <- '_Pete' else append <- ''
   if(N==1000) n <- '' else n <- '10K'
   file.name <- paste0(what, n, append, '.RData')
   assign('out', get(load(paste0(save.dir, file.name))))
+  if(what=='lambda' & N==10000 & pete == T) out <- out[-10000,]
   out
 }
 

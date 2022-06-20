@@ -8,7 +8,6 @@ library(survival)
 library(Rcpp)
 library(RcppArmadillo)
 library(glmmTMB)
-source('_Functions.R')
 source('simData.R')
 source('inits.R')
 source('ll.R')
@@ -16,13 +15,14 @@ source('grid-vcov.R')
 sourceCpp('grid-test.cpp')
 vech <- function(x) x[lower.tri(x, T)]
 # Load parameter matrices
-save.dir <- unname(ifelse(Sys.info()[1]=='Linux', '/data/c0061461/cmp-grids/', './data.nosync/'))
 if(!"N"%in%ls()) message("======\n======\n======\n======N MUST BE DEFINED PRE-SOURCE!")
+if(!"pete.flag"%in%ls()) message("======\n======\n======\n======pete.flag MUST BE DEFINED PRE-SOURCE!")
 if(!N%in%c(1e3,1e4)) message("======\n======\n======\n======N MUST EITHER 1000 OR 10,000!")  
+source('_Functions.R')
 # Load parameter matrices
-lambda.mat <- load.grid(N, 'lambda')
-V.mat <- load.grid(N, 'V')
-logZ.mat <- load.grid(N, 'logZ')
+lambda.mat <- load.grid(N, 'lambda', pete.flag)
+V.mat <- load.grid(N, 'V', pete.flag)
+logZ.mat <- load.grid(N, 'logZ', pete.flag)
 message('Parameter matrices loaded...')
 
 # Updated functions to take mean/variances (these from Thomas Fung's github.)
@@ -85,14 +85,14 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
   if(debug){DEBUG.b.hat <<- b.hat; DEBUG.Sigma <<- Sigma}
   
-  # check <- sapply(Sigma, det)
-  # if(any(check < 0)){
-  #   message('Some non pos def Sigma...')
-  #   ind <- which(check<0)
-  #   for(i in seq_along(ind)){
-  #     Sigma[[ind[i]]] <- as.matrix(Matrix::nearPD(Sigma[[ind[i]]])$mat)
-  #   }
-  # }
+  check <- sapply(Sigma, det)
+  if(any(check < 0)){
+    message('Some non pos def Sigma...')
+    ind <- which(check<0)
+    for(i in seq_along(ind)){
+      Sigma[[ind[i]]] <- as.matrix(Matrix::nearPD(Sigma[[ind[i]]], corr = T)$mat)
+    }
+  }
   #' #########
   #' E-step ##
   #' #########
@@ -117,7 +117,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
     m <- (mu*(N/10)) - 1; n <- (nu*(N/10)) - 1
     mat_lookup(m, n, logZ.mat)
   }, mu = mus2, nu = nus2, SIMPLIFY = F)
-  ABC <- mapply(calc.ABC, mus2, nus2, lambdas, logZ, 100, SIMPLIFY=F)
+  ABC <- mapply(calc.ABC, mus2, nus2, lambdas, logZ, summax, SIMPLIFY=F)
 
   # D
   D.update <- mapply(function(Sigma, b) Sigma + tcrossprod(b), Sigma = Sigma, b = b.hat, SIMPLIFY = F)

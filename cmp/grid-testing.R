@@ -11,12 +11,12 @@ sourceCpp('grid-test.cpp')
 
 # Load parameter matrices
 N <- 1e4
-lambda.mat <- load.grid(N, 'lambda')
-V.mat <- load.grid(N, 'V')
-logZ.mat <- load.grid(N, 'logZ')
+lambda.mat <- load.grid(N, 'lambda', T)
+V.mat <- load.grid(N, 'V', F)
+logZ.mat <- load.grid(N, 'logZ', T)
 
 # Data and data matrices
-test <- simData_joint(n = 250, delta = c(-0.5, 0.1), ntms = 15, theta = c(-3, .25))
+test <- simData_joint(n = 250, delta = c(-0.2, 0.1), ntms = 15, theta = c(-3, .25))
 data <- test$data; survdata <- test$surv.data
 n <- length(unique(data$id))
 ph <- coxph(Surv(survtime, status) ~ cont + bin, survdata)
@@ -102,6 +102,34 @@ Sb <- mapply(Sbeta, X, Y, mus2, nus2, lambdas, Vs, SIMPLIFY = F)
 Hb <- mapply(getW1, X, mus2, nus2, lambdas, Vs, SIMPLIFY = F)
 (beta.new <- beta - solve(Reduce('+', Hb), Reduce('+', Sb)))
 
+# quad?
+tau <- mapply(function(Z,S) sqrt(diag(tcrossprod(Z %*% S,Z))), Z = Z, S = Sigma,SIMPLIFY = F)
+mus.quad <- mapply(function(X, Z, b, t){
+  out <- matrix(0, nr = nrow(Z), nc = 3)
+  for(l in 1:3) out[,l] <- w[l] * exp(X %*% beta + Z %*% b + t * v[l])
+  rowSums(out)
+}, X = X, Z = Z, b = b.hat, t = tau, SIMPLIFY = F)
+mus2.quad <- lapply(mus.quad, mu_fix, N)
+
+lambdas <- mapply(function(mu, nu){
+  m <- (mu*(N/10)) - 1; n <- (nu*(N/10)) - 1
+  mat_lookup(m, n, lambda.mat)
+}, mu = mus2.quad, nu = nus2, SIMPLIFY = F)
+
+Vs <- mapply(function(mu, nu){
+  m <- (mu*(N/10)) - 1; n <- (nu*(N/10)) - 1
+  mat_lookup(m, n, V.mat)
+}, mu = mus2.quad, nu = nus2, SIMPLIFY = F)
+
+logZ <- mapply(function(mu, nu){
+  m <- (mu*(N/10)) - 1; n <- (nu*(N/10)) - 1
+  mat_lookup(m, n, logZ.mat)
+}, mu = mus2.quad, nu = nus2, SIMPLIFY = F)
+
+Sb <- mapply(Sbeta, X, Y, mus2.quad, nus2, lambdas, Vs, SIMPLIFY = F)
+Hb <- mapply(getW1, X, mus2.quad, nus2, lambdas, Vs, SIMPLIFY = F)
+(beta.new <- beta - solve(Reduce('+', Hb), Reduce('+', Sb)))
+
 # Update for \delta -------------------------------------------------------
 E.lfactorialY <- function(lambda, nu, Z, summax){ # mu, nu, vectors
   out <- matrix(0, nr = length(lambda), nc = summax)
@@ -135,11 +163,11 @@ calc.ABC <- function(mu, nu, lambda, Z, summax){ # NB: Z is log(Z)...
   list(A = A, B = B, C = C)
 }
 
-ABC <- mapply(calc.ABC, mus2, nus2, lambdas, logZ, 100, SIMPLIFY=F)
+ABC <- mapply(calc.ABC, mus2.quad, nus2, lambdas, logZ, 100, SIMPLIFY=F)
 
 Sd <- mapply(function(ABC, Y, mu, V, nu, G){
   crossprod(((ABC$A * (Y - mu) / V - lgamma(Y + 1) + ABC$B) * nu), G)
-}, ABC = ABC, Y = Y, mu = mus2, V = Vs, nu = nus2, G = G, SIMPLIFY = F)
+}, ABC = ABC, Y = Y, mu = mus2.quad, V = Vs, nu = nus2, G = G, SIMPLIFY = F)
 Hd <- mapply(getW2, ABC, Vs, nus2, G, SIMPLIFY = F)
 
 (delta.new <- delta-solve(Reduce('+', Hd), c(Reduce('+', Sd))))
