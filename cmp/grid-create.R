@@ -1,6 +1,6 @@
 rm(list=ls())
 # Determine OS and setup directory to save in.
-save.dir <- unname(ifelse(Sys.info()[1]=='Linux', '/data/c0061461/cmp-grids/', './data.nosync/'))
+save.dir <- unname(ifelse(Sys.info()[1]=='Linux', '/data/c0061461/cmp-grids/', paste0(getwd(),'/data.nosync/')))
 sourceCpp('grid-test.cpp')
 
 # \lambda grid ----

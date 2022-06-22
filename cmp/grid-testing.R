@@ -10,7 +10,7 @@ source('survFns.R')
 sourceCpp('grid-test.cpp')
 
 # Load parameter matrices
-N <- 1e4
+N <- 1e3
 lambda.mat <- load.grid(N, 'lambda', T)
 V.mat <- load.grid(N, 'V', F)
 logZ.mat <- load.grid(N, 'logZ', T)
@@ -38,7 +38,7 @@ SS <- lapply(1:n, function(i){
 gamma <- 0.4; zeta <- c(0.1, -0.2)
 # Initial conditions 
 fitP <- glmmTMB(Y ~ time + cont + bin + (1 + time|id),
-                data, family = poisson)
+                data, family = nbinom2)
 beta <- glmmTMB::fixef(fitP)$cond
 delta <- delta <- c(0,0) # glmmTMB::fixef(fit)$disp # delta <- c(1, 0) ## True value -0.1, 0.2
 b <- glmmTMB::ranef(fitP)$cond$id
@@ -66,7 +66,8 @@ l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
 Sigma <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
   solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
                           S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-                          gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, N = 1e4, eps = 0.001))
+                          gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, 
+                          logZmat = logZ.mat, N = 1e3, eps = 0.01))
 }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
 l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
 
@@ -163,11 +164,11 @@ calc.ABC <- function(mu, nu, lambda, Z, summax){ # NB: Z is log(Z)...
   list(A = A, B = B, C = C)
 }
 
-ABC <- mapply(calc.ABC, mus2.quad, nus2, lambdas, logZ, 100, SIMPLIFY=F)
+ABC <- mapply(calc.ABC, mus2, nus2, lambdas, logZ, 100, SIMPLIFY=F)
 
 Sd <- mapply(function(ABC, Y, mu, V, nu, G){
   crossprod(((ABC$A * (Y - mu) / V - lgamma(Y + 1) + ABC$B) * nu), G)
-}, ABC = ABC, Y = Y, mu = mus2.quad, V = Vs, nu = nus2, G = G, SIMPLIFY = F)
+}, ABC = ABC, Y = Y, mu = mus2, V = Vs, nu = nus2, G = G, SIMPLIFY = F)
 Hd <- mapply(getW2, ABC, Vs, nus2, G, SIMPLIFY = F)
 
 (delta.new <- delta-solve(Reduce('+', Hd), c(Reduce('+', Sd))))

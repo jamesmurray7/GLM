@@ -354,7 +354,7 @@ log.lik <- function(coeffs, dmats, b, surv, sv, l0u, l0i, summax){
 }
 
 # Load grid ---------------------------------------------------------------
-save.dir <- unname(ifelse(Sys.info()[1]=='Linux', '/data/c0061461/cmp-grids/', './data.nosync/'))
+save.dir <- unname(ifelse(Sys.info()[1]=='Linux', '/data/c0061461/cmp-grids/', paste0(getwd(),'/data.nosync/')))
 
 load.grid <- function(N, what = 'lambda', pete = pete.flag){
   what <- match.arg(what, c('lambda', 'V', 'logZ'))
