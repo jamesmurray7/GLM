@@ -66,7 +66,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   
   #' Find b.hat and Sigma
   b.hat <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
-    optim(c(0,0), joint_density, joint_density_ddb,
+    optim(b, joint_density, joint_density_ddb,
           X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
           S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
           gamma = gamma, zeta = zeta, 
@@ -182,7 +182,8 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   
 }
 
-EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, N, post.process = T, control = list()){
+EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, N, post.process = T, control = list(),
+               delta.init=NULL){
   start.time <- proc.time()[3]
   
   #' Parsing formula objects ----
@@ -199,6 +200,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, N, 
   D <- inits.long$D.init
   b <- lapply(1:n, function(i) inits.long$b[i, ])
   delta <- inits.long$delta.init
+  if(!is.null(delta.init)) delta <- c(delta.init)
   # Survival parameters
   zeta <- inits.surv$inits[match(colnames(surv$ph$x), names(inits.surv$inits))]
   names(zeta) <- paste0('zeta_', names(zeta))
