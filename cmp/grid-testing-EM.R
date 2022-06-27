@@ -1,9 +1,13 @@
 # Test one ----------------------------------------------------------------
 rm(list=ls())
 source('grid-simData.R')
-test <- simData_joint(n = 250, delta = c(0.4,-0.2), ntms = 10, theta = c(-3, .25), fup = 3,
+test <- simData_joint(n = 250, delta = c(.8,0), 
+                      ntms = 10, theta = c(-3, .25), fup = 3,
                       beta = c(0.0, -0.1, 0.05, -0.1), gamma = 0.6, zeta= c(0.0, -0.2),
-                      D = matrix(c(0.33, 0, 0, 0.00), 2, 2))
+                      D = matrix(c(0.16, 0, 0, 0.00), 2, 2))
+
+# Testing dispersion of outputted 'Y'.
+summary(with(test$data, tapply(Y, id, var))/with(test$data, tapply(Y, id, mean)))
 
 range(test$data$Y)
 data <- test$data
@@ -12,7 +16,7 @@ N <- 1e4; pete.flag <- T
 source('grid-EM.R')
 long.formula <- Y~time+cont+bin+(1|id)
 surv.formula <- Surv(survtime, status) ~ bin
-disp.formula <- ~time
+disp.formula <- ~1
 
 fit <- EM(long.formula, disp.formula, surv.formula, data, N = N,
           control = list(verbose = T, summax.override = T, tol = 1e-2, gh.nodes = 9, debug = T),
