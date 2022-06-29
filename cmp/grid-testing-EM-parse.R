@@ -13,12 +13,16 @@ coeffs <- function(f){
   }
 }
 ests <- as.data.frame(do.call(rbind, lapply(fits, coeffs)))
+# ests <- ests[which(unlist(lapply(fits, function(x) x$iter))<200), ]
 # targets <- setNames(c(.2, 0, 0.05, 0.0, -0.1, 0.05, -0.1, 0.5, -0.1, .6, -.2),
 #                     colnames(ests)) 
 
-targets <- setNames(c(.16, 0.0, -0.1, 0.05, -0.1, 0.8, .6, -.2),
+targets <- setNames(c(.16, -0.5, -0.1, 0.05, -0.1, 0.8, -0.2, .6, -.2),
                     colnames(ests))
 
+quantile(do.call(c, lapply(fits, function(x)
+  if(x$iter<200) return(x$EMtime + x$postprocess.time) else return(NA)
+)), na.rm = T)
 # Graphs ------------------------------------------------------------------
 library(ggplot2)
 library(dplyr)
@@ -35,7 +39,7 @@ ests.long %>%
   geom_density() + 
   facet_wrap(~ parameter, scales = 'free') + 
   theme_light()
-
+ggsave('/data/c0061461/quad-fits-intonly-timevarnu.png')
 ests.long %>% 
   ggplot(aes(x = estimate)) + 
   geom_boxplot() + 
@@ -46,6 +50,7 @@ ests.long %>%
 
 # Tabulate ----------------------------------------------------------------
 SE <- as.data.frame(do.call(rbind, lapply(fits, function(x) x$SE)))
+# SE <- SE[which(unlist(lapply(fits, function(x) x$iter))<200),]
 lb <- ests - 1.96*SE;ub <- ests+1.96*SE
-targets.mat <- apply(t(targets),2,rep,100)
+targets.mat <- apply(t(targets),2,rep,nrow(SE))
 CP <- colSums(lb <= targets.mat & ub >= targets.mat)/nrow(SE)
