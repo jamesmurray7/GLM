@@ -69,7 +69,7 @@ simData_joint <- function(n = 250, ntms = 10, summax = 100,  fup = 5,
   pb <- utils::txtProgressBar(max = n, style = 3)
   for(i in 1:n){
     ind <- which(df$id==i)
-    Y[[i]] <- rcomp(length(ind), mu = mu[ind], nu = nu[ind], summax = 100)
+    Y[[i]] <- rcomp(n = length(ind), mu = mu[ind], nu = nu[ind], summax = 100)
     utils::setTxtProgressBar(pb, i)
   }
   df$Y <- do.call(c, Y)

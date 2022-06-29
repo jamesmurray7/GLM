@@ -97,8 +97,10 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   #' E-step ##
   #' #########
   
-  mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b.hat, SIMPLIFY = F)
   nus <- mapply(function(G) exp(G %*% delta), G = G, SIMPLIFY = F)
+  tau <- mapply(function(Z, S) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), S = Sigma, Z = Z, SIMPLIFY = F)
+  mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b.hat, SIMPLIFY = F)
+  
   mus2 <- lapply(mus, mu_fix, N)
   nus2 <- lapply(nus, mu_fix, N)
   
@@ -127,24 +129,22 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   Hb <- mapply(getW1, X, mus2, nus2, lambdas, Vs, SIMPLIFY = F)
   
   # \delta
-  Sd <- mapply(function(ABC, Y, mu, V, nu, G){
-    crossprod(((ABC$A * (Y - mu) / V - lgamma(Y + 1) + ABC$B) * nu), G)
-  }, ABC = ABC, Y = Y, mu = mus2, V = Vs, nu = nus2, G = G, SIMPLIFY = F)
+  # Sd <- mapply(function(ABC, Y, mu, V, nu, G){
+  #   crossprod(((ABC$A * (Y - mu) / V - lgamma(Y + 1) + ABC$B) * nu), G)
+  # }, ABC = ABC, Y = Y, mu = mus2, V = Vs, nu = nus2, G = G, SIMPLIFY = F)
   Hd <- mapply(getW2, ABC, Vs, nus2, G, SIMPLIFY = F)
+
+  Sd3 <- mapply(function(G, b, X, Z, Y, lY, tau){
+    Sdelta_cdiff(delta, G, b, X, Z, Y, lY, beta, tau, w, v, N, lambda.mat, logZ.mat)
+  }, G = G, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
   
   # Survival parameters (\gamma, \zeta)
   Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
-    if(det(Sigma) < 0) 
-      return(rep(0, length(c(gamma, zeta)))) 
-    else
-      return(Sgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, .Machine$double.eps^(1/3)))
+    Sgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, 10/N)
   }, b = b.hat, Sigma = Sigma, S = S, SS = SS, Fu = Fu, Fi = Fi, l0u = l0u, Delta = Delta)
   
   Hgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
-    if(det(Sigma) < 0) 
-      return(rep(0, length(c(gamma, zeta)))) 
-    else
-      return(Hgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, .Machine$double.eps^(1/4)))
+    Hgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, 10/N)
   }, b = b.hat, Sigma = Sigma, S = S, SS = SS, Fu = Fu, Fi = Fi, l0u = l0u, Delta = Delta, SIMPLIFY = F)
   
   #' #########
@@ -156,7 +156,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   
   # \beta and \delta
   beta.new <- beta - solve(Reduce('+', Hb), Reduce('+', Sb))
-  delta.new <- delta - solve(Reduce('+', Hd), c(Reduce('+', Sd)))
+  delta.new <- delta - solve(Reduce('+', Hd), c(Reduce('+', Sd3)))
 
   # Survival parameters (gamma, zeta)
   gammazeta.new <- c(gamma, zeta) - solve(Reduce('+', Hgz), rowSums(Sgz))

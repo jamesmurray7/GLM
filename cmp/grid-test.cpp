@@ -446,3 +446,85 @@ mat lambdaUpdate(List survtimes, mat& ft, double gamma, vec& zeta,
   return store;
 }
   
+  
+/* Alternative update to delta
+ * */
+
+double ll_cmp2(vec& loglambda, vec& nu, vec& logZ, vec& Y, vec& lY){
+  return sum(Y % loglambda - nu % lY - logZ);
+}
+
+// [[Rcpp::export]]
+double E_llcmp_delta(vec& delta, mat& G, vec& b, mat& X, mat& Z, vec& Y, vec& lY, vec& beta, vec& tau, vec& w, vec& v, int N,
+                     mat& lambdamat, mat& logZmat){
+  // nu unchanging
+  vec nu = exp(G * delta);
+  vec nu2 = mu_fix(nu, N);
+  vec eta = X * beta + Z * b;
+  // init output
+  int gh = w.size();
+  double out = 0.0;
+  for(int l = 0; l < gh; l++){
+    vec this_eta = eta + v[l] * tau;
+    vec mu = exp(this_eta);
+    vec mu2 = mu_fix(mu, N);
+    vec m = (mu2/(1./((double)N/10.))) - 1.00, n = (nu2/(1./((double)N/10.))) - 1.00;    
+    vec lambda = mat_lookup(m, n, lambdamat);
+    vec loglambda = log(lambda);
+    vec logZ = mat_lookup(m, n, logZmat);
+    out += w[l] * ll_cmp2(loglambda, nu2, logZ, Y, lY);
+  }
+  return out;
+}
+
+// Forward differencing ----
+// [[Rcpp::export]]
+vec Sdelta_fdiff(vec& delta, mat& G, vec& b, mat& X, mat& Z, vec& Y, vec& lY, vec& beta, vec& tau, vec& w, vec& v, int N,
+                 mat& lambdamat, mat& logZmat, double eps){
+  int a = delta.size();
+  vec out = vec(a);
+  double f0 = E_llcmp_delta(delta, G, b, X, Z, Y, lY, beta, tau, w, v, N, lambdamat, logZmat);
+  for(int i = 0; i < a; i++){
+    vec aa = delta;
+    double xi = std::max(delta[i], 1.0);
+    aa[i] = delta[i] + eps * xi;
+    double feps = E_llcmp_delta(aa, G, b, X, Z, Y, lY, beta, tau, w, v, N, lambdamat, logZmat) - f0;
+    out[i] = feps/(aa[i]-delta[i]);
+  }
+  return out;
+}
+
+// [[Rcpp::export]]
+mat Hdelta_fdiff(vec& delta, mat& G, vec& b, mat& X, mat& Z, vec& Y, vec& lY, vec& beta, vec& tau, vec& w, vec& v, int N,
+                 mat& lambdamat, mat& logZmat, double eps1, double eps2){
+  int a = delta.size();
+  mat out = zeros<mat>(a,a);
+  vec f0 = Sdelta_fdiff(delta, G, b, X, Z, Y, lY, beta, tau, w, v, N, lambdamat, logZmat, eps1);
+  for(int i = 0; i < a; i++){
+    vec aa = delta;
+    double xi = std::max(delta[i], 1.0);
+    aa[i] = delta[i] + eps2 * xi;
+    vec feps = Sdelta_fdiff(aa, G, b, X, Z, Y, lY, beta, tau, w, v, N, lambdamat, logZmat, eps1) - f0;
+    out.col(i) = feps/(aa[i]-delta[i]);
+  }
+  return 0.5 * (out + out.t());
+}
+
+// Central differencing ----
+// [[Rcpp::export]]
+vec Sdelta_cdiff(vec& delta, mat& G, vec& b, mat& X, mat& Z, vec& Y, vec& lY, vec& beta, vec& tau, vec& w, vec& v, int N,
+                 mat& lambdamat, mat& logZmat, double eps = 1e-2){
+  int a = delta.size();
+  vec out = vec(a);
+  double f0 = E_llcmp_delta(delta, G, b, X, Z, Y, lY, beta, tau, w, v, N, lambdamat, logZmat);
+  for(int i = 0; i < a; i++){
+    vec aa = delta, bb = delta;
+    double xi = std::max(std::fabs(delta[i]), 1.0);
+    aa[i] = delta[i] + eps * xi;
+    bb[i] = delta[i] - eps * xi;
+    double E1 = E_llcmp_delta(aa, G, b, X, Z, Y, lY, beta, tau, w, v, N, lambdamat, logZmat);
+    double E2 = E_llcmp_delta(bb, G, b, X, Z, Y, lY, beta, tau, w, v, N, lambdamat, logZmat);
+    out[i] = (E1 - E2)/(aa[i]-bb[i]);
+  }
+  return out;
+}

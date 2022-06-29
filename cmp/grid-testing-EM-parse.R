@@ -1,4 +1,4 @@
-load('/data/c0061461/cmp-fits-intslope-23-06-22-new.RData')
+load('/data/c0061461/cmp-fits-intonly-28-06-22-with-QUAD.RData')
 sum(unlist(lapply(fits, is.null))) # no null
 
 coeffs <- function(f){
@@ -13,8 +13,12 @@ coeffs <- function(f){
   }
 }
 ests <- as.data.frame(do.call(rbind, lapply(fits, coeffs)))
-targets <- setNames(c(.2, 0, 0.05, 0.0, -0.1, 0.05, -0.1, 0.5, -0.1, .6, -.2),
-                    colnames(ests)) 
+# targets <- setNames(c(.2, 0, 0.05, 0.0, -0.1, 0.05, -0.1, 0.5, -0.1, .6, -.2),
+#                     colnames(ests)) 
+
+targets <- setNames(c(.16, 0.0, -0.1, 0.05, -0.1, 0.8, .6, -.2),
+                    colnames(ests))
+
 # Graphs ------------------------------------------------------------------
 library(ggplot2)
 library(dplyr)
@@ -29,6 +33,13 @@ ests.long %>%
   ggplot(aes(x = estimate)) + 
   geom_vline(aes(xintercept = target), lty = 5, colour = 'blue') + 
   geom_density() + 
+  facet_wrap(~ parameter, scales = 'free') + 
+  theme_light()
+
+ests.long %>% 
+  ggplot(aes(x = estimate)) + 
+  geom_boxplot() + 
+  geom_vline(aes(xintercept = target), lty = 5, colour = 'blue') + 
   facet_wrap(~ parameter, scales = 'free') + 
   theme_light()
 

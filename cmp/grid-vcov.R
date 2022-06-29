@@ -13,6 +13,7 @@ vcov <- function(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, n, N, summax){
   G <- dmats$G
   X <- dmats$X
   Y <- dmats$Y
+  lY <- lapply(Y, lfactorial)
   m <- sapply(Y, length)
   
   #' Survival //
@@ -77,13 +78,14 @@ vcov <- function(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, n, N, summax){
   #' Score for the fixed effects, \beta 
   Sb <- mapply(Sbeta, X, Y, mus2, nus2, lambdas, Vs, SIMPLIFY = F)
   #' Score for the dispersion parameter(s), \delta 
-  Sd <- mapply(function(ABC, Y, mu, V, nu, G){
-    crossprod(((ABC$A * (Y - mu) / V - lgamma(Y + 1) + ABC$B) * nu), G)
-  }, ABC = ABC, Y = Y, mu = mus2, V = Vs, nu = nus2, G = G, SIMPLIFY = F)
+  tau <- mapply(function(Z, S) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), S = Sigma, Z = Z, SIMPLIFY = F)
+  Sd <- mapply(function(G, b, X, Z, Y, lY, tau){
+    Sdelta_fdiff(delta, G, b, X, Z, Y, lY, beta, tau, w, v, N, lambda.mat, logZ.mat, 1e-2)
+  }, G = G, b = b, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
 
   #' Survival parameters (\gamma, \zeta)
   Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
-    Sgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, .Machine$double.eps^(1/3))
+    Sgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, 10/N)
   }, b = b, Sigma = Sigma, S = S, SS = SS, Fu = Fu, Fi = Fi, l0u = l0u, Delta = Delta, SIMPLIFY = F)
   
   # Collate and form information --------------------------------------------
