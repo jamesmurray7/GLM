@@ -119,8 +119,12 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
     m <- (mu*(N/10)) - 1; n <- (nu*(N/10)) - 1
     mat_lookup(m, n, logZ.mat)
   }, mu = mus2, nu = nus2, SIMPLIFY = F)
-  ABC <- mapply(calc.ABC, mus2, nus2, lambdas, logZ, summax, SIMPLIFY=F)
-
+  
+  # ABC <- mapply(calc.ABC, mus2, nus2, lambdas, logZ, summax, SIMPLIFY=F),
+  ABC <- mapply(function(b, X, Z, G, tau){
+    A_B_C(b, X, Z, beta, delta, G, tau, 100, N, lambda.mat, logZ.mat)
+  }, b = b.hat, X = X, Z = Z, G = G, tau = tau, SIMPLIFY = F)
+  
   # D
   D.update <- mapply(function(Sigma, b) Sigma + tcrossprod(b), Sigma = Sigma, b = b.hat, SIMPLIFY = F)
   

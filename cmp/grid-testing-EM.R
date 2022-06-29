@@ -4,7 +4,7 @@ source('grid-simData.R')
 test <- simData_joint(n = 250, delta = c(.8,0), 
                       ntms = 10, theta = c(-2, .1), fup = 3,
                       beta = c(0.0, -0.1, 0.05, -0.1), gamma = 0.6, zeta= c(0.0, -0.2),
-                      D = matrix(c(0.25, 0, 0, 0.04), 2, 2))
+                      D = matrix(c(0.25, 0, 0, 0.00), 2, 2))
 
 # Testing dispersion of outputted 'Y'.
 summary(with(test$data, tapply(Y, id, var))/with(test$data, tapply(Y, id, mean)))
@@ -14,7 +14,7 @@ data <- test$data
 rm(to.remove)
 N <- 1e4; pete.flag <- T
 source('grid-EM.R')
-long.formula <- Y~time+cont+bin+(1+time|id)
+long.formula <- Y~time+cont+bin+(1|id)
 surv.formula <- Surv(survtime, status) ~ bin
 disp.formula <- ~1
 

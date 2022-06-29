@@ -494,22 +494,6 @@ vec Sdelta_fdiff(vec& delta, mat& G, vec& b, mat& X, mat& Z, vec& Y, vec& lY, ve
   return out;
 }
 
-// [[Rcpp::export]]
-mat Hdelta_fdiff(vec& delta, mat& G, vec& b, mat& X, mat& Z, vec& Y, vec& lY, vec& beta, vec& tau, vec& w, vec& v, int N,
-                 mat& lambdamat, mat& logZmat, double eps1, double eps2){
-  int a = delta.size();
-  mat out = zeros<mat>(a,a);
-  vec f0 = Sdelta_fdiff(delta, G, b, X, Z, Y, lY, beta, tau, w, v, N, lambdamat, logZmat, eps1);
-  for(int i = 0; i < a; i++){
-    vec aa = delta;
-    double xi = std::max(delta[i], 1.0);
-    aa[i] = delta[i] + eps2 * xi;
-    vec feps = Sdelta_fdiff(aa, G, b, X, Z, Y, lY, beta, tau, w, v, N, lambdamat, logZmat, eps1) - f0;
-    out.col(i) = feps/(aa[i]-delta[i]);
-  }
-  return 0.5 * (out + out.t());
-}
-
 // Central differencing ----
 // [[Rcpp::export]]
 vec Sdelta_cdiff(vec& delta, mat& G, vec& b, mat& X, mat& Z, vec& Y, vec& lY, vec& beta, vec& tau, vec& w, vec& v, int N,
@@ -528,3 +512,85 @@ vec Sdelta_cdiff(vec& delta, mat& G, vec& b, mat& X, mat& Z, vec& Y, vec& lY, ve
   }
   return out;
 }
+
+/* ********************
+ * ABC ->  C++ version.
+ * ********************     */
+
+vec ElY(vec& lambda, vec& nu, vec& Z, int summax){
+  int l = lambda.size();
+  mat M = zeros<mat>(l, summax + 1);
+  for(int j = 1; j <= summax; j++){
+    M.col(j) += lgamma((double)j) * exp(((double)j-1.0) * log(lambda) - nu * lgamma((double)j) - Z);
+  }
+  return sum(M, 1); // Rowsums!
+}
+
+vec EYlY(vec& lambda, vec& nu, vec& Z, int summax){
+  int l = lambda.size();
+  mat M = zeros<mat>(l, summax + 1);
+  for(int j = 1; j <= summax; j++){
+    M.col(j) += exp(
+      log((double)j - 1.0) + log(lgamma((double)j)) + ((double)j - 1.0) * log(lambda) - nu * lgamma((double)j) - Z
+    );
+  }
+  return sum(M, 1); // Rowsums!
+}
+
+vec VlY(vec& lambda, vec& nu, vec& Z, vec& B, int summax){
+  int l = lambda.size();
+  mat M = zeros<mat>(l, summax + 1);
+  for(int j = 1; j <= summax; j++){
+    M.col(j) += pow(lgamma((double)j), 2.0) * exp( ((double)j - 1.0) * log(lambda) - nu * lgamma((double)j) - Z );
+  }
+  return sum(M, 1) - pow(B, 2.0); // Rowsums!
+}
+
+// [[Rcpp::export]]
+List A_B_C(vec& b, mat& X, mat& Z, vec& beta, vec& delta, mat& G, vec& tau, int summax, int N, mat& lambdamat, 
+           mat& logZmat){
+  int m_i = X.n_rows;
+  vec mu = exp(X * beta + Z * b);
+  vec nu = exp(G * delta);
+  vec nu2 = mu_fix(nu, N), mu2 = mu_fix(mu, N);
+  vec m = (mu2/(1./((double)N/10.))) - 1.00, n = (nu2/(1./((double)N/10.))) - 1.00;   
+  vec lambda = mat_lookup(m, n, lambdamat);
+  vec logZ = mat_lookup(m, n, logZmat);
+  vec B = ElY(lambda, nu, logZ, summax);
+  vec C = VlY(lambda, nu, logZ, B, summax);
+  vec A = EYlY(lambda, nu, logZ, summax) - mu % B;
+  List out = List::create(Named("A") = A , _["B"] = B, _["C"] = C);
+  return out;
+}
+
+
+
+
+// Old version -> Not in use!
+// List A_B_C(vec& b, mat& X, mat& Z, vec& beta, vec& delta, mat& G, vec& tau, int summax, int N, mat& lambdamat, 
+//            mat& logZmat, vec& w, vec& v){
+//   int m_i = X.n_rows, gh = w.size();
+//   mat A = zeros<mat>(m_i, gh), B = A, C = A, mu_mat = A;
+//   vec eta = X * beta + Z * b;
+//   vec nu = exp(G * delta);
+//   vec nu2 = mu_fix(nu, N);
+//   vec n = (nu2/(1./((double)N/10.))) - 1.00;
+//   for(int l = 0; l < gh; l++){
+//     vec this_eta = eta + v[l] * tau;
+//     vec mu = exp(this_eta);
+//     vec mu2 = mu_fix(mu, N);
+//     vec m = (mu2/(1./((double)N/10.))) - 1.00;   
+//     vec lambda = mat_lookup(m, n, lambdamat);
+//     vec logZ = mat_lookup(m, n, logZmat);
+//     mu_mat.col(l) += w[l] * mu;
+//     B.col(l) += w[l] * ElY(lambda, nu, logZ, summax);
+//     C.col(l) += w[l] * VlY(lambda, nu, logZ, summax);
+//     A.col(l) += w[l] * EYlY(lambda, nu, logZ, summax);
+//   }
+//   vec B_out = sum(B, 1), A_out = sum(A, 1), C_out = sum(C, 1), mu_out = sum(mu_mat, 1);
+//   vec CC = C_out - pow(B_out, 2.0);
+//   vec AA = A_out - mu_out % B_out;
+//   List out = List::create(Named("A") = AA , _["B"] = B_out, _["C"] = CC);
+//   return out;}
+
+
