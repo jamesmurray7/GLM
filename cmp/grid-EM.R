@@ -124,6 +124,9 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   ABC <- mapply(function(b, X, Z, G, tau){
     A_B_C(b, X, Z, beta, delta, G, tau, 100, N, lambda.mat, logZ.mat)
   }, b = b.hat, X = X, Z = Z, G = G, tau = tau, SIMPLIFY = F)
+  # ABC2 <- mapply(function(b, X, Z, G, tau){
+  #   A_B_C2(b, X, Z, beta, delta, G, tau, summax, N, lambda.mat, logZ.mat, w, v)
+  # }, b = b.hat, X = X, Z = Z, G = G, tau = tau, SIMPLIFY = F)
   
   # D
   D.update <- mapply(function(Sigma, b) Sigma + tcrossprod(b), Sigma = Sigma, b = b.hat, SIMPLIFY = F)
@@ -137,11 +140,27 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   #   crossprod(((ABC$A * (Y - mu) / V - lgamma(Y + 1) + ABC$B) * nu), G)
   # }, ABC = ABC, Y = Y, mu = mus2, V = Vs, nu = nus2, G = G, SIMPLIFY = F)
   Hd <- mapply(getW2, ABC, Vs, nus2, G, SIMPLIFY = F)
-
+  # 
+  # Sd2 <- mapply(function(ABC, Y, mu, V, nu, G){
+  #   crossprod(((ABC$A * (Y - mu) / V - lgamma(Y + 1) + ABC$B) * nu), G)
+  # }, ABC = ABC2, Y = Y, mu = mus2, V = Vs, nu = nus2, G = G, SIMPLIFY = F)
+  # Hd2 <- mapply(getW2, ABC2, Vs, nus2, G, SIMPLIFY = F)
+  # 
   Sd3 <- mapply(function(G, b, X, Z, Y, lY, tau){
     Sdelta_cdiff(delta, G, b, X, Z, Y, lY, beta, tau, w, v, N, lambda.mat, logZ.mat)
   }, G = G, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
   
+  # Sd4 <- mapply(function(G, b, X, Z, Y, lY, tau){
+  #   Sd_another_test(delta, X, Z, beta, b, G, Y, lY, tau, summax, N, lambda.mat, logZ.mat, V.mat, w, v)
+  # }, G = G, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
+  # 
+  # Hd4 <- mapply(function(G, b, X, Z, Y, lY, tau){
+  #   GLMMadaptive:::cd_vec(delta, Sd_another_test,
+  #                         X = X, Z = Z, beta = beta, b = b, G = G, Y = Y, lY = lY,
+  #                         tau = tau, summax = summax, N = N, lambdamat = lambda.mat, logZmat = logZ.mat,
+  #                         Vmat = V.mat, w = w, v = v, eps = 1e-3)
+  # }, G = G, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
+
   # Survival parameters (\gamma, \zeta)
   Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
     Sgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, 10/N)
@@ -160,7 +179,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   
   # \beta and \delta
   beta.new <- beta - solve(Reduce('+', Hb), Reduce('+', Sb))
-  delta.new <- delta - solve(Reduce('+', Hd), c(Reduce('+', Sd3)))
+  delta.new <- delta - solve(Reduce('+', Hd2), c(Reduce('+', Sd3)))
 
   # Survival parameters (gamma, zeta)
   gammazeta.new <- c(gamma, zeta) - solve(Reduce('+', Hgz), rowSums(Sgz))

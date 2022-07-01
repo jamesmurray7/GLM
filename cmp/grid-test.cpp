@@ -363,7 +363,6 @@ mat joint_density_sdb(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Da
 }
 
 // Functions associated with the update to \delta ----------------------
-// Rewrite ABC calculations in C++ if needed (i.e. it is a bottleneck)
 
 // [[Rcpp::export]]
 mat getW2(List ABC, vec& V, vec& nu, mat& G){
@@ -564,33 +563,106 @@ List A_B_C(vec& b, mat& X, mat& Z, vec& beta, vec& delta, mat& G, vec& tau, int 
 }
 
 
+// Version utilising quadrature; maybe delete
+vec ElYq(vec& lambda, vec& nu, vec& Z, int summax){
+  int l = lambda.size();
+  mat M = zeros<mat>(l, summax + 1);
+  for(int j = 1; j <= summax; j++){
+    M.col(j) += lgamma((double)j) * exp(((double)j-1.0) * log(lambda) - nu * lgamma((double)j) - Z);
+  }
+  return sum(M, 1); // Rowsums!
+}
+
+vec EYlYq(vec& lambda, vec& nu, vec& Z, int summax){
+  int l = lambda.size();
+  mat M = zeros<mat>(l, summax + 1);
+  for(int j = 1; j <= summax; j++){
+    M.col(j) += exp(
+      log((double)j - 1.0) + log(lgamma((double)j)) + ((double)j - 1.0) * log(lambda) - nu * lgamma((double)j) - Z
+    );
+  }
+  return sum(M, 1); // Rowsums!
+}
+
+vec VlYq(vec& lambda, vec& nu, vec& Z, int summax){
+  int l = lambda.size();
+  mat M = zeros<mat>(l, summax + 1);
+  for(int j = 1; j <= summax; j++){
+    M.col(j) += pow(lgamma((double)j), 2.0) * exp( ((double)j - 1.0) * log(lambda) - nu * lgamma((double)j) - Z );
+  }
+  return sum(M, 1); //- pow(B, 2.0); // Rowsums!
+}
+
+// [[Rcpp::export]]
+List A_B_C2(vec& b, mat& X, mat& Z, vec& beta, vec& delta, mat& G, vec& tau, int summax, int N, mat& lambdamat,
+           mat& logZmat, vec& w, vec& v){
+  int m_i = X.n_rows, gh = w.size();
+  mat A_rhs = zeros<mat>(m_i, gh), B_mat = A_rhs, C_rhs = A_rhs, mu_mat = A_rhs;
+  vec eta = X * beta + Z * b;
+  vec nu = exp(G * delta);
+  vec nu2 = mu_fix(nu, N);
+  vec n = (nu2/(1./((double)N/10.))) - 1.00;
+  for(int l = 0; l < gh; l++){
+    vec this_eta = eta + v[l] * tau;
+    vec mu = exp(this_eta);
+    mu_mat.col(l) = mu;
+    vec mu2 = mu_fix(mu, N);
+    vec m = (mu2/(1./((double)N/10.))) - 1.00;
+    vec lambda = mat_lookup(m, n, lambdamat);
+    vec logZ = mat_lookup(m, n, logZmat);
+    B_mat.col(l) += w[l] *  ElYq(lambda, nu, logZ, summax);
+    C_rhs.col(l) += w[l] *  VlYq(lambda, nu, logZ, summax);
+    A_rhs.col(l) += w[l] * EYlYq(lambda, nu, logZ, summax);
+  }
+  // B: E[lfactY]
+  vec B = sum(B_mat, 1);
+  // A: E[YlfactY] - mu * B;
+  mat muB = mu_mat % B_mat;
+  mat A_minus_muB = A_rhs - muB;
+  vec A = sum(A_minus_muB, 1);
+  // C: Var[lfactY] = C_rhs - B^2
+  mat B2 = B_mat % B_mat;
+  mat Var_minus_B2 = C_rhs - B2;
+  vec C = sum(Var_minus_B2, 1);
+  // Create named list and return A, B, C.
+  List out = List::create(Named("A") = A , _["B"] = B, _["C"] = C);
+  return out;
+}
 
 
-// Old version -> Not in use!
-// List A_B_C(vec& b, mat& X, mat& Z, vec& beta, vec& delta, mat& G, vec& tau, int summax, int N, mat& lambdamat, 
-//            mat& logZmat, vec& w, vec& v){
-//   int m_i = X.n_rows, gh = w.size();
-//   mat A = zeros<mat>(m_i, gh), B = A, C = A, mu_mat = A;
-//   vec eta = X * beta + Z * b;
-//   vec nu = exp(G * delta);
-//   vec nu2 = mu_fix(nu, N);
-//   vec n = (nu2/(1./((double)N/10.))) - 1.00;
-//   for(int l = 0; l < gh; l++){
-//     vec this_eta = eta + v[l] * tau;
-//     vec mu = exp(this_eta);
-//     vec mu2 = mu_fix(mu, N);
-//     vec m = (mu2/(1./((double)N/10.))) - 1.00;   
-//     vec lambda = mat_lookup(m, n, lambdamat);
-//     vec logZ = mat_lookup(m, n, logZmat);
-//     mu_mat.col(l) += w[l] * mu;
-//     B.col(l) += w[l] * ElY(lambda, nu, logZ, summax);
-//     C.col(l) += w[l] * VlY(lambda, nu, logZ, summax);
-//     A.col(l) += w[l] * EYlY(lambda, nu, logZ, summax);
-//   }
-//   vec B_out = sum(B, 1), A_out = sum(A, 1), C_out = sum(C, 1), mu_out = sum(mu_mat, 1);
-//   vec CC = C_out - pow(B_out, 2.0);
-//   vec AA = A_out - mu_out % B_out;
-//   List out = List::create(Named("A") = AA , _["B"] = B_out, _["C"] = CC);
-//   return out;}
-
-
+// [[Rcpp::export]]
+vec Sd_another_test(vec& delta, mat& X, mat& Z, vec& beta, vec& b, mat& G, vec& Y, vec& lY,
+                    vec& tau, int summax, int N, mat& lambdamat, mat& logZmat, mat& Vmat, vec& w, vec& v){
+  vec out = vec(X.n_rows);
+  int gh = w.size();
+  vec eta = X * beta + Z * b;
+  vec nu = exp(G * delta);
+  vec nu2 = mu_fix(nu, N);
+  vec n = (nu2/(1./((double)N/10.))) - 1.00;
+  for(int l = 0; l < gh ; l++){
+    vec this_eta = eta + v[l] * tau;
+    vec mu = exp(this_eta);
+    vec mu2 = mu_fix(mu, N);
+    // Rcout << "mu2" << mu2 << std::endl;
+    vec m = (mu2/(1./((double)N/10.))) - 1.00;
+    vec lambda = mat_lookup(m, n, lambdamat);
+    // Rcout << "lambda" << lambda << std::endl;
+    vec logZ = mat_lookup(m, n, logZmat);
+    // Rcout << "logZ" << logZ << std::endl;
+    vec V = mat_lookup(m, n, Vmat);
+    // Rcout << "V" << V << std::endl;
+    V.replace(datum::nan, 7920.6);
+    V.replace(datum::inf, 7920.6);
+    // Rcout << "V again:" << V << std::endl;
+    // Expectations
+    vec B = ElY(lambda, nu, logZ, summax);
+    // Rcout << "B" << B << std::endl;
+    vec C = VlY(lambda, nu, logZ, B, summax);
+    // Rcout << "C" << C << std::endl;
+    vec A = EYlY(lambda, nu, logZ, summax) - mu % B;
+    // Rcout << "A" << A << std::endl;
+    out += w[l] * (A % (Y-mu)/V - lY + B) % nu;
+    // Rcout << "out" << out << std::endl;
+  }
+  return out.t() * G;
+}
