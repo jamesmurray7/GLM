@@ -16,7 +16,8 @@
 
 simData <- function(n = 250, ntms = 10, fup = 5, family = list('gaussian', 'gaussian'), disp = NULL, 
                     beta = rbind(c(1, 0.10, 0.33, -0.50), c(1, 0.10, 0.33, -0.50)), D = NULL, var.e = 0.16,
-                    gamma = c(0.5, -0.5), zeta = c(0.05, -0.30), theta = c(-4, 0.2), cens.rate = exp(-3.5)){
+                    gamma = c(0.5, -0.5), zeta = c(0.05, -0.30), theta = c(-4, 0.2), cens.rate = exp(-3.5),
+                    random.formula = NULL){
   
   #' Checks --------------
   # Check family is valid option
@@ -36,10 +37,14 @@ simData <- function(n = 250, ntms = 10, fup = 5, family = list('gaussian', 'gaus
   if(K != length(funlist)) stop('Incorrect number of families provided and/or beta terms.')
   if(K != length(gamma)) stop('Incorrect number of association parameters provided wrt beta terms.')
   if(is.null(D)) D <- diag(K * 2) else D <- D
-  if((K*2) != ncol(D)) stop('Incorrect dimension on supplied covariance matrix D')
+  if(!is.null(random.formula)){
+    if(length(random.formula) != K) stop('Provided random formulas must be a list of length K.')
+  }else{
+    if((K*2) != ncol(D)) stop('Incorrect dimension on supplied covariance matrix D, do you need to supply random.formula?')
+  }
   
   # Check covariance matrix D is positive semi-definite.
-  if(any(eigen(D)$value <= 0) || det(D) <= 0) stop('D must be positive semi-definite')
+  if(any(eigen(D)$value < 0) || det(D) <= 0) stop('D must be positive semi-definite')
   
   #' Necessary parameters & data generation ----
   time <- seq(0, fup, length.out = ntms); tau <- fup + 0.1
@@ -52,15 +57,25 @@ simData <- function(n = 250, ntms = 10, fup = 5, family = list('gaussian', 'gaus
   
   #' Design matrices, used across ALL responses ----
   X <- model.matrix(~ time + cont + bin, data = df)
-  Z <- model.matrix(~ 1 + time, data = df)
-  
+  if(!is.null(random.formula)){
+    Z <- lapply(random.formula, function(x) model.matrix(x, data = df))
+  }else{
+    Z <- replicate(K, model.matrix(~ 1 + time, data = df), simplify = F) # assume all intslopes.
+  }
+
   #' Linear predictor & response generation ----
-  b <- MASS::mvrnorm(n, mu = rep(0, K * 2), Sigma = D)
-  b.inds <- split(1:(2*K), rep(1:K, each = 2))
+  if(!is.null(random.formula)){
+    q <- ncol(do.call(cbind, lapply(Z, head)))
+    b <- MASS::mvrnorm(n, mu = rep(0, q), Sigma = D)
+    b.inds <- split(1:q, do.call(c, sapply(1:K, function(k) rep(k, ncol(Z[[k]])))))
+  }else{
+    b <- MASS::mvrnorm(n, mu = rep(0, K * 2), Sigma = D)
+    b.inds <- split(1:(2*K), rep(1:K, each = 2)) 
+  }
   Y <- sapply(1:K, function(k){
-    f <- family[[k]]
+    f <- family[[k]]; Zk <- Z[[k]]
     betak <- beta[k,,drop=T]
-    etak <- X %*% betak + rowSums(Z * b[df$id, b.inds[[k]]])
+    etak <- X %*% betak + rowSums(Zk * b[df$id, b.inds[[k]]])
     switch(f, 
            gaussian = Y <- rnorm(n * ntms, mean = etak, sd = sqrt(var.e)),
            binomial = Y <- rbinom(n * ntms, 1, plogis(etak)),
@@ -77,11 +92,26 @@ simData <- function(n = 250, ntms = 10, fup = 5, family = list('gaussian', 'gaus
   theta0 <- theta[1]; theta1 <- theta[2]
   Keta <- cbind(cont, bin) %*% zeta
   U <- runif(n)
-  ints <- seq(1,2*K,by=2); slopes <- seq(2, 2*K, by = 2)
+  if(!is.null(random.formula)){
+    zz <- lapply(Z, colnames)
+    ints <- which(grepl('\\(Intercept\\)', do.call(c, zz))); slopes <- which(grepl('time', do.call(c, zz)))
+    if(any(!grepl('\\(Intercept\\)|time', do.call(c, zz)))) message('Warning: Only intercept-only or intercept-ands-slope random.formulas allowed.')
+    # Which of the K responses have intercept/slope
+    ints.gamma <- do.call(c, lapply(1:K, function(k){
+      if(any(grepl('\\(Intercept\\)', colnames(Z[[k]])))) return(k) else return(NULL)
+    }))
+    slopes.gamma <- do.call(c, lapply(1:K, function(k){
+      if(any(grepl('time', colnames(Z[[k]])))) return(k) else return(NULL)
+    }))
+  }else{
+    ints <- seq(1,2*K,by=2); slopes <- seq(2, 2*K, by = 2) # intslope on all.
+    ints.gamma <- ints; slopes.gamma <- slopes
+  }
+  
   b0 <- b[, ints, drop = F]; b1 <- b[, slopes, drop = F]
   # Generate survival times (Austin et al 2012)
-  denom <- theta1 + b1 %*% gamma  
-  rhs <- (theta1 + b1 %*% gamma) * log(U)/(exp(theta0 + Keta + b0 %*% gamma))
+  denom <- theta1 + b1 %*% gamma[slopes.gamma]
+  rhs <- (theta1 + b1 %*% gamma[slopes.gamma]) * log(U)/(exp(theta0 + Keta + b0 %*% gamma[ints.gamma]))
   t <- suppressWarnings(log(1-rhs)/denom)
   t[is.nan(t)] <- tau
   
