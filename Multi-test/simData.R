@@ -87,6 +87,7 @@ simData <- function(n = 250, ntms = 10, fup = 5, family = list('gaussian', 'gaus
   colnames(Y) <- paste0('Y.', 1:K)
   
   df <- cbind(df, Y)
+  print(df)
   
   #' Survival ----
   theta0 <- theta[1]; theta1 <- theta[2]
@@ -105,10 +106,12 @@ simData <- function(n = 250, ntms = 10, fup = 5, family = list('gaussian', 'gaus
     }))
   }else{
     ints <- seq(1,2*K,by=2); slopes <- seq(2, 2*K, by = 2) # intslope on all.
-    ints.gamma <- ints; slopes.gamma <- slopes
+    ints.gamma <- slopes.gamma <- 1:K    # Each K has both intercept and slope.
   }
   
   b0 <- b[, ints, drop = F]; b1 <- b[, slopes, drop = F]
+  print(b0); print(b1)
+  print(gamma[ints.gamma]);print(gamma[slopes.gamma])
   # Generate survival times (Austin et al 2012)
   denom <- theta1 + b1 %*% gamma[slopes.gamma]
   rhs <- (theta1 + b1 %*% gamma[slopes.gamma]) * log(U)/(exp(theta0 + Keta + b0 %*% gamma[ints.gamma]))
