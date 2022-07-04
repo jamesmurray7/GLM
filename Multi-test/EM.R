@@ -5,7 +5,7 @@ library(RcppArmadillo)
 source('_Functions.R')
 source('simData.R')
 source('inits.R')
-source('vcov.R')
+source('vcov2.R')
 sourceCpp('funs.cpp')
 vech <- function(x) x[lower.tri(x, T)]
 
@@ -78,7 +78,7 @@ EMupdate <- function(Omega, family, X, Y, Z, b, S, SS, Fi, Fu, l0i, l0u, Delta, 
   #   Hbeta(beta, X, Y, Z, b, sigma, family, beta.inds2, K, .Machine$double.eps^(1/4))
   # }, X = X, Y = Y, Z = Z, b = bsplit, SIMPLIFY = F)
   Sb <- Sbeta2(beta, X, Y, Z, bsplit, sigma, family, beta.inds2, K)
-  Hb <- Hbeta2(beta, X, Y, Z, bsplit, sigma, family, beta.inds2, K, .Machine$double.eps^(1/4))
+  Hb <<- Hbeta2(beta, X, Y, Z, bsplit, sigma, family, beta.inds2, K, .Machine$double.eps^(1/4))
   
   #' Dispersion ('\sigma') --------------------
   if(any(unlist(family) %in% c('gaussian', 'negative.binomial'))){
@@ -261,6 +261,8 @@ EM <- function(long.formulas, surv.formula, data, family, post.process = T, cont
   if(!optimiser %in% c('ucminf', 'optim')) stop("Only optimisers 'optim' and 'ucminf' supported.")
   if(!is.null(control$hessian)) hessian <- control$hessian else hessian <- 'manual'
   if(!hessian %in% c('auto', 'manual')) stop("Argument 'hessian' needs to be either 'auto' (i.e. from optim) or 'manual' (i.e. from _sdb, the defualt).")
+  if(!is.null(control$gamma.SE)) gamma.SE <- control$gamma.SE else gamma.SE <- 'appx'
+  if(!gamma.SE %in% c('appx', 'exact')) stop("Argument gamma.SE needs to be either 'exact' or 'appx'.")
   
   EMstart <- proc.time()[3]
   while(diff > tol && iter < maxit){
@@ -330,7 +332,7 @@ EM <- function(long.formulas, surv.formula, data, family, post.process = T, cont
     # The Information matrix
     I <- structure(vcov(coeffs, dmats, surv, sv, 
                         Sigma, SigmaSplit, b, bsplit, 
-                        l0u, w, v, n, family, K, q, beta.inds, b.inds),
+                        l0u, w, v, n, family, K, q, beta.inds, b.inds, gamma.SE),
                    dimnames = list(names(params), names(params)))
     I.inv <- tryCatch(solve(I), error = function(e) e)
     if(inherits(I.inv, 'error')) I.inv <- structure(MASS::ginv(I),

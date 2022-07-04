@@ -1,7 +1,7 @@
 #' Mclachlan and Krishnan (2008) approximation of the information matrix.
 vcov <- function(Omega, dmats, surv, sv, 
                  Sigma, SigmaSplit, b, bsplit, 
-                 l0u, w, v, n, family, K, q, beta.inds, b.inds){
+                 l0u, w, v, n, family, K, q, beta.inds, b.inds, gamma.SE){
   #' Unpack Omega ----
   D <- Omega$D
   beta <- c(Omega$beta)
@@ -42,11 +42,11 @@ vcov <- function(Omega, dmats, surv, sv,
   })
   
   sDi <- function(i) {
-    mapply(function(b) {
-      out <- 0.5 * tcrossprod(b) %*% (Dinv %*% delta.D[[i]] %*% Dinv)   
+    mapply(function(b, S) {
+      out <- 0.5 * (S + tcrossprod(b)) %*% (Dinv %*% delta.D[[i]] %*% Dinv)   
       lhs[i] + sum(diag(out))
     },
-    b = b,
+    b = b, S = Sigma,
     SIMPLIFY = T)
   }
   
@@ -93,27 +93,29 @@ vcov <- function(Omega, dmats, surv, sv,
     Sgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, b.inds2, K, q, .Machine$double.eps^(1/3))
   }, b = b, Sigma = SigmaSplit, S = S, SS = SS, Fu = Fu, Fi = Fi, l0u = l0u, Delta = Delta, SIMPLIFY = F)
   
-  Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
-    Sgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, b.inds2, K, q, .Machine$double.eps^(1/3))
-  }, b = b, Sigma = SigmaSplit, S = S, SS = SS, Fu = Fu, Fi = Fi, l0u = l0u, Delta = Delta, SIMPLIFY = F)
-  
-  Hgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
-    Hgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, b.inds2, K, q, .Machine$double.eps^(1/3))
-  }, b = b, Sigma = SigmaSplit, S = S, SS = SS, Fu = Fu, Fi = Fi, l0u = l0u, Delta = Delta, SIMPLIFY = F)
-  
-  HH <<- Reduce('+', Hgz) 
-  print(solve(-HH))
-  
   # Collate and form information --------------------------------------------
   S <- mapply(function(sD, Sb, Sgz){
-    c(sD, c(Sb), Sgz)
+    c(sD, c(Sb), c(Sgz))
   }, sD = sD, Sb = Sb, Sgz = Sgz)
 
   if(any(unlist(family) %in% c('gaussian', 'negative.binomial'))) S <- rbind(S, do.call(rbind, Ss))
   
   SS <- rowSums(S) # sum S
+  #  observed empirical information matrix (Mclachlan and Krishnan, 2008).
   I <- Reduce('+', lapply(1:n, function(i) tcrossprod(S[, i]))) - tcrossprod(SS)/n
-  # ^ observed empirical information matrix (Mclachlan and Krishnan, 2008).
+  # Populate Observed variance for (gamma, zeta)
+  if(gamma.SE == 'exact'){
+    S <- sv$S; SS <- sv$SS
+    Hgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
+      Hgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, b.inds2, K, q, .Machine$double.eps^(1/3))
+    }, b = b, Sigma = SigmaSplit, S = S, SS = SS, Fu = Fu, Fi = Fi, l0u = l0u, Delta = Delta, SIMPLIFY = F)
+    HH <- Reduce('+', Hgz) 
+    start.gammazeta <- 1 + length(vech(D)) + length(beta) 
+    I[start.gammazeta:(start.gammazeta - 1 + length(gamma) + length(zeta)),
+      start.gammazeta:(start.gammazeta - 1 + length(gamma) + length(zeta))] <- (-HH)
+  }
+  
+  
   I
 }
 

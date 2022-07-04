@@ -43,10 +43,10 @@ elapsed.times %>%
   ) %>% 
   ggplot(aes(x = K_label, y = log10(elapsed))) + 
   geom_boxplot(outlier.alpha = .50) + 
-  # scale_y_log10() + 
   stat_summary(fun=median, geom="line", aes(group=1), lty = 5, alpha = .5) +
   stat_summary(fun=median, geom="point", size = 2) + 
   facet_wrap(~ method, scales = 'free_y') +
+  scale_y_continuous(breaks = scales::pretty_breaks(10)) + 
   theme_csda() + 
   labs(
     x = NULL, y = expression(underline(bold(Gaussian)))

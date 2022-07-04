@@ -46,13 +46,13 @@ gauss.fit2 <- EM(gaussians, surv.formula, data, families, control = list(hessian
 
 # All binary --------------------------------------------------------------
 binoms <- list(
-  ascites ~ drug * time + (1 + time|id),
-  spiders ~ drug * time + (1 + time|id),
-  hepatomegaly ~ drug * time + (1 + time|id)
+  ascites ~ drug * time + (1|id),
+  spiders ~ drug * time + (1|id),
+  hepatomegaly ~ drug * time + (1|id)
 )
 
 bin.fit1 <- EM(binoms, surv.formula, data, as.list(rep('binomial',3)),
-               control = list(hessian = 'auto'))
+               control = list(hessian = 'manual', gamma.SE = 'exact'))
 
 
 # Count -------------------------------------------------------------------
@@ -69,29 +69,41 @@ long.formulas <- list(
   albumin ~ drug * time + (1 + time|id),
   prothrombin ~ drug * splines::ns(time, knots = c(1, 4)) + (1 + splines::ns(time, knots = c(1, 4))|id),
   platelets ~ drug * splines::ns(time, knots = c(1, 4)) + (1 + splines::ns(time, knots = c(1, 4))|id),
-  spiders ~ drug * time + (1 + time|id),
-  ascites ~ drug * time + (1 + time|id),
-  hepatomegaly ~ drug * time + (1 + time|id)
+  # spiders ~ drug * time + (1|id), # Remove these --> makes it take longer and doesn't change outcome.
+  ascites ~ drug * time + (1|id)
+  # hepatomegaly ~ drug * time + (1|id)
 )
 
 families <- list(gaussian, gaussian, gaussian, gaussian, poisson, binomial, binomial, binomial)
 
-fullfit <- EM(long.formulas, surv.formula, data, families, control = list(hessian = 'auto',
-                                                                          correlated = F,
+fullfit <- EM(long.formulas, surv.formula, data, families, control = list(correlated = F,
+                                                                          gamma.SE = 'exact',
+                                                                          verbose = T,
                                                                           maxit = 500))
-fullfit2 <- EM(long.formulas, surv.formula, data, families, control = list(hessian = 'auto',
-                                                                           correlated = T,
+fullfit2 <- EM(long.formulas, surv.formula, data, families, control = list(correlated = T,
+                                                                           gamma.SE = 'exact',
+                                                                           verbose = T,
                                                                            maxit = 500))
 # corr
+my.summary(fullfit2)
 Event-time sub-model: 
-  Estimate    SE   2.5%  97.5% p-value
-zeta_drug            -0.353 0.434 -1.203  0.497   0.416
-gamma_serBilir        0.529 0.345 -0.147  1.204   0.125
-gamma_SGOT            0.213 0.246 -0.268  0.695   0.386
-gamma_albumin        -1.470 0.130 -1.724 -1.216   0.000
-gamma_prothrombin    -2.257 0.157 -2.564 -1.950   0.000
-gamma_platelets      -0.211 0.419 -1.033  0.611   0.615
-gamma_spiders        -0.023 0.230 -0.474  0.428   0.921
-gamma_ascites         0.299 0.202 -0.096  0.694   0.138
-gamma_hepatomegaly    0.092 0.295 -0.485  0.669   0.755
+  Estimate    SE   2.5% 97.5% p-value
+zeta_drug           -0.302 0.677 -1.629 1.024   0.655
+gamma_serBilir       0.640 0.177  0.293 0.987   0.000
+gamma_SGOT           0.180 0.359 -0.525 0.884   0.617
+gamma_albumin       -1.750 0.925 -3.564 0.064   0.059
+gamma_prothrombin   -2.025 1.645 -5.249 1.200   0.218
+gamma_platelets     -0.224 0.256 -0.726 0.277   0.381
+gamma_ascites        0.304 0.171 -0.031 0.639   0.075
 
+# Non-corr
+my.summary(fullfit)
+Event-time sub-model: 
+                  Estimate    SE   2.5%  97.5% p-value
+zeta_drug           -0.192 0.255 -0.692  0.308   0.451
+gamma_serBilir       1.136 0.114  0.912  1.360   0.000
+gamma_SGOT          -0.436 0.265 -0.955  0.083   0.100
+gamma_albumin       -1.868 0.324 -2.502 -1.234   0.000
+gamma_prothrombin   -0.783 0.653 -2.064  0.497   0.231
+gamma_platelets     -0.458 0.205 -0.859 -0.056   0.025
+gamma_ascites        0.091 0.075 -0.057  0.238   0.228

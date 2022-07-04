@@ -16,7 +16,7 @@ pbc$prothrombin <- (.1*pbc$prothrombin)^(-4)
 surv.formula <- Surv(survtime, status) ~ drug # Global
 
 # define a function for fitting aEM object
-EMfit <- function(response, type, family){
+EMfit <- function(response, type, family, gamma.SE = 'appx'){
   
   data.subset <- pbc[!is.na(pbc[,response]),]
   data.subset$id <- as.numeric(as.character(data.subset$id))
@@ -31,7 +31,8 @@ EMfit <- function(response, type, family){
                 spline = '~ drug * splines::ns(time, knots = c(1, 4)) + (1 + splines::ns(time, knots = c(1, 4))|id)')
   long.formula <- list(as.formula(paste0(response, rhs)))
   
-  fit <- EM(long.formula, surv.formula, data = data.subset, family = list(family), control = list(hessian = 'auto'))
+  fit <- EM(long.formula, surv.formula, data = data.subset, family = list(family), control = list(hessian = 'manual',
+                                                                                                  gamma.SE = gamma.SE))
   print(my.summary(fit))
   return(invisible(fit))
 }
@@ -47,7 +48,7 @@ a <- EMfit('serBilir', 'spline', gaussian)
 EMfit('SGOT', 'spline', gaussian)
 
 # Albumin -----------------------------------------------------------------
-EMfit('albumin', 'linear', gaussian)
+EMfit('albumin', 'linear', gaussian, 'appx')
 
 # Prothrombin time --------------------------------------------------------
 EMfit('prothrombin', 'spline', gaussian)
@@ -61,7 +62,7 @@ EMfit('alkaline', 'quadratic', poisson) # p >> 0.1
 # spiders -----------------------------------------------------------------
 EMfit('spiders', 'quadratic', binomial)
 EMfit('spiders', 'linear', binomial) # probably just take linear for parsimony
-EMfit('spiders', 'intercept', binomial)
+EMfit('spiders', 'intercept', binomial, 'exact')
 
 # Ascites -----------------------------------------------------------------
 EMfit('ascites', 'spline', binomial)
@@ -73,4 +74,5 @@ EMfit('ascites', 'intercept', binomial)
 # Hepatomegaly ------------------------------------------------------------
 EMfit('hepatomegaly', 'quadratic', binomial)
 EMfit('hepatomegaly', 'linear', binomial)
+EMfit('hepatomegaly', 'intercept', binomial)
 
