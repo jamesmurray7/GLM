@@ -58,9 +58,27 @@ bin.fit1 <- EM(binoms, surv.formula, data, as.list(rep('binomial',3)),
 # Count -------------------------------------------------------------------
 # ((Univariate))
 pois <- EM(list(platelets ~  drug * splines::ns(time, knots = c(1, 4)) + (1 + splines::ns(time, knots = c(1, 4))|id)),
-           surv.formula, data, list(poisson), control = list(SE.D = F, SEs = 'score'))
+           surv.formula, data, list(poisson), control = list(SEs = 'appx'))
 
+# Rustand -----------------------------------------------------------------
+long.formulas <- list(
+  serBilir ~ drug * splines::ns(time, knots = c(1, 4)) + (1 + splines::ns(time, knots = c(1, 4))|id),
+  SGOT ~ drug * splines::ns(time, knots = c(1, 4)) + (1 + splines::ns(time, knots = c(1, 4))|id),
+  albumin ~ drug * time + (1 + time|id),
+  platelets ~ drug * splines::ns(time, knots = c(1, 4)) + (1 + splines::ns(time, knots = c(1, 4))|id),
+  spiders ~ drug * time + (1|id)
+)
+fit1 <- EM(long.formulas, surv.formula,
+          data, list('gaussian', 'gaussian', 'gaussian', 'poisson', 'binomial'),
+          control = list(correlated = F, verbose = T, gh.nodes = 9))
 
+fit2 <- EM(long.formulas, surv.formula,
+           data, list('gaussian', 'gaussian', 'gaussian', 'poisson', 'binomial'),
+           control = list(correlated = F, verbose = T, SEs = 'exact'))
+
+fit2b <- EM(long.formulas, surv.formula,
+           data, list('gaussian', 'gaussian', 'gaussian', 'poisson', 'binomial'),
+           control = list(correlated = T, verbose = T, SEs = 'exact'))
 
 # Full 8-variate model ----------------------------------------------------
 long.formulas <- list(
@@ -77,7 +95,7 @@ long.formulas <- list(
 families <- list(gaussian, gaussian, gaussian, gaussian, poisson, binomial)#, binomial, binomial)
 
 fullfit <- EM(long.formulas, surv.formula, data, families, control = list(correlated = F,
-                                                                          SEs = 'exact.gamma',
+                                                                          SEs = 'exact',
                                                                           SE.D = F,
                                                                           verbose = T,
                                                                           maxit = 500))

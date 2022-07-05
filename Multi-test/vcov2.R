@@ -1,7 +1,7 @@
 #' Mclachlan and Krishnan (2008) approximation of the information matrix.
 vcov <- function(Omega, dmats, surv, sv, 
                  Sigma, SigmaSplit, b, bsplit, 
-                 l0u, w, v, n, family, K, q, beta.inds, b.inds, gamma.SE){
+                 l0u, w, v, n, family, K, q, beta.inds, b.inds, SEs){
   #' Unpack Omega ----
   D <- Omega$D
   beta <- c(Omega$beta)
@@ -54,22 +54,13 @@ vcov <- function(Omega, dmats, surv, sv,
   sD <- lapply(1:nrow(sD), function(x) sD[x, ]) # Cast to list
   
   #' The fixed effects, \beta 
-  Sb <- mapply(function(X, Y, Z, b){
-    Sbeta(beta, X, Y, Z, b, sigma, family, beta.inds2, K)
-  }, X = X, Y = Y, Z = Z, b = bsplit, SIMPLIFY = F)
+  # Sb <- mapply(function(X, Y, Z, b){
+  #   Sbeta(beta, X, Y, Z, b, sigma, family, beta.inds2, K)
+  # }, X = X, Y = Y, Z = Z, b = bsplit, SIMPLIFY = F)
   
   Sbq <- mapply(function(X, Y, Z, b, S){
-    rhs <- matrix(0, nrow(X[[1]]), length(w))
-    tau <- sqrt(diag(tcrossprod(Z[[1]] %*% S, Z[[1]])))
-    eta <- X[[1]] %*% beta + Z[[1]] %*% b
-    for(l in 1:length(w)){
-      rhs[,l] <- w[l] * exp(eta + tau * v[l])
-    }
-    rhs <- rowSums(rhs)
-    crossprod(X[[1]], Y[[1]] - rhs)
-  }, X = X, Y = Y, Z = Z, b = b, S = Sigma, SIMPLIFY = F)
-  
-  sqrt(diag(solve(-Hbeta2(beta, X, Y, Z, bsplit, sigma, family, beta.inds2, K, .Machine$double.eps^(1/3)))))
+    Sbeta_q(beta, X, Y, Z, b, sigma, family, beta.inds2, K, w, v, S)
+  }, X = X, Y = Y, Z = Z, b = bsplit, S = SigmaSplit, SIMPLIFY = F)
   
   Ss <- vector('list', K)
   #' The dispersion parameter, \sigma
@@ -116,18 +107,15 @@ vcov <- function(Omega, dmats, surv, sv,
   SS <- rowSums(S) # sum S
   #  observed empirical information matrix (Mclachlan and Krishnan, 2008).
   I <- Reduce('+', lapply(1:n, function(i) tcrossprod(S[, i]))) - tcrossprod(SS)/n
-  # sqrt(diag(solve(I)))
-  # Populate Observed variance for (gamma, zeta)
-  if(gamma.SE == 'exact.gamma'){
+  
+  #' Populate Observed variance for (\gamma, \zeta) if required.
+  if(SEs == 'exact'){
     S <- sv$S; SS <- sv$SS
     Hgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
       Hgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, b.inds2, K, q, .Machine$double.eps^(1/3))
     }, b = b, Sigma = SigmaSplit, S = S, SS = SS, Fu = Fu, Fi = Fi, l0u = l0u, Delta = Delta, SIMPLIFY = F)
     HH <- Reduce('+', Hgz) 
     start.gammazeta <- 1 + length(vech(D)) + length(beta) 
-    print(start.gammazeta)
-    print(length(gamma)); print(length(zeta))
-    print(HH)
     I[start.gammazeta:(start.gammazeta - 1 + length(gamma) + length(zeta)),
       start.gammazeta:(start.gammazeta - 1 + length(gamma) + length(zeta))] <- (-HH)
   }

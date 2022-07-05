@@ -198,6 +198,59 @@ vec Sbeta(vec& beta, List X, List Y, List Z, List b, List sigma, List family, Li
 }
 
 // [[Rcpp::export]]
+vec Sbeta_q(vec& beta, List X, List Y, List Z, List b, 
+            List sigma, List family, List beta_inds, int K, vec& w, vec& v, List S){
+  int p = beta.size(), gh = w.size();
+  vec Score = vec(p);
+  
+  for(int k = 0; k < K; k++){
+    vec Yk = Y[k];
+    mat Xk = X[k];
+    mat Zk = Z[k];
+    mat Sk = S[k];
+    vec tauk = sqrt(diagvec(Zk * Sk * Zk.t()));
+    std::string f = family[k];
+    double sigmak = sigma[k];
+    uvec beta_k_inds = beta_inds[k];
+    vec beta_k = beta.elem(beta_k_inds); // Ensure indexing from zero!!
+    vec b_k = b[k];
+    vec eta = Xk * beta_k + Zk * b_k;
+    vec rhs = vec(eta.size());
+    for(int l = 0; l < gh; l++){
+      vec eta_l = eta + v[l] * tauk;
+      if(f == "gaussian"){
+        rhs += w[l] * Score_eta_gauss(Yk, eta_l, sigmak);
+      }else if(f == "binomial"){
+        rhs +=  w[l] * Score_eta_binom(Yk, eta_l);
+      }else if(f == "poisson"){
+        rhs += w[l] * Score_eta_poiss(Yk, eta_l);
+      }else if(f == "negative.binomial"){
+        rhs += w[l] * Score_eta_negbin(Yk, eta_l, sigmak);
+      }
+    }
+    Score.elem(beta_k_inds) += Xk.t() * rhs;
+  }
+  
+  return Score;
+}
+
+// [[Rcpp::export]]
+mat Hbeta_q(vec& beta, List X, List Y, List Z, List b, 
+            List sigma, List family, List beta_inds, int K, vec& w, vec& v, List S, double eps){
+  int p = beta.size();
+  mat out = zeros<mat>(p, p);
+  vec S0 = Sbeta_q(beta, X, Y, Z, b, sigma, family, beta_inds, K, w, v, S);
+  for(int i = 0; i < p; i++){
+    vec bb = beta;
+    double xi = std::max(beta[i], 1.0);
+    bb[i] = beta[i] + eps * xi;
+    vec Sdiff = Sbeta_q(bb, X, Y, Z, b, sigma, family, beta_inds, K, w, v, S) - S0;
+    out.col(i) = Sdiff/(bb[i]-beta[i]);
+  }
+  return 0.5 * (out + out.t()); // Ensure symmetry
+}
+
+// [[Rcpp::export]]
 vec Sbeta2(vec& beta, List X, List Y, List Z, List b, List sigma, List family, List beta_inds, int K){
   int p = beta.size();
   int n = X.size(); // i in 1...n

@@ -77,8 +77,17 @@ EMupdate <- function(Omega, family, X, Y, Z, b, S, SS, Fi, Fu, l0i, l0u, Delta, 
   # Hb <- mapply(function(X, Y, Z, b){
   #   Hbeta(beta, X, Y, Z, b, sigma, family, beta.inds2, K, .Machine$double.eps^(1/4))
   # }, X = X, Y = Y, Z = Z, b = bsplit, SIMPLIFY = F)
-  Sb <- Sbeta2(beta, X, Y, Z, bsplit, sigma, family, beta.inds2, K)
-  Hb <<- Hbeta2(beta, X, Y, Z, bsplit, sigma, family, beta.inds2, K, .Machine$double.eps^(1/4))
+  # Sb <- Sbeta2(beta, X, Y, Z, bsplit, sigma, family, beta.inds2, K)
+  # Hb <- Hbeta2(beta, X, Y, Z, bsplit, sigma, family, beta.inds2, K, .Machine$double.eps^(1/4))
+  Sbq <- mapply(function(X, Y, Z, b, S){
+    Sbeta_q(beta, X, Y, Z, b, sigma, family, beta.inds2, K, w, v, S)
+  }, X = X, Y = Y, Z = Z, b = bsplit, S = SigmaSplit, SIMPLIFY = F)
+  
+  Hbq <- mapply(function(X, Y, Z, b, S){
+    Hbeta_q(beta, X, Y, Z, b, sigma, family, beta.inds2, K, w, v, S, .Machine$double.eps^(1/3))
+  }, X = X, Y = Y, Z = Z, b = bsplit, S = SigmaSplit, SIMPLIFY = F)
+  Hb <- Reduce('+', Hbq); Sb <- Reduce('+', Sbq)
+  
   
   #' Dispersion ('\sigma') --------------------
   if(any(unlist(family) %in% c('gaussian', 'negative.binomial'))){
@@ -262,9 +271,9 @@ EM <- function(long.formulas, surv.formula, data, family, post.process = T, cont
   if(!is.null(control$hessian)) hessian <- control$hessian else hessian <- 'manual'
   if(!hessian %in% c('auto', 'manual')) stop("Argument 'hessian' needs to be either 'auto' (i.e. from optim) or 'manual' (i.e. from _sdb, the defualt).")
   if(!is.null(control$SEs)) SEs <- control$SEs else SEs <- 'appx'
-  if(!SEs %in% c('appx', 'exact.gamma', 'score')) stop("Argument gamma.SE needs to be either:\n",
+  if(!SEs %in% c('appx', 'exact', 'score')) stop("Argument gamma.SE needs to be either:\n",
                                                        "'appx' (the default) --> Calculated by observed empirical information matrix calculation\n",
-                                                       "'exact.gamma' --> Using direct hessian calculation for survival parameters only or\n",
+                                                       "'exact' --> Using direct hessian calculation for survival terms\n",
                                                        "'score' --> Calculte the score and then hessian by forward differencing.")
   if(!is.null(control$SE.D)) SE.D <- control$SE.D else SE.D <- T
   if(!is.logical(SE.D)) stop("'SE.D' must be either TRUE or FALSE.")
