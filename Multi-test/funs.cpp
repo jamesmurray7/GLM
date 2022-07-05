@@ -356,7 +356,7 @@ vec Sgammazeta(vec& gammazeta, vec& b, List Sigma,
 // [[Rcpp::export]]
 mat Hgammazeta(vec& gammazeta, vec& b, List Sigma,
                rowvec& S, mat& SS, mat& Fu, rowvec& Fi, vec& haz, int Delta, vec& w, vec& v,
-               List b_inds, int K, int q, long double eps){
+               List b_inds, int K, int q, double eps){
   mat out = zeros<mat>(gammazeta.size(), gammazeta.size());
   vec f0 = Sgammazeta(gammazeta, b, Sigma, S, SS, Fu, Fi, haz, Delta, w, v, b_inds, K, q, eps);
   for(int i = 0; i < gammazeta.size(); i++){

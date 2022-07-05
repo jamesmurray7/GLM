@@ -261,8 +261,13 @@ EM <- function(long.formulas, surv.formula, data, family, post.process = T, cont
   if(!optimiser %in% c('ucminf', 'optim')) stop("Only optimisers 'optim' and 'ucminf' supported.")
   if(!is.null(control$hessian)) hessian <- control$hessian else hessian <- 'manual'
   if(!hessian %in% c('auto', 'manual')) stop("Argument 'hessian' needs to be either 'auto' (i.e. from optim) or 'manual' (i.e. from _sdb, the defualt).")
-  if(!is.null(control$gamma.SE)) gamma.SE <- control$gamma.SE else gamma.SE <- 'appx'
-  if(!gamma.SE %in% c('appx', 'exact')) stop("Argument gamma.SE needs to be either 'exact' or 'appx'.")
+  if(!is.null(control$SEs)) SEs <- control$SEs else SEs <- 'appx'
+  if(!SEs %in% c('appx', 'exact.gamma', 'score')) stop("Argument gamma.SE needs to be either:\n",
+                                                       "'appx' (the default) --> Calculated by observed empirical information matrix calculation\n",
+                                                       "'exact.gamma' --> Using direct hessian calculation for survival parameters only or\n",
+                                                       "'score' --> Calculte the score and then hessian by forward differencing.")
+  if(!is.null(control$SE.D)) SE.D <- control$SE.D else SE.D <- T
+  if(!is.logical(SE.D)) stop("'SE.D' must be either TRUE or FALSE.")
   
   EMstart <- proc.time()[3]
   while(diff > tol && iter < maxit){
@@ -330,15 +335,33 @@ EM <- function(long.formulas, surv.formula, data, family, post.process = T, cont
     SigmaSplit <- lapply(Sigma, function(x) lapply(b.inds, function(y) as.matrix(x[y,y])))
     bsplit <- lapply(b, function(x) lapply(b.inds, function(y) x[y])) # Needed for updates to beta.
     # The Information matrix
-    I <- structure(vcov(coeffs, dmats, surv, sv, 
-                        Sigma, SigmaSplit, b, bsplit, 
-                        l0u, w, v, n, family, K, q, beta.inds, b.inds, gamma.SE),
-                   dimnames = list(names(params), names(params)))
+    if(SEs != 'score'){
+      I <- structure(vcov(coeffs, dmats, surv, sv, 
+                          Sigma, SigmaSplit, b, bsplit, 
+                          l0u, w, v, n, family, K, q, beta.inds, b.inds, SEs),
+                     dimnames = list(names(params), names(params)))
+    }else{
+      sigmas <- lapply(1:K, function(k){
+        if(!family[[k]]%in%c('gaussian', 'negative.binomial')) NULL else Omega$sigma[[k]]
+      })
+      Omega2 <- list(D = vech(Omega$D), beta = c(Omega$beta), gamma = Omega$gamma, zeta = Omega$zeta, sigma = sigmas)
+      np <- names(params)
+      if(!SE.D){
+        Omega2$D <- NULL
+        np <- np[!grepl('^D\\[', np)] 
+      }
+      
+      H <- structure(.H(unlist(Omega2), dmats, surv, sv, Sigma, SigmaSplit, b, bsplit, l0u, w, v, n, family, K, q, 
+                        beta.inds, b.inds, verbose = verbose, SE.D = SE.D),
+                        dimnames = list(np, np))
+      I <- -H
+    }
     I.inv <- tryCatch(solve(I), error = function(e) e)
     if(inherits(I.inv, 'error')) I.inv <- structure(MASS::ginv(I),
                                                     dimnames = dimnames(I))
     out$SE <- sqrt(diag(I.inv))
     out$vcov <- I
+    
     out$RE <- do.call(rbind, b)
     out$postprocess.time <- round(proc.time()[3]-start.time, 2)
     # Calculate log-likelihood. Done separately as EMtime + postprocess.time is for EM + SEs.

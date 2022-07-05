@@ -58,7 +58,7 @@ bin.fit1 <- EM(binoms, surv.formula, data, as.list(rep('binomial',3)),
 # Count -------------------------------------------------------------------
 # ((Univariate))
 pois <- EM(list(platelets ~  drug * splines::ns(time, knots = c(1, 4)) + (1 + splines::ns(time, knots = c(1, 4))|id)),
-           surv.formula, data, list(poisson), control = list(hessian='auto'))
+           surv.formula, data, list(poisson), control = list(SE.D = F, SEs = 'score'))
 
 
 
@@ -74,12 +74,14 @@ long.formulas <- list(
   # hepatomegaly ~ drug * time + (1|id)
 )
 
-families <- list(gaussian, gaussian, gaussian, gaussian, poisson, binomial, binomial, binomial)
+families <- list(gaussian, gaussian, gaussian, gaussian, poisson, binomial)#, binomial, binomial)
 
 fullfit <- EM(long.formulas, surv.formula, data, families, control = list(correlated = F,
-                                                                          gamma.SE = 'exact',
+                                                                          SEs = 'exact.gamma',
+                                                                          SE.D = F,
                                                                           verbose = T,
                                                                           maxit = 500))
+
 fullfit2 <- EM(long.formulas, surv.formula, data, families, control = list(correlated = T,
                                                                            gamma.SE = 'exact',
                                                                            verbose = T,
