@@ -77,17 +77,17 @@ EMupdate <- function(Omega, family, X, Y, Z, b, S, SS, Fi, Fu, l0i, l0u, Delta, 
   # Hb <- mapply(function(X, Y, Z, b){
   #   Hbeta(beta, X, Y, Z, b, sigma, family, beta.inds2, K, .Machine$double.eps^(1/4))
   # }, X = X, Y = Y, Z = Z, b = bsplit, SIMPLIFY = F)
-  # Sb <- Sbeta2(beta, X, Y, Z, bsplit, sigma, family, beta.inds2, K)
-  # Hb <- Hbeta2(beta, X, Y, Z, bsplit, sigma, family, beta.inds2, K, .Machine$double.eps^(1/4))
-  Sbq <- mapply(function(X, Y, Z, b, S){
-    Sbeta_q(beta, X, Y, Z, b, sigma, family, beta.inds2, K, w, v, S)
-  }, X = X, Y = Y, Z = Z, b = bsplit, S = SigmaSplit, SIMPLIFY = F)
-  
-  Hbq <- mapply(function(X, Y, Z, b, S){
-    Hbeta_q(beta, X, Y, Z, b, sigma, family, beta.inds2, K, w, v, S, .Machine$double.eps^(1/3))
-  }, X = X, Y = Y, Z = Z, b = bsplit, S = SigmaSplit, SIMPLIFY = F)
-  Hb <- Reduce('+', Hbq); Sb <- Reduce('+', Sbq)
-  
+  Sb <- Sbeta2(beta, X, Y, Z, bsplit, sigma, family, beta.inds2, K)
+  Hb <- Hbeta2(beta, X, Y, Z, bsplit, sigma, family, beta.inds2, K, .Machine$double.eps^(1/4))
+  # Sbq <- mapply(function(X, Y, Z, b, S){
+  #   Sbeta_q(beta, X, Y, Z, b, sigma, family, beta.inds2, K, w, v, S)
+  # }, X = X, Y = Y, Z = Z, b = bsplit, S = SigmaSplit, SIMPLIFY = F)
+  # 
+  # Hbq <- mapply(function(X, Y, Z, b, S){
+  #   Hbeta_q(beta, X, Y, Z, b, sigma, family, beta.inds2, K, w, v, S, .Machine$double.eps^(1/3))
+  # }, X = X, Y = Y, Z = Z, b = bsplit, S = SigmaSplit, SIMPLIFY = F)
+  # Hb <- Reduce('+', Hbq); Sb <- Reduce('+', Sbq)
+  # 
   
   #' Dispersion ('\sigma') --------------------
   if(any(unlist(family) %in% c('gaussian', 'negative.binomial'))){

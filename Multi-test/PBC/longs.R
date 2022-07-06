@@ -6,7 +6,9 @@
 
 rm(list=ls())
 library(glmmTMB)
-library(tidyverse)
+# library(tidyverse)
+library(dplyr)
+library(tidyr)
 library(ggplot2)
 load('../PBC-case-study/PBC.RData')
 
@@ -24,7 +26,7 @@ pbc$prothrombin <- (.1*pbc$prothrombin)^(-4)
 plotter <- function(val, group){
   ggplot(pbc[pbc$status==1,], aes(x = time, y = {{val}}, group = id)) + 
     geom_line(colour = 'grey', alpha = .25) + 
-    geom_smooth(aes(group={{group}}), method = 'loess', colour = 'red', formula=y~x) +
+    geom_smooth(aes(group={{group}}), method = 'lm', colour = 'red', formula=y~splines::ns(x,knots=c(0.987077, 3.942723 ))) +
     # geom_smooth(aes(group = {{group}}), colour = 'red', method = 'lm',
     #             formula = formula) + 
     theme_light()
@@ -52,7 +54,7 @@ makeFormula <- function(y, type = 'linear', drug = T){
   mid <- switch(type,
                 linear = ' ~ drug * time',
                 quadratic = '~ drug * (time + I(time^2))',
-                spline = '~ drug * splines::ns(time, df = 3)')
+                spline = '~ drug * splines::ns(time, knots = c(0.987077, 3.942723))')
   if(!drug) mid <- gsub('drug\\s\\*\\s', '', mid)
   as.formula(paste0(y, mid, RE))
 }
@@ -72,7 +74,7 @@ for(i in seq_along(out)){
   aics <- setNames(numeric(3), c('linear', 'quadratic', 'spline'))
   p <- 1
   for(type in c('linear', 'quadratic', 'spline')){
-    aics[p] <- summary(TMBfit(this.marker, type))$AIC[1]
+    aics[p] <- summary(TMBfit(this.marker, type, T))$AIC[1]
     p <- p + 1
   }
   out[[i]] <- aics
@@ -132,3 +134,85 @@ plotCompeting('albumin', 'quadratic', 'spline')
 plotCompeting('prothrombin', 'linear', 'quadratic')
 plotCompeting('platelets', 'quadratic', 'spline')
 plotCompeting('alkaline', 'quadratic', 'spline')
+
+
+# Plot for paper ----------------------------------------------------------
+library(forcats)
+theme_csda <- function(base_family = "Arial", base_size = 12){
+  theme_light(base_family = base_family, base_size = base_size) %+replace%
+    theme(
+      strip.background = element_blank(),
+      strip.text = element_text(size = 8.5, colour = "black"),
+      axis.text = element_text(size = 7),
+      axis.title = element_text(size = 8),
+      legend.background = element_blank(),
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor.x = element_blank()
+    )
+}
+
+
+# Version 1: Failures only ------------------------------------------------
+pbc %>% 
+  filter(status == 1) %>% 
+  pivot_longer(cols=serBilir:prothrombin, names_to='biomarker') %>% 
+  mutate(biomarker = case_when(
+    biomarker == 'serBilir' ~ "log(Serum~bilirubin)",
+    biomarker == 'albumin' ~ "Albumin",
+    biomarker == 'prothrombin' ~ '(0.1 ~ x ~ Prothrombin~time)^{-4}',
+    biomarker == 'SGOT' ~ "log(AST)",
+    biomarker == "platelets" ~ "Platelet~count",
+    T ~ 'AA'
+  ),
+    tt = -1 * (survtime-time)
+  ) %>% 
+  mutate(f.biomarker = factor(biomarker, levels = c('log(Serum~bilirubin)',
+                                                    'log(AST)', 'Albumin', '(0.1 ~ x ~ Prothrombin~time)^{-4}',
+                                                    'Platelet~count'))) %>% 
+  filter(biomarker != 'AA') %>% 
+  ggplot(aes(x=tt, y = value, group = id,  lty = as.factor(drug))) + 
+  geom_vline(xintercept = 0, colour = 'black', alpha = .25) + 
+  geom_line(alpha = .10) + 
+  # geom_smooth(aes(group=NULL), colour = 'black', method = 'loess', formula = y~x) + 
+  geom_smooth(aes(group=NULL), colour = 'black', method = 'lm', formula = y~splines::ns(x, 3))+
+  # geom_smooth(aes(group=NULL), colour = 'red', method = 'lm', formula = y~x) + 
+  # geom_smooth(aes(group=NULL), colour = 'blue', method = 'lm', formula = y~x+I(x^2)) + 
+  facet_wrap(~f.biomarker, scales = 'free', strip.position = 'left', labeller = label_parsed) + 
+  scale_y_continuous(breaks = scales::pretty_breaks(10)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(10)) +
+  labs(y = NULL,
+       x = 'Time (years) from death (0: time of death)') + 
+  theme_csda() + 
+  theme(strip.placement = 'outside',
+        strip.text = element_text(vjust = 1))
+
+
+pbc %>% 
+  pivot_longer(cols=serBilir:prothrombin, names_to='biomarker') %>% 
+  mutate(biomarker = case_when(
+    biomarker == 'serBilir' ~ "log(Serum~bilirubin)",
+    biomarker == 'albumin' ~ "Albumin",
+    biomarker == 'prothrombin' ~ '(0.1 ~ x ~ Prothrombin~time)^{-4}',
+    biomarker == 'SGOT' ~ "log(AST)",
+    biomarker == "platelets" ~ "Platelet~count",
+    T ~ 'AA'
+  )) %>% 
+  mutate(f.biomarker = factor(biomarker, levels = c('log(Serum~bilirubin)',
+                                                    'log(AST)', 'Albumin', '(0.1 ~ x ~ Prothrombin~time)^{-4}',
+                                                    'Platelet~count'))) %>% 
+  filter(biomarker != 'AA') %>% 
+  ggplot(aes(x=time, y = value, group = id,  as.factor(drug))) + 
+  geom_vline(xintercept = 0, colour = 'black', alpha = .25) + 
+  geom_line(alpha = .10) + 
+  # geom_smooth(aes(group=NULL), colour = 'black', method = 'loess', formula = y~x) + 
+  geom_smooth(aes(group=NULL), colour = 'black', method = 'lm', formula = y~splines::ns(x, knots = c(1, 4)))+
+  # geom_smooth(aes(group=NULL), colour = 'red', method = 'lm', formula = y~x) + 
+  # geom_smooth(aes(group=NULL), colour = 'blue', method = 'lm', formula = y~x+I(x^2)) + 
+  facet_wrap(~f.biomarker, scales = 'free', strip.position = 'left', labeller = label_parsed) + 
+  scale_y_continuous(breaks = scales::pretty_breaks(10)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(10)) +
+  labs(y = NULL,
+       x = 'Time (years) from death (0: time of death)') + 
+  theme_csda() + 
+  theme(strip.placement = 'outside',
+        strip.text = element_text(vjust = 1))

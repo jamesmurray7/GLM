@@ -210,7 +210,6 @@ vec Sbeta_q(vec& beta, List X, List Y, List Z, List b,
     mat Sk = S[k];
     vec tauk = sqrt(diagvec(Zk * Sk * Zk.t()));
     std::string f = family[k];
-    double sigmak = sigma[k];
     uvec beta_k_inds = beta_inds[k];
     vec beta_k = beta.elem(beta_k_inds); // Ensure indexing from zero!!
     vec b_k = b[k];
@@ -219,12 +218,14 @@ vec Sbeta_q(vec& beta, List X, List Y, List Z, List b,
     for(int l = 0; l < gh; l++){
       vec eta_l = eta + v[l] * tauk;
       if(f == "gaussian"){
+        double sigmak = sigma[k];
         rhs += w[l] * Score_eta_gauss(Yk, eta_l, sigmak);
       }else if(f == "binomial"){
         rhs +=  w[l] * Score_eta_binom(Yk, eta_l);
       }else if(f == "poisson"){
         rhs += w[l] * Score_eta_poiss(Yk, eta_l);
       }else if(f == "negative.binomial"){
+        double sigmak = sigma[k];
         rhs += w[l] * Score_eta_negbin(Yk, eta_l, sigmak);
       }
     }
