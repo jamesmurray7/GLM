@@ -109,15 +109,16 @@ families <- list(gaussian, gaussian, gaussian, gaussian, poisson, binomial)#, bi
 
 fullfit <- EM(long.formulas, surv.formula, data, families, control = list(correlated = F,
                                                                           SEs = 'exact',
-                                                                          verbose = T,
+                                                                          verbose = F,
                                                                           maxit = 500))
 
 fullfit2 <- EM(long.formulas, surv.formula, data, families, control = list(correlated = T,
                                                                            SEs = 'exact',
-                                                                           verbose = T,
+                                                                           verbose = F,
                                                                            maxit = 500))
 fit2xtab(fullfit, 15)
 fit2xtab(fullfit2, 15)
+save(fullfit2, file = '~/Downloads/pbc-corr.RData')
 # Taking trivariate forward: ----------------------------------------------
 tri.formula <- list(
   serBilir ~ drug * (time + I(time^2)) + (1 + time + I(time^2)|id),
@@ -140,3 +141,26 @@ trifit2 <- EM(tri.formula, surv.formula, data, trifam, control = list(correlated
                                                                        maxit = 500))
 my.summary(trifit2)
 fit2xtab(trifit2)
+
+
+# Or, trivariate after correlated assumption ------------------------------
+new.tris <- list(
+  serBilir ~ drug * (time + I(time^2)) + (1 + time + I(time^2)|id),
+  albumin ~ drug * time + (1 + time|id),
+  ascites ~ drug * time + (1|id)
+)
+
+newtris.fam <- list('gaussian', 'gaussian', 'binomial')
+
+trifit3 <- EM(new.tris, surv.formula, data, newtris.fam, control = list(correlated = T,
+                                                                      SEs = 'appx',
+                                                                      verbose = F,
+                                                                      maxit = 500))
+
+trifit3b <- EM(new.tris, surv.formula, data, newtris.fam, control = list(correlated = T,
+                                                                      SEs = 'exact',
+                                                                      verbose = F,
+                                                                      maxit = 500))
+
+my.summary(trifit3)
+my.summary(trifit3b, T)
