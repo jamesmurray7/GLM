@@ -52,6 +52,18 @@ pois <- EM(list(platelets ~  drug * splines::ns(time, knots = c(1, 4)) + (1 + sp
            surv.formula, data, list(poisson), control = list(SEs = 'appx'))
 
 # Rustand -----------------------------------------------------------------
+data2 <- na.omit(pbc[, c("id", "survtime", "status","drug","age", 
+                         "sex","time","serBilir","SGOT", "albumin", 'prothrombin',
+                         "platelets", "spiders")])
+data2$id <- as.numeric(as.character(data2$id))
+
+uid <- unique(data2$id)
+diff(uid) # check no ID differences > 1, or program wont work.
+
+data2$serBilir <- log(data2$serBilir)
+data2$SGOT <- log(data2$SGOT)
+data2$prothrombin <- (.1*data2$prothrombin)^(-4)
+surv.formula <- Surv(survtime, status) ~ drug # Global
 long.formulas <- list(
   serBilir ~ drug * splines::ns(time, knots = c(1, 4)) + (1 + splines::ns(time, knots = c(1, 4))|id),
   SGOT ~ drug * splines::ns(time, knots = c(1, 4)) + (1 + splines::ns(time, knots = c(1, 4))|id),
@@ -61,14 +73,16 @@ long.formulas <- list(
 )
 
 rustand.fit <- EM(
-  long.formulas, surv.formula, data, list('gaussian', 'gaussian', 'gaussian', 'poisson', 'binomial'),
+  long.formulas, surv.formula, data2, list('gaussian', 'gaussian', 'gaussian', 'poisson', 'binomial'),
   control = list(SEs = 'appx')
 )
 
 rustand.fit2 <- EM(
-  long.formulas, surv.formula, data, list('gaussian', 'gaussian', 'gaussian', 'poisson', 'binomial'),
+  long.formulas, surv.formula, data2, list('gaussian', 'gaussian', 'gaussian', 'poisson', 'binomial'),
   control = list(SEs = 'exact')
 )
+
+my.summary(rustand.fit2)
 
 # Full 6-variate model ----------------------------------------------------
 long.formulas <- list(
@@ -118,7 +132,7 @@ fullfit2 <- EM(long.formulas, surv.formula, data, families, control = list(corre
                                                                            maxit = 500))
 fit2xtab(fullfit, 15)
 fit2xtab(fullfit2, 15)
-save(fullfit2, file = '~/Downloads/pbc-corr.RData')
+save(fullfit, file = '~/Downloads/pbc-nocorr.RData')
 # Taking trivariate forward: ----------------------------------------------
 tri.formula <- list(
   serBilir ~ drug * (time + I(time^2)) + (1 + time + I(time^2)|id),
@@ -153,14 +167,10 @@ new.tris <- list(
 newtris.fam <- list('gaussian', 'gaussian', 'binomial')
 
 trifit3 <- EM(new.tris, surv.formula, data, newtris.fam, control = list(correlated = T,
-                                                                      SEs = 'appx',
-                                                                      verbose = F,
-                                                                      maxit = 500))
-
-trifit3b <- EM(new.tris, surv.formula, data, newtris.fam, control = list(correlated = T,
                                                                       SEs = 'exact',
                                                                       verbose = F,
                                                                       maxit = 500))
 
 my.summary(trifit3)
-my.summary(trifit3b, T)
+fit2xtab(trifit3)
+save(trifit3, file = '~/Downloads/reduced-corrPBC.RData')
