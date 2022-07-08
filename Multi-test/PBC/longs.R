@@ -162,19 +162,20 @@ pbc %>%
     biomarker == 'prothrombin' ~ '(0.1 ~ x ~ Prothrombin~time)^{-4}',
     biomarker == 'SGOT' ~ "log(AST)",
     biomarker == "platelets" ~ "Platelet~count",
+    biomarker == 'alkaline' ~ "Alkaline~phosphatase",
     T ~ 'AA'
   ),
     tt = -1 * (survtime-time)
   ) %>% 
   mutate(f.biomarker = factor(biomarker, levels = c('log(Serum~bilirubin)',
                                                     'log(AST)', 'Albumin', '(0.1 ~ x ~ Prothrombin~time)^{-4}',
-                                                    'Platelet~count'))) %>% 
+                                                    'Platelet~count', "Alkaline~phosphatase"))) %>% 
   filter(biomarker != 'AA') %>% 
-  ggplot(aes(x=tt, y = value, group = id,  lty = as.factor(drug))) + 
+  ggplot(aes(x=tt, y = value, group = id)) + 
   geom_vline(xintercept = 0, colour = 'black', alpha = .25) + 
   geom_line(alpha = .10) + 
-  # geom_smooth(aes(group=NULL), colour = 'black', method = 'loess', formula = y~x) + 
-  geom_smooth(aes(group=NULL), colour = 'black', method = 'lm', formula = y~splines::ns(x, 3))+
+  geom_smooth(aes(group=NULL), colour = 'black', method = 'loess', formula = y~x) +
+  # geom_smooth(aes(group=NULL), colour = 'black', method = 'lm', formula = y~splines::ns(x, 3))+
   # geom_smooth(aes(group=NULL), colour = 'red', method = 'lm', formula = y~x) + 
   # geom_smooth(aes(group=NULL), colour = 'blue', method = 'lm', formula = y~x+I(x^2)) + 
   facet_wrap(~f.biomarker, scales = 'free', strip.position = 'left', labeller = label_parsed) + 
@@ -185,7 +186,7 @@ pbc %>%
   theme_csda() + 
   theme(strip.placement = 'outside',
         strip.text = element_text(vjust = 1))
-
+#ggsave('~/Downloads/PBCtrajectories.png', width = 140, height = 90, units = 'mm')
 
 pbc %>% 
   pivot_longer(cols=serBilir:prothrombin, names_to='biomarker') %>% 
@@ -195,17 +196,18 @@ pbc %>%
     biomarker == 'prothrombin' ~ '(0.1 ~ x ~ Prothrombin~time)^{-4}',
     biomarker == 'SGOT' ~ "log(AST)",
     biomarker == "platelets" ~ "Platelet~count",
+    biomarker == 'alkaline' ~ "Alkaline~phosphatase",
     T ~ 'AA'
   )) %>% 
   mutate(f.biomarker = factor(biomarker, levels = c('log(Serum~bilirubin)',
                                                     'log(AST)', 'Albumin', '(0.1 ~ x ~ Prothrombin~time)^{-4}',
-                                                    'Platelet~count'))) %>% 
+                                                    'Platelet~count', "Alkaline~phosphatase"))) %>% 
   filter(biomarker != 'AA') %>% 
   ggplot(aes(x=time, y = value, group = id,  as.factor(drug))) + 
   geom_vline(xintercept = 0, colour = 'black', alpha = .25) + 
   geom_line(alpha = .10) + 
-  # geom_smooth(aes(group=NULL), colour = 'black', method = 'loess', formula = y~x) + 
-  geom_smooth(aes(group=NULL), colour = 'black', method = 'lm', formula = y~splines::ns(x, knots = c(1, 4)))+
+  # geom_smooth(aes(group=NULL), colour = 'black', method = 'loess', formula = y~x) +
+  geom_smooth(aes(group=NULL), colour = 'black', method = 'lm', formula = y~splines::ns(x, df = 3))+
   # geom_smooth(aes(group=NULL), colour = 'red', method = 'lm', formula = y~x) + 
   # geom_smooth(aes(group=NULL), colour = 'blue', method = 'lm', formula = y~x+I(x^2)) + 
   facet_wrap(~f.biomarker, scales = 'free', strip.position = 'left', labeller = label_parsed) + 
