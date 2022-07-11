@@ -208,6 +208,24 @@ double calc_V(double mu, double lambda, double nu, int summax){
   return out;
 }
 
+// [[Rcpp::export]]
+double calc_V2(double mu, double lambda, double nu, double logZ, int summax){
+  double term1 = 0.0, term2 = term1;
+  vec js = linspace(1, summax, summax + 1);
+  for(int j = 0; j < summax; j++){
+    // Mean
+    term1 += exp(log(js[j] - 1.0) + (js[j] - 1.0) * log(lambda) - nu * lgamma(js[j]) - logZ);
+    // Variance LHS
+    term2 += exp(2.0 * log(js[j] - 1.0) + (js[j] - 1.0) * log(lambda) - nu * lgamma(js[j]) - logZ);
+  }
+  return term2 - pow(term1, 2.0);
+}
+
+// [[Rcpp::export]]
+double quicktest(double a){
+  return trunc_log(a);
+}
+
 //[[Rcpp::export]]
 vec round_N(vec& x, int N){
   // If N is 1000, then round x to hundreths; if X is 10,000 then round x to thousandths.
@@ -235,7 +253,7 @@ mat gen_lambda_mat(int N, int summax){
 }
 
 //[[Rcpp::export]]
-mat gen_V_mat(int N, int summax, mat& lambdamat){
+mat gen_V_mat(int N, int summax, mat& lambdamat, mat& logZmat){
   vec mus = linspace(1.0/((double)N/10.0), 10.00, N);
   vec nus = mus;
   mat out = zeros<mat>(N-1, N);
@@ -246,7 +264,8 @@ mat gen_V_mat(int N, int summax, mat& lambdamat){
     for(int m = 0; m < (N-1); m++){
       for(int n = 0; n < N; n++){
         double lambda = as_scalar(lambdamat(m, n));
-        out(m, n) += calc_V(mus[m], lambda, nus[n], summax);
+        double logZ = as_scalar(logZmat(m, n));
+        out(m, n) += calc_V2(mus[m], lambda, nus[n], logZ, summax);
       }
       if (m % 100 == 0) Rcout << m << std::endl;
     }
