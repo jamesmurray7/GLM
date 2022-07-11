@@ -179,7 +179,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   
   # \beta and \delta
   beta.new <- beta - solve(Reduce('+', Hb), Reduce('+', Sb))
-  delta.new <- delta - solve(Reduce('+', Hd2), c(Reduce('+', Sd3)))
+  delta.new <- delta - solve(Reduce('+', Hd), c(Reduce('+', Sd3)))
 
   # Survival parameters (gamma, zeta)
   gammazeta.new <- c(gamma, zeta) - solve(Reduce('+', Hgz), rowSums(Sgz))
@@ -262,20 +262,6 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, N, 
   #' Gauss-hermite quadrature ----
   GH <- statmod::gauss.quad.prob(.gh, 'normal', sigma = .sigma)
   w <- GH$w; v <- GH$n
-  
-  #' Overwrite summax if too low ----
-  # summax.old <- summax
-  # summax.new <- max(ceiling(c(max(data[, formulas$response]) + 20 * sqrt(var(data[, formulas$response])))), 100)
-  # if(!summax.override){
-  #   if(summax.new>summax.old){
-  #     if(verbose){
-  #       cat(sprintf('Original summax %d too low, running with new value --> %d.\n', summax.old, summax.new))
-  #     }
-  #   summax <- summax.new
-  #   }
-  # }else{
-  #   summax <- summax.old
-  # }
   
   #' Begin EM ----
   diff <- 100; iter <- 0
