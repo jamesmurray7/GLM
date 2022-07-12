@@ -558,7 +558,6 @@ vec VlY(vec& lambda, vec& nu, vec& Z, vec& B, int summax){
 
 // [[Rcpp::export]]
 List A_B_C(vec& b, mat& X, mat& Z, vec& beta, vec& delta, mat& G, vec & lambda, vec& logZ, int summax, int N){
-  int m_i = X.n_rows;
   vec mu = exp(X * beta + Z * b);
   vec nu = exp(G * delta);
   // Calculate B, C and A 
@@ -597,7 +596,7 @@ vec Sdelta_cdiff(vec& delta, mat& G, vec& b, mat& X, mat& Z, vec& Y, vec& lY, ve
                  mat& lambdamat, mat& logZmat, double eps = 1e-2){
   int a = delta.size();
   vec out = vec(a);
-  double f0 = E_llcmp_delta(delta, G, b, X, Z, Y, lY, beta, tau, w, v, N, summax, lambdamat, logZmat);
+  // double f0 = E_llcmp_delta(delta, G, b, X, Z, Y, lY, beta, tau, w, v, N, summax, lambdamat, logZmat);
   for(int i = 0; i < a; i++){
     vec aa = delta, bb = delta;
     double xi = std::max(std::fabs(delta[i]), 1.0);
