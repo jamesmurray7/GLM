@@ -8,55 +8,22 @@ library(survival)
 library(Rcpp)
 library(RcppArmadillo)
 library(glmmTMB)
-source('simData.R')
 source('inits.R')
-source('ll.R')
 source('grid-vcov.R')
-sourceCpp('grid-test.cpp')
+sourceCpp('testing.cpp')
 vech <- function(x) x[lower.tri(x, T)]
 # Load parameter matrices
-if(!"N"%in%ls()) message("======\n======\n======\n======N MUST BE DEFINED PRE-SOURCE!")
-if(!"pete.flag"%in%ls()) message("======\n======\n======\n======pete.flag MUST BE DEFINED PRE-SOURCE!")
-if(!N%in%c(1e3,1e4)) message("======\n======\n======\n======N MUST EITHER 1000 OR 10,000!")  
+if(!"N"%in%ls()) stop("N MUST BE DEFINED PRE-SOURCE!\n")
+if(!"pete.flag"%in%ls()) stop("pete.flag MUST BE DEFINED PRE-SOURCE!\n")
+if(!N%in%c(1e3,1e4)) stop("N MUST EITHER 1000 OR 10,000!\n")  
 source('_Functions.R')
 # Load parameter matrices
-lambda.mat <- load.grid(N, 'lambda', pete.flag)
-V.mat <- load.grid(N, 'V', pete.flag)
-logZ.mat <- load.grid(N, 'logZ', pete.flag)
+if(!'lambda.mat' %in% ls()) lambda.mat <- load.grid(N, 'lambda', pete.flag)
+if(!'V.mat' %in% ls()) V.mat <- load.grid(N, 'V', pete.flag)
+if(!'logZ.mat' %in% ls()) logZ.mat <- load.grid(N, 'logZ', pete.flag)
+.mats <- c('lambda.mat', 'V.mat', 'logZ.mat')
+.rm <- function() rm(list = setdiff(ls(), ls(pattern = '\\.mat')))
 message('Parameter matrices loaded...')
-
-# Updated functions to take mean/variances (these from Thomas Fung's github.)
-E.lfactorialY <- function(lambda, nu, Z, summax){ # mu, nu, vectors
-  out <- matrix(0, nr = length(lambda), nc = summax)
-  for(j in 1:summax){
-    out[, j] <- lgamma(j) * exp((j-1) * log(lambda) - nu * lgamma(j) - Z)
-  }
-  apply(out, 1, sum)
-}
-E.YlfactorialY <- function(lambda, nu, Z, summax){
-  out <- matrix(0, nr = length(lambda), nc = summax)
-  for(j in 1:summax){
-    out[, j] <- exp(
-      log(j - 1) + log(lgamma(j)) + (j - 1) * log(lambda) - nu * lgamma(j) - Z
-    )
-  }
-  apply(out, 1, sum)
-}
-V.lfactorialY <- function(lambda, nu, Z, summax, B){
-  out <- matrix(0, nr = length(lambda), nc = summax)
-  for(j in 1:summax){
-    out[, j] <- lgamma(j)^2 * exp((j-1)*log(lambda) - nu * lgamma(j) - Z)
-  }
-  apply(out, 1, sum) - B^2
-}
-
-calc.ABC <- function(mu, nu, lambda, Z, summax){ # NB: Z is log(Z)...
-  # lambda <- lambda_uniroot_wrap(1e-6, 1e3, mu, nu, summax)
-  B <- E.lfactorialY(lambda, nu, Z, summax)
-  A <- E.YlfactorialY(lambda, nu, Z, summax) - mu * B
-  C <- V.lfactorialY(lambda, nu, Z, summax, B) # c is potentially needed in W2 matrix creation, remove if not!
-  list(A = A, B = B, C = C)
-}
 
 EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
                      sv, w, v, n, m, summax, debug, N){
@@ -70,17 +37,16 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
           X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
           S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
           gamma = gamma, zeta = zeta, 
-          lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, N = N, method = 'BFGS')$par#, hessian = T)
+          lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, N = N, summax = summax, method = 'BFGS')$par
   }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
   l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
 
-  # Sigma <- lapply(b.hat, function(s) solve(s$hessian))
-  # b.hat <- lapply(b.hat, function(s) s$par)
-    
+
   Sigma <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
     solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
                             S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-                            gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, N = N, eps = 10/N))
+                            gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, 
+                            N = N, summax = summax, eps = .001))
   }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
   l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
   if(debug){DEBUG.b.hat <<- b.hat; DEBUG.Sigma <<- Sigma}
@@ -97,70 +63,40 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   #' E-step ##
   #' #########
   
+  mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b.hat, SIMPLIFY = F)
   nus <- mapply(function(G) exp(G %*% delta), G = G, SIMPLIFY = F)
   tau <- mapply(function(Z, S) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), S = Sigma, Z = Z, SIMPLIFY = F)
-  mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b.hat, SIMPLIFY = F)
-  
-  mus2 <- lapply(mus, mu_fix, N)
-  nus2 <- lapply(nus, mu_fix, N)
-  
-  #' Grid lookups ----
+
+  #' lambda, logZ and V lookups ----
   lambdas <- mapply(function(mu, nu){
-    m <- (mu*(N/10)) - 1; n <- (nu*(N/10)) - 1
-    mat_lookup(m, n, lambda.mat)
-  }, mu = mus2, nu = nus2, SIMPLIFY = F)
+    get_lambda(mu, nu, summax, N, lambda.mat)
+  }, mu = mus, nu = nus, SIMPLIFY = F)
   
-  Vs <- mapply(function(mu, nu){
-    m <- (mu*(N/10)) - 1; n <- (nu*(N/10)) - 1
-    mat_lookup(m, n, V.mat)
-  }, mu = mus2, nu = nus2, SIMPLIFY = F)
+  logZs <- mapply(function(mu, nu, lambda){
+    get_logZ(mu, nu, summax, N, lambda, logZ.mat)
+  }, mu = mus, nu = nus, lambda = lambdas, SIMPLIFY = F)
   
-  logZ <- mapply(function(mu, nu){
-    m <- (mu*(N/10)) - 1; n <- (nu*(N/10)) - 1
-    mat_lookup(m, n, logZ.mat)
-  }, mu = mus2, nu = nus2, SIMPLIFY = F)
+  Vs <- mapply(function(mu, nu, lambda, logZ){
+    get_V(mu, nu, summax, N, lambda, logZ, V.mat)
+  }, mu = mus, nu = nus, lambda = lambdas, logZ = logZs, SIMPLIFY = F)
   
-  # ABC <- mapply(calc.ABC, mus2, nus2, lambdas, logZ, summax, SIMPLIFY=F),
-  ABC <- mapply(function(b, X, Z, G, tau){
-    A_B_C(b, X, Z, beta, delta, G, tau, 100, N, lambda.mat, logZ.mat)
-  }, b = b.hat, X = X, Z = Z, G = G, tau = tau, SIMPLIFY = F)
-  # ABC2 <- mapply(function(b, X, Z, G, tau){
-  #   A_B_C2(b, X, Z, beta, delta, G, tau, summax, N, lambda.mat, logZ.mat, w, v)
-  # }, b = b.hat, X = X, Z = Z, G = G, tau = tau, SIMPLIFY = F)
-  
+  ABC <- mapply(function(b, X, Z, G, lambda, logZ){
+    A_B_C(b, X, Z, beta, delta, G, lambda, logZ, summax, N)
+  }, b = b.hat, X = X, Z = Z, G = G, lambda = lambdas, logZ = logZs, SIMPLIFY = F)
+
   # D
   D.update <- mapply(function(Sigma, b) Sigma + tcrossprod(b), Sigma = Sigma, b = b.hat, SIMPLIFY = F)
   
   # \beta
-  Sb <- mapply(Sbeta, X, Y, mus2, nus2, lambdas, Vs, SIMPLIFY = F)
-  Hb <- mapply(getW1, X, mus2, nus2, lambdas, Vs, SIMPLIFY = F)
+  Sb <- mapply(Sbeta, X, Y, mus, nus, lambdas, Vs, SIMPLIFY = F)
+  Hb <- mapply(getW1, X, mus, nus, lambdas, Vs, SIMPLIFY = F)
   
   # \delta
-  # Sd <- mapply(function(ABC, Y, mu, V, nu, G){
-  #   crossprod(((ABC$A * (Y - mu) / V - lgamma(Y + 1) + ABC$B) * nu), G)
-  # }, ABC = ABC, Y = Y, mu = mus2, V = Vs, nu = nus2, G = G, SIMPLIFY = F)
-  Hd <- mapply(getW2, ABC, Vs, nus2, G, SIMPLIFY = F)
-  # 
-  # Sd2 <- mapply(function(ABC, Y, mu, V, nu, G){
-  #   crossprod(((ABC$A * (Y - mu) / V - lgamma(Y + 1) + ABC$B) * nu), G)
-  # }, ABC = ABC2, Y = Y, mu = mus2, V = Vs, nu = nus2, G = G, SIMPLIFY = F)
-  # Hd2 <- mapply(getW2, ABC2, Vs, nus2, G, SIMPLIFY = F)
-  # 
-  Sd3 <- mapply(function(G, b, X, Z, Y, lY, tau){
-    Sdelta_cdiff(delta, G, b, X, Z, Y, lY, beta, tau, w, v, N, lambda.mat, logZ.mat)
+  Sd <- mapply(function(G, b, X, Z, Y, lY, tau){
+    Sdelta_cdiff(delta, G, b, X, Z, Y, lY, beta, tau, w, v, N, summax, lambda.mat, logZ.mat)et
   }, G = G, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
+  Hd <- mapply(getW2, ABC, Vs, nus, G, SIMPLIFY = F)
   
-  # Sd4 <- mapply(function(G, b, X, Z, Y, lY, tau){
-  #   Sd_another_test(delta, X, Z, beta, b, G, Y, lY, tau, summax, N, lambda.mat, logZ.mat, V.mat, w, v)
-  # }, G = G, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
-  # 
-  # Hd4 <- mapply(function(G, b, X, Z, Y, lY, tau){
-  #   GLMMadaptive:::cd_vec(delta, Sd_another_test,
-  #                         X = X, Z = Z, beta = beta, b = b, G = G, Y = Y, lY = lY,
-  #                         tau = tau, summax = summax, N = N, lambdamat = lambda.mat, logZmat = logZ.mat,
-  #                         Vmat = V.mat, w = w, v = v, eps = 1e-3)
-  # }, G = G, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
-
   # Survival parameters (\gamma, \zeta)
   Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
     Sgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, 10/N)
@@ -175,11 +111,11 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   #' #########
   
   # D
-  D.new <- Reduce('+', D.update)/n
+  (D.new <- Reduce('+', D.update)/n)
   
   # \beta and \delta
-  beta.new <- beta - solve(Reduce('+', Hb), Reduce('+', Sb))
-  delta.new <- delta - solve(Reduce('+', Hd), c(Reduce('+', Sd3)))
+  (beta.new <- beta - solve(Reduce('+', Hb), Reduce('+', Sb)))
+  (delta.new <- delta - solve(Reduce('+', Hd), c(Reduce('+', Sd))))
 
   # Survival parameters (gamma, zeta)
   gammazeta.new <- c(gamma, zeta) - solve(Reduce('+', Hgz), rowSums(Sgz))

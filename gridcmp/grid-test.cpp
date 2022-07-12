@@ -208,22 +208,14 @@ double calc_V(double mu, double lambda, double nu, int summax){
   return out;
 }
 
-// [[Rcpp::export]]
 double calc_V2(double mu, double lambda, double nu, double logZ, int summax){
-  double term1 = 0.0, term2 = term1;
-  vec js = linspace(1, summax, summax + 1);
+  double out = 0.0;
+  double Z = trunc_exp(logZ);
+  vec js = SEQ_Z(summax);
   for(int j = 0; j < summax; j++){
-    // Mean
-    term1 += exp(log(js[j] - 1.0) + (js[j] - 1.0) * log(lambda) - nu * lgamma(js[j]) - logZ);
-    // Variance LHS
-    term2 += exp(2.0 * log(js[j] - 1.0) + (js[j] - 1.0) * log(lambda) - nu * lgamma(js[j]) - logZ);
+    out += pow(js[j] - mu, 2.0) * pow(lambda, js[j]) / (pow(tgamma(js[j] + 1.0), nu) * Z);
   }
-  return term2 - pow(term1, 2.0);
-}
-
-// [[Rcpp::export]]
-double quicktest(double a){
-  return trunc_log(a);
+  return out;
 }
 
 //[[Rcpp::export]]
