@@ -124,4 +124,20 @@ for(i in 1:100){
 }
 
 save(fits, file = '/data/c0061461/cmp-fits-intonly-timevarnu.RData')
+rm(list=ls())
+source('grid-simData.R')
+data <- simData_joint(n = 250, delta = c(0.8, 0), ntms = 10, theta = c(-3, .25), fup = 3,
+              beta = c(1, -0.5, 0.05, -0.1), gamma = 0.6, zeta= c(0.0, -0.2),
+              D = matrix(c(0.16, 0, 0, 0.04), 2, 2))$data
 
+long.formula <- Y~time+cont+bin+(1+time|id)
+surv.formula <- Surv(survtime, status) ~ bin
+disp.formula <- ~1
+fit <- glmmTMB(long.formula, family = poisson, 
+               data = data, control = glmmTMBControl(optimizer='optim', optArgs =  list(method="BFGS") ))
+glmmTMB::VarCorr(fit)$c$id; dimD <- dim(D) # Quite badly wrong...
+
+fit <- glmmTMB(long.formula, family = glmmTMB::truncated_poisson, ziformula = ~1,
+               data = data)
+glmmTMB::VarCorr(fit)$c$id
+cov(ranef(fit)$cond$id)
