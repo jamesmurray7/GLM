@@ -398,3 +398,22 @@ comp_means <- function(lambda, nu, log.Z, summax = 100) {
   mean1 <- apply(term, 1, sum)
   return(mean1)
 }
+
+comp_variances <- function(lambda, nu, log.Z, summax = 100) {
+  # approximates normalizing constant by truncation for COMP distributions
+  # lambda, nu, mu.bd are recycled to match the length of each other.
+  if (missing(log.Z)) {
+    df <- CBIND(lambda = lambda, nu = nu)
+    log.Z <- logZ(log(df[, 1]), df[, 2], summax)
+  }
+  df <- CBIND(lambda = lambda, nu = nu, log.Z = log.Z)
+  lambda <- df[, 1]
+  nu <- df[, 2]
+  log.Z <- df[, 3]
+  term <- matrix(0, nrow = length(lambda), ncol = summax)
+  for (y in 1:summax) {
+    term[, y] <- exp(2 * log(y - 1) + (y - 1) * log(lambda) - nu * lgamma(y) - log.Z)
+  }
+  var1 <- apply(term, 1, sum) - (comp_means(lambda, nu, log.Z, summax))^2
+  return(var1)
+}

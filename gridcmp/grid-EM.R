@@ -10,7 +10,7 @@ library(RcppArmadillo)
 library(glmmTMB)
 source('inits.R')
 source('grid-vcov.R')
-sourceCpp('grid-test.cpp')
+sourceCpp('testing.cpp')
 vech <- function(x) x[lower.tri(x, T)]
 # Load parameter matrices
 if(!"N"%in%ls()) stop("N MUST BE DEFINED PRE-SOURCE!\n")
@@ -37,7 +37,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
           X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
           S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
           gamma = gamma, zeta = zeta, 
-          lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, N = N, method = 'BFGS')$par
+          lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, N = N, summax = summax, method = 'BFGS')$par
   }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
   l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
 
@@ -45,7 +45,8 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   Sigma <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
     solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
                             S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-                            gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, N = N, eps = 10/N))
+                            gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, 
+                            N = N, summax = summax, eps = .001))
   }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
   l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
   if(debug){DEBUG.b.hat <<- b.hat; DEBUG.Sigma <<- Sigma}
@@ -62,45 +63,39 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   #' E-step ##
   #' #########
   
+  mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b.hat, SIMPLIFY = F)
   nus <- mapply(function(G) exp(G %*% delta), G = G, SIMPLIFY = F)
   tau <- mapply(function(Z, S) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), S = Sigma, Z = Z, SIMPLIFY = F)
-  mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b.hat, SIMPLIFY = F)
-  
-  mus2 <- lapply(mus, mu_fix, N)
-  nus2 <- lapply(nus, mu_fix, N)
-  
-  #' Grid lookups ----
+
+  #' lambda, logZ and V lookups ----
   lambdas <- mapply(function(mu, nu){
-    m <- (mu*(N/10)) - 1; n <- (nu*(N/10)) - 1
-    mat_lookup(m, n, lambda.mat)
-  }, mu = mus2, nu = nus2, SIMPLIFY = F)
+    get_lambda(mu, nu, summax, N, lambda.mat)
+  }, mu = mus, nu = nus, SIMPLIFY = F)
   
-  Vs <- mapply(function(mu, nu){
-    m <- (mu*(N/10)) - 1; n <- (nu*(N/10)) - 1
-    mat_lookup(m, n, V.mat)
-  }, mu = mus2, nu = nus2, SIMPLIFY = F)
+  logZs <- mapply(function(mu, nu, lambda){
+    get_logZ(mu, nu, summax, N, lambda, logZ.mat)
+  }, mu = mus, nu = nus, lambda = lambdas, SIMPLIFY = F)
   
-  logZ <- mapply(function(mu, nu){
-    m <- (mu*(N/10)) - 1; n <- (nu*(N/10)) - 1
-    mat_lookup(m, n, logZ.mat)
-  }, mu = mus2, nu = nus2, SIMPLIFY = F)
+  Vs <- mapply(function(mu, nu, lambda, logZ){
+    get_V(mu, nu, summax, N, lambda, logZ, V.mat)
+  }, mu = mus, nu = nus, lambda = lambdas, logZ = logZs, SIMPLIFY = F)
   
-  ABC <- mapply(function(b, X, Z, G, tau){
-    A_B_C(b, X, Z, beta, delta, G, tau, 100, N, lambda.mat, logZ.mat)
-  }, b = b.hat, X = X, Z = Z, G = G, tau = tau, SIMPLIFY = F)
+  ABC <- mapply(function(b, X, Z, G, lambda, logZ){
+    A_B_C(b, X, Z, beta, delta, G, lambda, logZ, summax, N)
+  }, b = b.hat, X = X, Z = Z, G = G, lambda = lambdas, logZ = logZs, SIMPLIFY = F)
 
   # D
   D.update <- mapply(function(Sigma, b) Sigma + tcrossprod(b), Sigma = Sigma, b = b.hat, SIMPLIFY = F)
   
   # \beta
-  Sb <- mapply(Sbeta, X, Y, mus2, nus2, lambdas, Vs, SIMPLIFY = F)
-  Hb <- mapply(getW1, X, mus2, nus2, lambdas, Vs, SIMPLIFY = F)
+  Sb <- mapply(Sbeta, X, Y, mus, nus, lambdas, Vs, SIMPLIFY = F)
+  Hb <- mapply(getW1, X, mus, nus, lambdas, Vs, SIMPLIFY = F)
   
   # \delta
   Sd <- mapply(function(G, b, X, Z, Y, lY, tau){
-    Sdelta_cdiff(delta, G, b, X, Z, Y, lY, beta, tau, w, v, N, lambda.mat, logZ.mat)
+    Sdelta_cdiff(delta, G, b, X, Z, Y, lY, beta, tau, w, v, N, summax, lambda.mat, logZ.mat)et
   }, G = G, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
-  Hd <- mapply(getW2, ABC, Vs, nus2, G, SIMPLIFY = F)
+  Hd <- mapply(getW2, ABC, Vs, nus, G, SIMPLIFY = F)
   
   # Survival parameters (\gamma, \zeta)
   Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
@@ -116,11 +111,11 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   #' #########
   
   # D
-  D.new <- Reduce('+', D.update)/n
+  (D.new <- Reduce('+', D.update)/n)
   
   # \beta and \delta
-  beta.new <- beta - solve(Reduce('+', Hb), Reduce('+', Sb))
-  delta.new <- delta - solve(Reduce('+', Hd), c(Reduce('+', Sd)))
+  (beta.new <- beta - solve(Reduce('+', Hb), Reduce('+', Sb)))
+  (delta.new <- delta - solve(Reduce('+', Hd), c(Reduce('+', Sd))))
 
   # Survival parameters (gamma, zeta)
   gammazeta.new <- c(gamma, zeta) - solve(Reduce('+', Hgz), rowSums(Sgz))

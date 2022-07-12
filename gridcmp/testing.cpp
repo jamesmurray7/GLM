@@ -33,18 +33,44 @@ vec logZ_c(vec& log_lambda, vec& nu, int summax) {
   return out;
 }
 
+double logZ_c_scalar(double log_lambda, double nu, int summax) { // SCALAR VERSION.
+  // Control loop
+  // int maxiter = 1e4;
+  double log_epsilon = std::log(1e-10);
+  // Output vector
+  double out = 0.0;
+  // Compute logz
+  double logz  = 0;
+  double logz_ = 0;
+  for (int j = 1; j < summax; ++j) {
+    logz_ += log_lambda - nu * log((double)j);
+    logz = R::logspace_add(logz, logz_);
+    if (logz_ - logz < log_epsilon) break;
+  }
+  out = logz;
+  return out;
+}
+
+
 // The variance, V --------------------------------------------------------
 // [[Rcpp::export]]
 double calc_V(double mu, double lambda, double nu, double logZ, int summax){
-  double term1 = 0.0, term2 = term1;
-  vec js = linspace(0, summax, summax + 1);
+  double out = 0.0;
+  double Z = trunc_exp(logZ);
+  vec js = linspace(1, summax, summax);
   for(int j = 0; j < summax; j++){
-    // Mean
-    term1 += exp(log(js[j] - 1.0) + (js[j] - 1.0) * log(lambda) - nu * lgamma(js[j]) - logZ);
-    // Variance LHS
-    term2 += exp(2.0 * log(js[j] - 1.0) + (js[j] - 1.0) * log(lambda) - nu * lgamma(js[j]) - logZ);
+    out += pow(js[j] - mu, 2.0) * pow(lambda, js[j]) / (pow(tgamma(js[j] + 1.0), nu) * Z);
   }
-  return term2 - pow(term1, 2.0);
+  return out;
+}
+
+vec calc_V_vec(vec& mu, vec& lambda, vec& nu, vec& logZ, int summax){
+  int n = mu.size();
+  vec out = vec(n);
+  for(int i = 0; i < n; i++){
+    out[i] = calc_V(mu[i], lambda[i], nu[i], logZ[i], summax);
+  }
+  return out;
 }
 
 // UNIROOT ----------------------------------------------------------------
@@ -175,7 +201,7 @@ double lambda_uniroot(double lower, double upper, double mu, double nu, int summ
   return lambda;
 }
 
-//[[Rcpp::export]]
+// [[Rcpp::export]]
 mat gen_lambda_mat(int N, int summax){
   vec mus = linspace(1.0/((double)N/10.0), 10.00, N), nus = mus;
   mat out = zeros<mat>(N-1, N);
@@ -183,7 +209,7 @@ mat gen_lambda_mat(int N, int summax){
     for(int n = 0; n < N; n++){
       double init = pow(mus[m] + (nus[n] - 1.0) / (2.0 * nus[n]), nus[n]);
       double lower = std::max(1e-6, init - 10.0);
-      double upper = std::max(1e3, init + 10.0);
+      double upper = init + 10.0;
       double l = lambda_uniroot(lower, upper, mus[m], nus[n], summax);
       if(l == 1e-6){
         out(m, n) += out(m-1, n);
@@ -194,6 +220,47 @@ mat gen_lambda_mat(int N, int summax){
     if (m % 100 == 0) Rcout << m << std::endl;
   }
   return out;
+}
+
+// [[Rcpp::export]]
+mat gen_logZ_mat(int N, int summax, mat& lambdamat){
+  vec mus = linspace(1.0/((double)N/10.0), 10.00, N);
+  vec nus = mus;
+  mat out = zeros<mat>(N-1, N);
+  if((N-1) != lambdamat.n_rows){
+    Rcout << "N mistmatch with lambda.n_row" << std::endl;
+    return out;
+  }else{
+    for(int m = 0; m < (N-1); m++){
+      for(int n = 0; n < N; n++){
+        double log_lambda = log(as_scalar(lambdamat(m, n)));
+        out(m, n) += logZ_c_scalar(log_lambda, nus[n], summax);
+      }
+      if (m % 100 == 0) Rcout << m << std::endl;
+    }
+    return out;
+  }
+}
+
+//[[Rcpp::export]]
+mat gen_V_mat(int N, int summax, mat& lambdamat, mat& logZmat){
+  vec mus = linspace(1.0/((double)N/10.0), 10.00, N);
+  vec nus = mus;
+  mat out = zeros<mat>(N-1, N);
+  if((N-1) != lambdamat.n_rows){
+    Rcout << "N mistmatch with lambda.n_row" << std::endl;
+    return out;
+  }else{
+    for(int m = 0; m < (N-1); m++){
+      for(int n = 0; n < N; n++){
+        double lambda = as_scalar(lambdamat(m, n));
+        double logZ = as_scalar(logZmat(m, n));
+        out(m, n) += calc_V(mus[m], lambda, nus[n], logZ, summax);
+      }
+      if (m % 100 == 0) Rcout << m << std::endl;
+    }
+    return out;
+  }
 }
 
 
@@ -224,6 +291,7 @@ vec mu_fix(vec &b, int N){
   return clamp(x, 0.0+small, 10.0-small);
 }  
 
+// Create vectors for lambda, logZ and V given {mu, nu} -------------------
 // [[Rcpp::export]]
 vec mat_lookup(vec &m, vec &n, mat& MAT){ // Simply change what matrix is supplied as third argument.
   vec out = vec(m.size());
@@ -237,19 +305,14 @@ vec mat_lookup(vec &m, vec &n, mat& MAT){ // Simply change what matrix is suppli
 vec get_lambda(vec& mu, vec& nu, int summax, int N, mat& lambda_mat){
   
   // Define uvecs for lookups >/< value of mu=10.0
-  uvec ge10 = find(mu >= 10.0), lt10 = find(mu < 10);
+  uvec ge10 = find(mu >= 10.0), lt10 = find(mu < 10.0);
   int a = mu.size(), b = ge10.size(), c = lt10.size();
   vec out = vec(a);
-  
-  Rcout << "ge10: " << ge10 << std::endl;
-  Rcout << "lt10: " << lt10 << std::endl;
-  Rcout << "a: " << a << " b: " << b << " c: " << c << std::endl;
   
   // If there are elements >= 10, fix using the approximaton for lambda...
   if(b > 0){
     vec mu_temp = mu.elem(ge10), nu_temp = nu.elem(ge10);
     out.elem(ge10) = lambda_appx(mu_temp, nu_temp, summax);
-    Rcout << out << std::endl;
   }
   
   // Simply take matrix lookups for remaining elements
@@ -258,13 +321,316 @@ vec get_lambda(vec& mu, vec& nu, int summax, int N, mat& lambda_mat){
     vec mu2 = mu_fix(mu_temp, N), nu2 = mu_fix(nu_temp, N);         
     vec m = (mu2/(1./((double)N/10.))) - 1.00, n = (nu2/(1./((double)N/10.))) - 1.00;      
     out.elem(lt10) = mat_lookup(m, n, lambda_mat);
-    Rcout << out << std::endl;
   }
   
   return out;
 }
 
 // [[Rcpp::export]]
-vec get_V(vec& mu, vec& nu, int summax, int N, mat& V_mat){
-  return vec(mu.size());
+vec get_logZ(vec& mu, vec& nu, int summax, int N, vec& lambda, mat& logZ_mat){
+  
+  // Define lookups for >/< values of mu = 10.0
+  uvec ge10 = find(mu >= 10.0), lt10 = find(mu < 10.0);
+  int a = mu.size(), b = ge10.size(), c = lt10.size();
+  vec out = vec(a);
+  
+  // If there's elements >= 10, find using the approximation from \lambda.
+  if(b > 0){
+    vec mu_temp = mu.elem(ge10), nu_temp = nu.elem(ge10), lam_temp = lambda.elem(ge10);
+    vec ll = log(lam_temp);
+    vec logZ = logZ_c(ll, nu_temp, summax);
+    out.elem(ge10) += logZ;
+  }
+  
+  // And simply lookup logZ matrix for remaining mus
+  if(c > 0){
+    vec mu_temp = mu.elem(lt10), nu_temp = nu.elem(lt10);
+    vec mu2 = mu_fix(mu_temp, N), nu2 = mu_fix(nu_temp, N);         
+    vec m = (mu2/(1./((double)N/10.))) - 1.00, n = (nu2/(1./((double)N/10.))) - 1.00;      
+    out.elem(lt10) = mat_lookup(m, n, logZ_mat);
+  }
+  
+  return out;
 }
+
+// [[Rcpp::export]]
+vec get_V(vec& mu, vec& nu, int summax, int N, vec& lambda, vec& logZ, mat& V_mat){
+  
+  // Define lookups for >/< values of mu = 10.0
+  uvec ge10 = find(mu >= 10.0), lt10 = find(mu < 10.0);
+  int a = mu.size(), b = ge10.size(), c = lt10.size();
+  vec out = vec(a);
+  
+  // If there's elements >= 10, find using the value from logZ and lambda.
+  if(b > 0){
+    vec mu_temp = mu.elem(ge10), nu_temp = nu.elem(ge10), lZ_temp = logZ.elem(ge10), lam_temp = lambda.elem(ge10);
+    out.elem(ge10) = calc_V_vec(mu_temp, lam_temp, nu_temp, lZ_temp, summax);
+  }
+  
+  // And simply lookup V matrix for remaining mus
+  if(c > 0){
+    vec mu_temp = mu.elem(lt10), nu_temp = nu.elem(lt10);
+    vec mu2 = mu_fix(mu_temp, N), nu2 = mu_fix(nu_temp, N);         
+    vec m = (mu2/(1./((double)N/10.))) - 1.00, n = (nu2/(1./((double)N/10.))) - 1.00;      
+    out.elem(lt10) = mat_lookup(m, n, V_mat);
+  }
+  
+  return out;
+}
+
+// Defining a joint density -----------------------------------------------
+static double log2pi = log(2.0 * M_PI); 
+
+// [[Rcpp::export]]
+double ll_cmp(vec& loglambda, vec& nu, vec& logZ, vec& Y, vec& lY){
+  return sum(Y % loglambda - nu % lY - logZ);
+}
+
+// [[Rcpp::export]]
+double joint_density(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Data matrices
+                     vec& beta, vec& delta, mat& D,                       // Longit. + RE parameters
+                     rowvec& S, mat& SS, rowvec& Fi, mat& Fu, double l0i, rowvec& haz,
+                     int Delta, double gamma, vec& zeta, mat& lambdamat, mat& Vmat, mat& logZmat, int N, int summax){
+  // Define mu, nu
+  vec mu = exp(X * beta + Z * b);
+  vec nu = exp(G * delta);
+  // Lookup lambda and logZ
+  vec lambda = get_lambda(mu, nu, summax, N, lambdamat);
+  vec loglambda = log(lambda);
+  vec logZ = get_logZ(mu, nu, summax, N, lambda, logZmat);
+  // Calculate loglik CMP and then for other consituent distns.
+  double ll = ll_cmp(loglambda, nu, logZ, Y, lY);
+  int q = b.size();
+  double temp = 0.0;
+  if(Delta == 1) temp = log(l0i);
+  return -ll + -1.0 * as_scalar(-(double)q/2.0 * log2pi - 0.5 * log(det(D)) - 0.5 * b.t() * D.i() * b + 
+                                temp + Delta * (S * zeta + Fi * (gamma * b)) - haz * exp(SS * zeta + Fu * (gamma * b)));
+}
+
+// Its first derivative wrt b ----
+// [[Rcpp::export]]
+vec joint_density_ddb(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Data matrices
+                      vec& beta, vec& delta, mat& D,                       // Longit. + RE parameters
+                      rowvec& S, mat& SS, rowvec& Fi, mat& Fu, double l0i, rowvec& haz,
+                      int Delta, double gamma, vec& zeta, mat& lambdamat, mat& Vmat, mat& logZmat, int N, int summax){
+  // Define mu, nu
+  vec mu = exp(X * beta + Z * b);
+  // Rcout << "mu: " << mu << std::endl;
+  vec nu = exp(G * delta);
+  // Lookup lambda, logZ and V
+  vec lambda = get_lambda(mu, nu, summax, N, lambdamat);
+  vec logZ = get_logZ(mu, nu, summax, N, lambda, logZmat); // Need this to work out V.
+  vec V = get_V(mu, nu, summax, N, lambda, logZ, Vmat);
+  // Rcout << "V: " << V << std::endl;
+  // Rcout << "lambda: " << lambda << std::endl;
+  // Rcout << "logZ: " << logZ << std::endl;
+  
+  // Score of CMP and other constituent distns.
+  mat lhs_mat = diagmat(mu) * Z;          
+  vec Score = lhs_mat.t() * ((Y-mu) / V); 
+  // Rcout << "CMP Score: " << Score << std::endl;
+  
+  return -Score + -1.0 * (-D.i() * b + Delta * (Fi.t() * gamma) - 
+                          gamma * (Fu.t() * (haz.t() % exp(SS * zeta + Fu * (gamma * b)))));
+  
+}  
+
+// And take its second derivative via forward differencing ----
+// [[Rcpp::export]]
+mat joint_density_sdb(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Data matrices
+                      vec& beta, vec& delta, mat& D,                       // Longit. + RE parameters
+                      rowvec& S, mat& SS, rowvec& Fi, mat& Fu, double l0i, rowvec& haz,
+                      int Delta, double gamma, vec& zeta, mat& lambdamat, mat& Vmat, mat& logZmat, int N, int summax, double eps){
+  int q = b.size();
+  mat out = zeros<mat>(q, q);
+  // Rcout << "0------------" << std::endl;
+  vec f0 = joint_density_ddb(b, X, Y, lY, Z, G, beta, delta, D, S, SS, Fi, Fu, l0i, haz, Delta, gamma, zeta, lambdamat, Vmat, logZmat, N, summax);
+  for(int i = 0; i < q; i++){
+    // Rcout << q << "-------------" << std::endl;
+    vec bb = b;
+    double xi = std::max(1.0, b[i]);
+    bb[i] = b[i] + (xi * eps);
+    vec fdiff = joint_density_ddb(bb, X, Y, lY, Z, G, beta, delta, D, S, SS, Fi, Fu, l0i, haz, Delta, gamma, zeta, lambdamat, Vmat, logZmat, N, summax) - f0;
+    out.col(i) = fdiff/(bb[i]-b[i]);
+  }
+  return 0.5 * (out + out.t()); // Ensure symmetry
+}
+
+// Updates for the survival pair (gamma, zeta) ----------------------------
+
+// Define the conditional expectation
+double Egammazeta(vec& gammazeta, vec& b, mat& Sigma,
+                  rowvec& S, mat& SS, mat& Fu, rowvec& Fi, vec& haz, int Delta, vec& w, vec& v){
+  double g = as_scalar(gammazeta.head(1)); // gamma will always be scalar and the first element
+  vec z = gammazeta.subvec(1, gammazeta.size() - 1);  // with the rest of the vector constructed by zeta
+  // determine tau
+  vec tau = pow(g, 2.0) * diagvec(Fu * Sigma * Fu.t());
+  double rhs = 0.0;
+  for(int l = 0; l < w.size(); l++){
+    rhs += w[l] * as_scalar(haz.t() * exp(SS * z + Fu * (g * b) + v[l] * pow(tau, 0.5)));
+  }
+  return as_scalar(Delta * (S * z + Fi * (g * b)) - rhs);
+}
+
+// Then take Score AND Hessian via forward differencing.
+// [[Rcpp::export]]
+vec Sgammazeta(vec& gammazeta, vec& b, mat& Sigma,
+               rowvec& S, mat& SS, mat& Fu, rowvec& Fi, vec& haz, int Delta, vec& w, vec& v, long double eps){
+  vec out = vec(gammazeta.size());
+  double f0 = Egammazeta(gammazeta, b, Sigma, S, SS, Fu, Fi, haz, Delta, w, v);
+  for(int i = 0; i < gammazeta.size(); i++){
+    vec ge = gammazeta;
+    double xi = std::max(ge[i], 1.0);
+    ge[i] = gammazeta[i] + xi * eps;
+    double fdiff = Egammazeta(ge, b, Sigma, S, SS, Fu, Fi, haz, Delta, w, v) - f0;
+    out[i] = fdiff/(ge[i]-gammazeta[i]);
+  }
+  return out;
+}
+// [[Rcpp::export]]
+mat Hgammazeta(vec& gammazeta, vec& b, mat& Sigma,
+               rowvec& S, mat& SS, mat& Fu, rowvec& Fi, vec& haz, int Delta, vec& w, vec& v, long double eps){
+  mat out = zeros<mat>(gammazeta.size(), gammazeta.size());
+  vec f0 = Sgammazeta(gammazeta, b, Sigma, S, SS, Fu, Fi, haz, Delta, w, v, eps);
+  for(int i = 0; i < gammazeta.size(); i++){
+    vec ge = gammazeta;
+    double xi = std::max(ge[i], 1.0);
+    ge[i] = gammazeta[i] + xi * eps;
+    vec fdiff = Sgammazeta(ge, b, Sigma, S, SS, Fu, Fi, haz, Delta, w, v, eps) - f0;
+    out.col(i) = fdiff/(ge[i]-gammazeta[i]);
+  }
+  return 0.5 * (out + out.t());
+}
+
+// Defining update to the baseline hazard lambda_0 ------------------------
+// [[Rcpp::export]]
+mat lambdaUpdate(List survtimes, mat& ft, double gamma, vec& zeta,
+                 List S, List Sigma, List b, vec& w, vec& v){
+  int gh = w.size(), id = b.size();
+  mat store = zeros<mat>(ft.n_rows, id);
+  for(int i = 0; i < id; i++){
+    vec survtimes_i = survtimes[i];
+    mat Sigma_i = Sigma[i];
+    vec b_i = b[i];
+    rowvec S_i = S[i];
+    for(int j = 0; j < survtimes_i.size(); j++){
+      rowvec Fst = ft.row(j);
+      double tau = as_scalar(pow(gamma, 2.0) * Fst * Sigma_i * Fst.t());
+      vec rhs = gamma * b_i; //vec(b_i.size());
+      double mu = as_scalar(exp(S_i * zeta + Fst * rhs));
+      for(int l = 0; l < gh; l++){
+        store(j, i) += as_scalar(w[l] * mu * exp(v[l] * sqrt(tau)));
+      }
+    }
+  }
+  return store;
+}
+
+// Creation of elements A, B, C -------------------------------------------
+vec ElY(vec& lambda, vec& nu, vec& Z, int summax){
+  int l = lambda.size();
+  mat M = zeros<mat>(l, summax + 1);
+  for(int j = 1; j <= summax; j++){
+    M.col(j) += lgamma((double)j) * exp(((double)j-1.0) * log(lambda) - nu * lgamma((double)j) - Z);
+  }
+  return sum(M, 1); // Rowsums!
+}
+
+vec EYlY(vec& lambda, vec& nu, vec& Z, int summax){
+  int l = lambda.size();
+  mat M = zeros<mat>(l, summax + 1);
+  for(int j = 1; j <= summax; j++){
+    M.col(j) += exp(
+      log((double)j - 1.0) + log(lgamma((double)j)) + ((double)j - 1.0) * log(lambda) - nu * lgamma((double)j) - Z
+    );
+  }
+  return sum(M, 1); // Rowsums!
+}
+
+vec VlY(vec& lambda, vec& nu, vec& Z, vec& B, int summax){
+  int l = lambda.size();
+  mat M = zeros<mat>(l, summax + 1);
+  for(int j = 1; j <= summax; j++){
+    M.col(j) += pow(lgamma((double)j), 2.0) * exp( ((double)j - 1.0) * log(lambda) - nu * lgamma((double)j) - Z );
+  }
+  return sum(M, 1) - pow(B, 2.0); // Rowsums!
+}
+
+// [[Rcpp::export]]
+List A_B_C(vec& b, mat& X, mat& Z, vec& beta, vec& delta, mat& G, vec & lambda, vec& logZ, int summax, int N){
+  int m_i = X.n_rows;
+  vec mu = exp(X * beta + Z * b);
+  vec nu = exp(G * delta);
+  // Calculate B, C and A 
+  vec B = ElY(lambda, nu, logZ, summax);
+  vec C = VlY(lambda, nu, logZ, B, summax);
+  vec A = EYlY(lambda, nu, logZ, summax) - mu % B;
+  List out = List::create(Named("A") = A , _["B"] = B, _["C"] = C);
+  return out;
+}
+
+// Update to the dispersion parameter \delta ------------------------------
+// The conditional expectation on \b.
+double E_llcmp_delta(vec& delta, mat& G, vec& b, mat& X, mat& Z, vec& Y, vec& lY, vec& beta, vec& tau, vec& w, vec& v, int N, int summax,
+                     mat& lambdamat, mat& logZmat){
+  // nu unchanging
+  vec nu = exp(G * delta);
+  vec eta = X * beta + Z * b;
+  // init output
+  int gh = w.size();
+  double out = 0.0;
+  // Loop over quad. nodes.
+  for(int l = 0; l < gh; l++){
+    vec this_eta = eta + v[l] * tau;
+    vec mu = exp(this_eta);
+    vec lambda = get_lambda(mu, nu, summax, N, lambdamat);
+    vec loglambda = log(lambda);
+    vec logZ = get_logZ(mu, nu, summax, N, lambda, logZmat);
+    out += w[l] * ll_cmp(loglambda, nu, logZ, Y, lY);
+  }
+  return out;
+}
+
+// The score via central differencing
+// [[Rcpp::export]]
+vec Sdelta_cdiff(vec& delta, mat& G, vec& b, mat& X, mat& Z, vec& Y, vec& lY, vec& beta, vec& tau, vec& w, vec& v, int N, int summax,
+                 mat& lambdamat, mat& logZmat, double eps = 1e-2){
+  int a = delta.size();
+  vec out = vec(a);
+  double f0 = E_llcmp_delta(delta, G, b, X, Z, Y, lY, beta, tau, w, v, N, summax, lambdamat, logZmat);
+  for(int i = 0; i < a; i++){
+    vec aa = delta, bb = delta;
+    double xi = std::max(std::fabs(delta[i]), 1.0);
+    aa[i] = delta[i] + eps * xi;
+    bb[i] = delta[i] - eps * xi;
+    double E1 = E_llcmp_delta(aa, G, b, X, Z, Y, lY, beta, tau, w, v, N, summax, lambdamat, logZmat);
+    double E2 = E_llcmp_delta(bb, G, b, X, Z, Y, lY, beta, tau, w, v, N, summax, lambdamat, logZmat);
+    out[i] = (E1 - E2)/(aa[i]-bb[i]);
+  }
+  return out;
+}
+
+// The hessian at point estimate for b
+// [[Rcpp::export]]
+mat getW2(List ABC, vec& V, vec& nu, mat& G){
+  int a = G.n_cols, m = G.n_rows;
+  vec A = ABC["A"];
+  vec B = ABC["B"];
+  vec C = ABC["C"];
+  mat out = zeros<mat>(a, a);
+  for(int g = 0; g < m; g++){
+    out += ((-pow(A[g], 2.0)/V[g]+C[g]) * pow(nu[g], 2.0)) * G.row(g).t() * G.row(g);
+  }
+  return -1.0 * out;
+}
+
+// misc testing
+// [[Rcpp::export]]
+vec lspacetest(int start, int end, int num){
+  return linspace(start, end, num);
+}
+
+/* *******
+ * END ***
+ * *******/
+

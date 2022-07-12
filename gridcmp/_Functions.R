@@ -359,6 +359,7 @@ save.dir <- unname(ifelse(Sys.info()[1]=='Linux', '/data/c0061461/cmp-grids/', p
 load.grid <- function(N, what = 'lambda', pete = pete.flag){
   what <- match.arg(what, c('lambda', 'V', 'logZ'))
   if(pete) append <- '_Pete' else append <- ''
+  if(!pete) what <- paste0('new', what)
   if(N==1000) n <- '' else n <- '10K'
   file.name <- paste0(what, n, append, '.RData')
   assign('out', get(load(paste0(save.dir, file.name))))
