@@ -312,6 +312,7 @@ vec get_lambda(vec& mu, vec& nu, int summax, int N, mat& lambda_mat){
   // If there are elements >= 10, fix using the approximaton for lambda...
   if(b > 0){
     vec mu_temp = mu.elem(ge10), nu_temp = nu.elem(ge10);
+    Rcout << "ge10" << mu_temp << std::endl;
     out.elem(ge10) = lambda_appx(mu_temp, nu_temp, summax);
   }
   
@@ -395,9 +396,12 @@ double joint_density(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Dat
   vec mu = exp(X * beta + Z * b);
   vec nu = exp(G * delta);
   // Lookup lambda and logZ
-  vec lambda = get_lambda(mu, nu, summax, N, lambdamat);
+  // vec lambda = get_lambda(mu, nu, summax, N, lambdamat);
+  // vec loglambda = log(lambda);
+  // vec logZ = get_logZ(mu, nu, summax, N, lambda, logZmat);
+  vec lambda = lambda_appx(mu, nu, summax);
   vec loglambda = log(lambda);
-  vec logZ = get_logZ(mu, nu, summax, N, lambda, logZmat);
+  vec logZ = logZ_c(loglambda, nu, summax);
   // Calculate loglik CMP and then for other consituent distns.
   double ll = ll_cmp(loglambda, nu, logZ, Y, lY);
   int q = b.size();
@@ -418,9 +422,13 @@ vec joint_density_ddb(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Da
   // Rcout << "mu: " << mu << std::endl;
   vec nu = exp(G * delta);
   // Lookup lambda, logZ and V
-  vec lambda = get_lambda(mu, nu, summax, N, lambdamat);
-  vec logZ = get_logZ(mu, nu, summax, N, lambda, logZmat); // Need this to work out V.
-  vec V = get_V(mu, nu, summax, N, lambda, logZ, Vmat);
+  // vec lambda = get_lambda(mu, nu, summax, N, lambdamat);
+  // vec logZ = get_logZ(mu, nu, summax, N, lambda, logZmat); // Need this to work out V.
+  // vec V = get_V(mu, nu, summax, N, lambda, logZ, Vmat);
+  vec lambda = lambda_appx(mu, nu, summax);
+  vec loglambda = log(lambda);
+  vec logZ = logZ_c(loglambda, nu, summax);
+  vec V = calc_V_vec(mu, lambda, nu, logZ, summax);
   // Rcout << "V: " << V << std::endl;
   // Rcout << "lambda: " << lambda << std::endl;
   // Rcout << "logZ: " << logZ << std::endl;
@@ -583,9 +591,11 @@ double E_llcmp_delta(vec& delta, mat& G, vec& b, mat& X, mat& Z, vec& Y, vec& lY
   for(int l = 0; l < gh; l++){
     vec this_eta = eta + v[l] * tau;
     vec mu = exp(this_eta);
-    vec lambda = get_lambda(mu, nu, summax, N, lambdamat);
+    // vec lambda = get_lambda(mu, nu, summax, N, lambdamat);
+    vec lambda = lambda_appx(mu, nu, summax);
     vec loglambda = log(lambda);
-    vec logZ = get_logZ(mu, nu, summax, N, lambda, logZmat);
+    // vec logZ = get_logZ(mu, nu, summax, N, lambda, logZmat);
+    vec logZ = logZ_c(loglambda, nu, summax);
     out += w[l] * ll_cmp(loglambda, nu, logZ, Y, lY);
   }
   return out;

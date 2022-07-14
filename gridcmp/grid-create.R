@@ -1,10 +1,10 @@
 rm(list=ls())
 # Determine OS and setup directory to save in.
-save.dir <- unname(ifelse(Sys.info()[1]=='Linux', '/data/c0061461/cmp-grids/new', paste0(getwd(),'/data.nosync/')))
+save.dir <- unname(ifelse(Sys.info()[1]=='Linux', '/data/c0061461/cmp-grids/new/', paste0(getwd(),'/data.nosync/')))
 sourceCpp('testing.cpp')
 
 # 10K version -------------------------------------------------------------
-lambda.mat <- gen_lambda_mat(10000, 10)
+lambda.mat <- gen_lambda_mat(10000, 20)
 save(lambda.mat, file = paste0(save.dir, 'lambda10K.RData'))
 logZ.mat <- gen_logZ_mat(10000, 100, lambda.mat)
 save(logZ.mat, file = paste0(save.dir, 'logZ10K.RData'))

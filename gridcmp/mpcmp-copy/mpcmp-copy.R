@@ -417,3 +417,60 @@ comp_variances <- function(lambda, nu, log.Z, summax = 100) {
   var1 <- apply(term, 1, sum) - (comp_means(lambda, nu, log.Z, summax))^2
   return(var1)
 }
+
+comp_mean_logfactorialy <- function(lambda, nu, log.Z, summax = 100) {
+  # approximates mean by truncation of Ylog(Y!) for COMP distributions
+  # lambda, nu are recycled to match the length of each other.
+  if (missing(log.Z)) {
+    df <- CBIND(lambda = lambda, nu = nu)
+    log.Z <- logZ(log(df[, 1]), df[, 2], summax)
+  }
+  df <- CBIND(lambda = lambda, nu = nu, log.Z)
+  lambda <- df[, 1]
+  nu <- df[, 2]
+  log.Z <- df[, 3]
+  term <- matrix(0, nrow = length(lambda), ncol = summax)
+  for (y in 1:summax) {
+    term[, y] <- lgamma(y) * exp((y - 1) * log(lambda) - nu * lgamma(y) - log.Z)
+  }
+  mean1 <- apply(term, 1, sum)
+  return(mean1)
+}
+
+comp_mean_ylogfactorialy <- function(lambda, nu, log.Z, summax = 100) {
+  # approximates mean by truncation of Ylog(Y!) for COMP distributions
+  # lambda, nu are recycled to match the length of each other.
+  if (missing(log.Z)) {
+    df <- CBIND(lambda = lambda, nu = nu)
+    log.Z <- logZ(log(df[, 1]), df[, 2], summax)
+  }
+  df <- CBIND(lambda = lambda, nu = nu, log.Z = log.Z)
+  lambda <- df[, 1]
+  nu <- df[, 2]
+  log.Z <- df[, 3]
+  term <- matrix(0, nrow = length(lambda), ncol = summax)
+  for (y in 1:summax) {
+    term[, y] <- exp(log(y - 1) + log(lgamma(y)) + (y - 1) * log(lambda) - nu * lgamma(y) - log.Z)
+  }
+  mean1 <- apply(term, 1, sum)
+  return(mean1)
+}
+
+comp_variances_logfactorialy <- function(lambda, nu, log.Z, summax = 100) {
+  # approximates normalizing constant by truncation for COMP distributions
+  # lambda, nu, mu.bd are recycled to match the length of each other.
+  if (missing(log.Z)) {
+    df <- CBIND(lambda = lambda, nu = nu)
+    log.Z <- logZ(log(df[, 1]), df[, 2], summax)
+  }
+  df <- CBIND(lambda = lambda, nu = nu, log.Z = log.Z)
+  lambda <- df[, 1]
+  nu <- df[, 2]
+  log.Z <- df[, 3]
+  term <- matrix(0, nrow = length(lambda), ncol = summax)
+  for (y in 1:summax) {
+    term[, y] <- lgamma(y)^2 * exp((y - 1) * log(lambda) - nu * lgamma(y) - log.Z)
+  }
+  var1 <- apply(term, 1, sum) - (comp_mean_logfactorialy(lambda, nu, log.Z, summax))^2
+  return(var1)
+}

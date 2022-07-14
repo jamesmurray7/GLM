@@ -9,8 +9,8 @@ library(Rcpp)
 library(RcppArmadillo)
 library(glmmTMB)
 source('inits.R')
-source('grid-vcov.R')
-sourceCpp('testing.cpp')
+source('grid-vcov-nogrids.R')
+sourceCpp('testing-nogrids.cpp')
 vech <- function(x) x[lower.tri(x, T)]
 # Load parameter matrices
 if(!"N"%in%ls()) stop("N MUST BE DEFINED PRE-SOURCE!\n")
@@ -18,12 +18,13 @@ if(!"pete.flag"%in%ls()) stop("pete.flag MUST BE DEFINED PRE-SOURCE!\n")
 if(!N%in%c(1e3,1e4)) stop("N MUST EITHER 1000 OR 10,000!\n")  
 source('_Functions.R')
 # Load parameter matrices
-if(!'lambda.mat' %in% ls()) lambda.mat <- load.grid(N, 'lambda', pete.flag)
-if(!'V.mat' %in% ls()) V.mat <- load.grid(N, 'V', pete.flag)
-if(!'logZ.mat' %in% ls()) logZ.mat <- load.grid(N, 'logZ', pete.flag)
+# if(!'lambda.mat' %in% ls()) lambda.mat <- load.grid(N, 'lambda', pete.flag)
+# if(!'V.mat' %in% ls()) V.mat <- load.grid(N, 'V', pete.flag)
+# if(!'logZ.mat' %in% ls()) logZ.mat <- load.grid(N, 'logZ', pete.flag)
+lambda.mat <- V.mat <- logZ.mat <- matrix(,1,1)
 .mats <- c('lambda.mat', 'V.mat', 'logZ.mat')
 .rm <- function() rm(list = setdiff(ls(), ls(pattern = '\\.mat')))
-message('Parameter matrices loaded...')
+# message('Parameter matrices loaded...')
 
 EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
                      sv, w, v, n, m, summax, debug, N){
@@ -69,19 +70,19 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
 
   #' lambda, logZ and V lookups ----
   lambdas <- mapply(function(mu, nu){
-    get_lambda(mu, nu, summax, N, lambda.mat)
-    # lambda_appx(mu, nu, summax)
+    # get_lambda(mu, nu, summax, N, lambda.mat)
+    lambda_appx(mu, nu, summax)
   }, mu = mus, nu = nus, SIMPLIFY = F)
   
   logZs <- mapply(function(mu, nu, lambda){
-    get_logZ(mu, nu, summax, N, lambda, logZ.mat)
-    # logZ_c(log(lambda), nu, summax)
+    # get_logZ(mu, nu, summax, N, lambda, logZ.mat)
+    logZ_c(log(lambda), nu, summax)
   }, mu = mus, nu = nus, lambda = lambdas, SIMPLIFY = F)
   
   Vs <- mapply(function(mu, nu, lambda, logZ){
-    get_V(mu, nu, summax, N, lambda, logZ, V.mat)
-    # m <- length(mu)
-    # sapply(1:m, function(i) calc_V(mu[i], lambda[i], nu[i], logZ[i], summax))
+    # get_V(mu, nu, summax, N, lambda, logZ, V.mat)
+    m <- length(mu)
+    sapply(1:m, function(i) calc_V(mu[i], lambda[i], nu[i], logZ[i], summax))
   }, mu = mus, nu = nus, lambda = lambdas, logZ = logZs, SIMPLIFY = F)
   
   ABC <- mapply(function(b, X, Z, G, lambda, logZ){
@@ -266,14 +267,16 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, N, 
             X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
             S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
             gamma = gamma, zeta = zeta, 
-            lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, N = N, method = 'BFGS')$par
+            lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, 
+            N = N, summax = summax, method = 'BFGS')$par
     }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
     l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
     
     Sigma <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
       solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
                               S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-                              gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, N = N, eps = 10/N))
+                              gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, 
+                              N = N, summax = summax, eps = 10/N))
     }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
     l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
   

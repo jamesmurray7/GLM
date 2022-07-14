@@ -13,14 +13,14 @@ range(test$data$Y)
 data <- test$data
 rm(to.remove)
 N <- 1e4; pete.flag <- F
-source('grid-EM.R')
+source('grid-EM-nogrids.R')
 long.formula <- Y~time+cont+bin+(1|id)
 surv.formula <- Surv(survtime, status) ~ bin
 disp.formula <- ~1
 
-fit <- EM(long.formula, disp.formula, surv.formula, data, N = N, 
+fit <- EM(long.formula, disp.formula, surv.formula, data, N = N,
           control = list(verbose = T, summax.override = T, tol = 1e-2, gh.nodes = 3, debug = T),
-          summax = 100)
+          summax = 30)
 
 # Produce many (intercept-only) datasets ----------------------------------
 rm(list=ls())
