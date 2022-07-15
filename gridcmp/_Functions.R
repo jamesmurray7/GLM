@@ -375,5 +375,8 @@ load.grid <- function(N, what = 'lambda', pete = pete.flag){
 .summax <- function(x) ceiling(max(x) + 20 * sqrt(.safevar(x)))
 .any <- function(x, f) any(f(x))
 
-plot.stepmat <- function(fit) plot(fit$stepmat, type = 'o', col = 'blue', ylab = 'Time (s)', xlab = 'Iteration #', pch = 20)
+plot.stepmat <- function(fit){
+  plot(fit$stepmat, type = 'o', col = 'blue', ylab = 'Time (s)', xlab = 'Iteration #', pch = 20,
+       main = paste0(round(fit$comp.time, 2), "s total computation time, EM took ", round(fit$EMtime + fit$postprocess.time, 2), 's'))
+}
 

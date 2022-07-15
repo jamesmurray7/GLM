@@ -1,30 +1,20 @@
 #' #######
 #' EM.R
-#' --
-#' This largely based on my PBC-case-study/EM, inits, _Functions.R files
+#' ----
+#' Doesn't use a grid for quicker lookups for \lambda(\mu,\nu); logZ(\mu,\nu) and V(\mu, \nu) values.
 #' ######
 
 library(survival)
 library(Rcpp)
 library(RcppArmadillo)
 library(glmmTMB)
+source('_Functions.R')
 source('inits.R')
 source('grid-vcov-nogrids.R')
+source('grid-simData.R')
 sourceCpp('testing-nogrids.cpp')
 vech <- function(x) x[lower.tri(x, T)]
-# Load parameter matrices
-if(!"N"%in%ls()) stop("N MUST BE DEFINED PRE-SOURCE!\n")
-if(!"pete.flag"%in%ls()) stop("pete.flag MUST BE DEFINED PRE-SOURCE!\n")
-if(!N%in%c(1e3,1e4)) stop("N MUST EITHER 1000 OR 10,000!\n")  
-source('_Functions.R')
-# Load parameter matrices
-# if(!'lambda.mat' %in% ls()) lambda.mat <- load.grid(N, 'lambda', pete.flag)
-# if(!'V.mat' %in% ls()) V.mat <- load.grid(N, 'V', pete.flag)
-# if(!'logZ.mat' %in% ls()) logZ.mat <- load.grid(N, 'logZ', pete.flag)
-lambda.mat <- V.mat <- logZ.mat <- matrix(,1,1)
-.mats <- c('lambda.mat', 'V.mat', 'logZ.mat')
-.rm <- function() rm(list = setdiff(ls(), ls(pattern = '\\.mat')))
-# message('Parameter matrices loaded...')
+lambda.mat <- V.mat <- logZ.mat <- matrix(0,1,1)
 
 EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
                      sv, w, v, n, m, summax, debug, N){
@@ -152,7 +142,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
     D = D.new, beta = beta.new, delta = delta.new,       # <Y>
     gamma = gammazeta.new[1], zeta = gammazeta.new[-1],  # Survival
     l0 = l0.new, l0u = l0u.new, l0i = as.list(l0i.new),  # ---""---
-    b = b.hat,                                           #   REs.
+    b = b.hat, mus = mus,                                #   REs.
     t = round(e-s,3)
   )
   
@@ -208,7 +198,13 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, N, 
   if(!is.null(control$maxit)) maxit <- control$maxit else maxit <- 200
   if(!is.null(control$conv)) conv <- control$conv else conv <- "relative"
   if(!conv%in%c('absolute', 'relative')) stop('Only "absolute" and "relative" difference convergence criteria implemented.')
-  if(!is.null(control$summax.override)) summax.override <- control$summax.override else summax.override <- F
+  if(!is.null(control$auto.summax)) auto.summax <- control$auto.summax else auto.summax <- F
+  
+  if(auto.summax){
+    summax.old <- summax
+    summax <- max(sapply(Y, max)) + 10
+    cat(sprintf("Automatically setting summax to %d\n", summax))
+  }
   
   
   if(debug){DEBUG.inits <<- params; DEBUG.dmats <<- dmats; DEBUG.sv <<- sv; DEBUG.surv <<- surv}
@@ -233,7 +229,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, N, 
       message("Iteration ", iter + 1, ' maximum ', conv, ' difference: ', round(diff, 4))
       message("Largest RE relative difference: ", round(max(difference(do.call(cbind, update$b), do.call(cbind, b), conv)), 4))
     }
-    
+
     #' Set new estimates as current
     b <- update$b
     D <- update$D; beta <- update$beta; delta <- update$delta
@@ -248,19 +244,19 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, N, 
   EMend <- proc.time()[3]
   out <- list(coeffs = Omega,
               EMtime = round(EMend - EMstart, 3),
-              iter = iter,
-              comp.time = round(proc.time()[3]-start.time, 3))
+              iter = iter)
   modelInfo <- list(
-    summax = summax, 
-    forms = formulas
+    forms = formulas,
+    summax = summax
   )
+  if(auto.summax) modelInfo$summax.type <- 'automatic' else modelInfo$summax.type <- 'manual'
   out$modelInfo <- modelInfo
-  out$hazard <- cbind(ft = sv$ft, haz = l0)
+  out$hazard <- cbind(ft = sv$ft, haz = l0, nev = sv$nev)
   out$stepmat <- cbind(iter = 1:iter, time = step.times)
   
   if(post.process){
     message('\nCalculating SEs...')
-    start.time <- proc.time()[3]
+    start.time.p <- proc.time()[3]
     #' Calculating \b and \Sigma at MLEs
     b.hat <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
       optim(b, joint_density, joint_density_ddb,
@@ -289,13 +285,13 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, N, 
     out$SE <- sqrt(diag(I.inv))
     out$vcov <- I
     out$RE <- do.call(rbind, b)
-    out$postprocess.time <- round(proc.time()[3]-start.time, 2)
+    out$postprocess.time <- round(proc.time()[3]-start.time.p, 2)
     
     #' Calculate the log-likelihood.
     # Timing done separately as EMtime + postprocess.time is for EM + SEs.
     #out$logLik <- log.lik(Omega, dmats, b, surv, sv, l0u, l0i, summax)
     #out$lltime <- round(proc.time()[3] - start.time, 2) - out$postprocess.time
   }
-  
+  out$comp.time = round(proc.time()[3]-start.time, 3)
   out
 }

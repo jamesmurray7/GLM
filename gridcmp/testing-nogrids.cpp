@@ -12,6 +12,7 @@ arma::vec SEQ_Z(long double summax){ // Shorthand for Z_(lambda_i, nu_i)
 
 
 // Normalising constants, Z -----------------------------------------------
+// [[Rcpp::export]]
 vec logZ_c(vec& log_lambda, vec& nu, int summax) {
   // Control loop
   // int maxiter = 1e4;
@@ -33,6 +34,7 @@ vec logZ_c(vec& log_lambda, vec& nu, int summax) {
   return out;
 }
 
+// [[Rcpp::export]]
 double logZ_c_scalar(double log_lambda, double nu, int summax) { // SCALAR VERSION.
   // Control loop
   // int maxiter = 1e4;
@@ -51,6 +53,15 @@ double logZ_c_scalar(double log_lambda, double nu, int summax) { // SCALAR VERSI
   return out;
 }
 
+// Specifically for obtaining pmf in simulations --------------------------
+// [[Rcpp::export]]
+vec cmp_pmf_scalar(vec& Y, double lambda, double nu, int summax){
+  vec out = vec(Y.size());
+  double logZ = logZ_c_scalar(log(lambda), nu, summax);
+  vec L = exp(Y * log(lambda) - nu * lgamma(Y + 1.0) - logZ);
+  L.replace(datum::inf, 1e100);
+  return L;
+}
 
 // The variance, V --------------------------------------------------------
 // [[Rcpp::export]]
