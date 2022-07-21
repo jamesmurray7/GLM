@@ -590,8 +590,7 @@ List A_B_C(vec& b, mat& X, mat& Z, vec& beta, vec& delta, mat& G, vec & lambda, 
 // Update to the dispersion parameter \delta ------------------------------
 // The conditional expectation on \b.
 // [[Rcpp::export]]
-double E_llcmp_delta(vec& delta, mat& G, vec& b, mat& X, mat& Z, vec& Y, vec& lY, vec& beta, vec& tau, vec& w, vec& v, int N, int summax,
-                     mat& lambdamat, mat& logZmat){
+double E_llcmp_delta(vec& delta, mat& G, vec& b, mat& X, mat& Z, vec& Y, vec& lY, vec& beta, vec& tau, vec& w, vec& v, int summax){
   // nu unchanging
   vec nu = exp(G * delta);
   vec eta = X * beta + Z * b;
@@ -602,10 +601,8 @@ double E_llcmp_delta(vec& delta, mat& G, vec& b, mat& X, mat& Z, vec& Y, vec& lY
   for(int l = 0; l < gh; l++){
     vec this_eta = eta + v[l] * tau;
     vec mu = exp(this_eta);
-    // vec lambda = get_lambda(mu, nu, summax, N, lambdamat);
     vec lambda = lambda_appx(mu, nu, summax);
     vec loglambda = log(lambda);
-    // vec logZ = get_logZ(mu, nu, summax, N, lambda, logZmat);
     vec logZ = logZ_c(loglambda, nu, summax);
     out += w[l] * ll_cmp(loglambda, nu, logZ, Y, lY);
   }
@@ -614,21 +611,58 @@ double E_llcmp_delta(vec& delta, mat& G, vec& b, mat& X, mat& Z, vec& Y, vec& lY
 
 // The score via central differencing
 // [[Rcpp::export]]
-vec Sdelta_cdiff(vec& delta, mat& G, vec& b, mat& X, mat& Z, vec& Y, vec& lY, vec& beta, vec& tau, vec& w, vec& v, int N, int summax,
-                 mat& lambdamat, mat& logZmat, double eps = 1e-2){
+vec Sdelta_cdiff(vec& delta, mat& G, vec& b, mat& X, mat& Z, vec& Y, vec& lY, vec& beta, vec& tau, vec& w, vec& v, int summax, double eps){
   int a = delta.size();
   vec out = vec(a);
-  // double f0 = E_llcmp_delta(delta, G, b, X, Z, Y, lY, beta, tau, w, v, N, summax, lambdamat, logZmat);
   for(int i = 0; i < a; i++){
     vec aa = delta, bb = delta;
     double xi = std::max(std::fabs(delta[i]), 1.0);
     aa[i] = delta[i] + eps * xi;
     bb[i] = delta[i] - eps * xi;
-    double E1 = E_llcmp_delta(aa, G, b, X, Z, Y, lY, beta, tau, w, v, N, summax, lambdamat, logZmat);
-    double E2 = E_llcmp_delta(bb, G, b, X, Z, Y, lY, beta, tau, w, v, N, summax, lambdamat, logZmat);
+    double E1 = E_llcmp_delta(aa, G, b, X, Z, Y, lY, beta, tau, w, v, summax);
+    double E2 = E_llcmp_delta(bb, G, b, X, Z, Y, lY, beta, tau, w, v, summax);
     out[i] = (E1 - E2)/(aa[i]-bb[i]);
   }
   return out;
+}
+
+// [[Rcpp::export]]
+mat Hdelta(vec& delta, mat& G, vec& b, mat& X, mat& Z, vec& Y, vec& lY, vec& beta, vec& tau, vec& w, vec& v, int summax, double eps){
+  int n = delta.size();
+  
+  if(n == 1){
+    mat H = mat(1, 1);
+    vec dpe = delta + eps, dme = delta - eps;
+    H(0,0) = (E_llcmp_delta(dpe, G, b, X, Z, Y, lY, beta, tau, w, v, summax) - 
+      2.0 * E_llcmp_delta(delta, G, b, X, Z, Y, lY, beta, tau, w, v, summax) + 
+      E_llcmp_delta(dme, G, b, X, Z, Y, lY, beta, tau, w, v, summax))/pow(eps, 2.0);
+    return H;
+  }else{
+    vec e = vec(n);
+    e.fill(eps);
+    mat H = zeros<mat>(n, n);
+    mat ee = diagmat(e);
+    // Begin loop
+    for(int i = 0; i < n; i++){
+      vec ei = ee.col(i);
+      vec dpe = delta + ei, dme = delta - ei;
+      // Diagonal terms
+      H(i, i) = (E_llcmp_delta(dme, G, b, X, Z, Y, lY, beta, tau, w, v, summax) - 
+        2.0 * E_llcmp_delta(delta, G, b, X, Z, Y, lY, beta, tau, w, v, summax) + 
+        E_llcmp_delta(dpe, G, b, X, Z, Y, lY, beta, tau, w, v, summax))/pow(eps, 2.0);
+      for(int j = (i + 1); j < n; j++){
+        vec ej = ee.col(j); // Off-diagonals
+        vec pp = delta + ei + ej, pm = delta + ei - ej, mp = delta - ei + ej, mm = delta - ei - ej;
+        H(i,j) =  (E_llcmp_delta(pp, G, b, X, Z, Y, lY, beta, tau, w, v, summax) - 
+          E_llcmp_delta(pm, G, b, X, Z, Y, lY, beta, tau, w, v, summax) - 
+          E_llcmp_delta(mp, G, b, X, Z, Y, lY, beta, tau, w, v, summax) + 
+          E_llcmp_delta(mm, G, b, X, Z, Y, lY, beta, tau, w, v, summax))/(4.0 * pow(eps, 2.0));
+        H(j,i) = H(i,j);
+      }
+    }
+    return H;
+  }
+
 }
 
 // The hessian at point estimate for b
