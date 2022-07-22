@@ -75,10 +75,6 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
     sapply(1:m, function(i) calc_V(mu[i], lambda[i], nu[i], logZ[i], summax))
   }, mu = mus, nu = nus, lambda = lambdas, logZ = logZs, SIMPLIFY = F)
   
-  ABC <- mapply(function(b, X, Z, G, lambda, logZ){
-    A_B_C(b, X, Z, beta, delta, G, lambda, logZ, summax, N)
-  }, b = b.hat, X = X, Z = Z, G = G, lambda = lambdas, logZ = logZs, SIMPLIFY = F)
-  
   # D
   D.update <- mapply(function(Sigma, b) Sigma + tcrossprod(b), Sigma = Sigma, b = b.hat, SIMPLIFY = F)
   
@@ -88,20 +84,16 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   
   # \delta
   Sd <- mapply(function(G, b, X, Z, Y, lY, tau){
-    Sdelta_cdiff(delta, G, b, X, Z, Y, lY, beta, tau, w, v, N, summax, lambda.mat, logZ.mat,
-                 eps=.Machine$double.eps^(1/3))
+    Sdelta_cdiff(delta, G, b, X, Z, Y, lY, beta, tau, w, v, summax, eps=.Machine$double.eps^(1/3))
   }, G = G, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
-  # Hd <- mapply(getW2, ABC, Vs, nus, G, SIMPLIFY = F)
-  
-  # Sd2 <- mapply(function(G, b, X, Z, Y, lY, tau){
-  #   pracma::grad(E_llcmp_delta, delta, G = G, b = b, X = X, Z = Z, 
-  #                Y = Y, lY = lY, beta = beta, tau = tau, w = w, v = v, N = N, summax = summax, 
-  #                lambdamat = lambda.mat, logZmat = logZ.mat) 
+
+  # Hd <- mapply(function(G, b, X, Z, Y, lY, tau){
+  #   pracma::hessian(E_llcmp_delta, delta, G = G, b = b, X = X, Z = Z,
+  #                   Y = Y, lY = lY, beta = beta, tau = tau, w = w, v = v, summax = summax)
   # }, G = G, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
+  
   Hd <- mapply(function(G, b, X, Z, Y, lY, tau){
-    pracma::hessian(E_llcmp_delta, delta, G = G, b = b, X = X, Z = Z,
-                    Y = Y, lY = lY, beta = beta, tau = tau, w = w, v = v, N = N, summax = summax,
-                    lambdamat = lambda.mat, logZmat = logZ.mat)
+    Hdelta(delta, G, b, X, Z, Y, lY, beta, tau, w, v, summax, eps=.Machine$double.eps^(1/4))
   }, G = G, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
   
   # Survival parameters (\gamma, \zeta)
