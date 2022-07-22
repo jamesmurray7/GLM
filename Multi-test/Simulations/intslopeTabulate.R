@@ -1,4 +1,3 @@
-# Comparing intercept and slope fits via 
 rm(list=ls())
 library(tidyverse)
 source('EM.R')
@@ -10,7 +9,16 @@ dataDir <- paste0(getwd(), '/Simulations/fits')
 rm(list = ls()[grepl('fit',ls())])
 for(file in dir(dataDir, '^gaussian')){ # load in all data -> Gaussian
   cat(paste0(file, '\n'))
-  load(paste0(dataDir, '/', file))
+  # Ensure we take second run at JMbayes2
+  if(grepl('JMbayes2', file)){
+    if(grepl('2\\-2', file)){
+      load(paste0(dataDir, '/', file))
+    }else{
+      cat('--> Not loading first pass of JMbayes\n')
+    }
+  }else{
+    load(paste0(dataDir, '/', file))
+  }
 }
 
 # -- K = 1 --
@@ -36,7 +44,16 @@ tab.to.xtab(G3)
 rm(list = ls()[grepl('fit',ls())])
 for(file in dir(dataDir, '^poisson')){ # load in all data -> Gaussian
   cat(paste0(file, '\n'))
-  load(paste0(dataDir, '/', file))
+  # Ensure we take second run at JMbayes2
+  if(grepl('JMbayes2', file)){
+    if(grepl('2\\-2', file)){
+      load(paste0(dataDir, '/', file))
+    }else{
+      cat('--> Not loading first pass of JMbayes\n')
+    }
+  }else{
+    load(paste0(dataDir, '/', file))
+  }
 }
 
 P1 <- left_join(tabulate_wrapper(fit1, 'aEM', 'poisson', 1),
@@ -58,7 +75,16 @@ tab.to.xtab(P3)
 rm(list = ls()[grepl('fit',ls())])
 for(file in dir(dataDir, '^binomial')){ # load in all data -> Gaussian
   cat(paste0(file, '\n'))
-  load(paste0(dataDir, '/', file))
+  # Ensure we take second run at JMbayes2
+  if(grepl('JMbayes2', file)){
+    if(grepl('2\\-2', file)){
+      load(paste0(dataDir, '/', file))
+    }else{
+      cat('--> Not loading first pass of JMbayes\n')
+    }
+  }else{
+    load(paste0(dataDir, '/', file))
+  }
 }
 
 P1 <- left_join(tabulate_wrapper(fit1, 'aEM', 'binomial', 1),

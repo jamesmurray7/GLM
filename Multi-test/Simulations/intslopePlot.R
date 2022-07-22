@@ -11,7 +11,16 @@ dataDir <- paste0(getwd(), '/Simulations/fits')
 rm(list = ls()[grepl('fit',ls())])
 for(file in dir(dataDir, '^gaussian')){ # load in all data -> Gaussian
   cat(paste0(file, '\n'))
-  load(paste0(dataDir, '/', file))
+  # Ensure we take second run at JMbayes2
+  if(grepl('JMbayes2', file)){
+    if(grepl('2\\-2', file)){
+      load(paste0(dataDir, '/', file))
+    }else{
+      cat('--> Not loading first pass of JMbayes\n')
+    }
+  }else{
+    load(paste0(dataDir, '/', file))
+  }
 }
 
 jML.times <- data.frame(method = 'joineRML',
@@ -46,7 +55,6 @@ elapsed.times %>%
   stat_summary(fun=median, geom="line", aes(group=1), lty = 5, alpha = .5) +
   stat_summary(fun=median, geom="point", size = 2) + 
   facet_wrap(~ method, scales = 'free_y') +
-  scale_y_continuous(breaks = scales::pretty_breaks(10)) + 
   theme_csda() + 
   labs(
     x = NULL, y = expression(underline(bold(Gaussian)))
@@ -56,7 +64,16 @@ elapsed.times %>%
 rm(list = ls()[grepl('fit',ls())])
 for(file in dir(dataDir, '^poisson')){ # load in all data -> Gaussian
   cat(paste0(file, '\n'))
-  load(paste0(dataDir, '/', file))
+  # Ensure we take second run at JMbayes2
+  if(grepl('JMbayes2', file)){
+    if(grepl('2\\-2', file)){
+      load(paste0(dataDir, '/', file))
+    }else{
+      cat('--> Not loading first pass of JMbayes\n')
+    }
+  }else{
+    load(paste0(dataDir, '/', file))
+  }
 }
 
 aEM.times <- data.frame(method = 'Approximate EM',
@@ -96,7 +113,16 @@ elapsed.times %>%
 rm(list = ls()[grepl('fit',ls())])
 for(file in dir(dataDir, '^binomial')){ # load in all data -> Gaussian
   cat(paste0(file, '\n'))
-  load(paste0(dataDir, '/', file))
+  # Ensure we take second run at JMbayes2
+  if(grepl('JMbayes2', file)){
+    if(grepl('2\\-2', file)){
+      load(paste0(dataDir, '/', file))
+    }else{
+      cat('--> Not loading first pass of JMbayes\n')
+    }
+  }else{
+    load(paste0(dataDir, '/', file))
+  }
 }
 
 aEM.times <- data.frame(method = 'Approximate EM',
@@ -134,6 +160,8 @@ elapsed.times %>%
 #' Combine?
 all.plots <- ggpubr::ggarrange(Gplot,Pplot,Bplot,ncol=1)
 ggpubr::annotate_figure(all.plots, left = 'Elapsed time (seconds, log10)')
+ggsave('~/Downloads/all_elapsed.png',
+       height = 240, width = 190, units = 'mm')
 # Plotting Estimates ------------------------------------------------------
 
 #' Gaussian

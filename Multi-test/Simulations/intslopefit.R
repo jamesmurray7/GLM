@@ -43,7 +43,7 @@ JMbayes2fit <- function(data, k, family){
       long <- as.formula(paste0('Y.', kk, '~time + cont + bin'))
       random <- ~time|id
       M[[kk]] <- lme(fixed = long, random = random, 
-                     data = data)
+                     data = data, method = 'ML', control = lmeControl(opt='optim'))
     }
   }else{
     for(kk in 1:k){
@@ -65,12 +65,8 @@ JMbayes2fit <- function(data, k, family){
   ph <- coxph(Surv(survtime, status) ~ bin, survdata)
   
   fit <- tryCatch(
-    jm(ph, M, time_var = 'time', id_var = 'id', data_Surv = survdata,
-            control = list(
-              n_chains = 3,
-              n_iter = 1500,
-              n_burnin = 500, cores = 3
-            )),error=function(e) NULL)
+    jm(ph, M, time_var = 'time', id_var = 'id', data_Surv = survdata,),
+    error=function(e) NULL)
   if(!is.null(fit)){
     s <- summary(fit)
     rtn <- list()
@@ -204,31 +200,10 @@ for(i in 1:100){
   fit1.JMb[[i]] <- JMbayes2fit(d, 1, 'gaussian')
   utils::setTxtProgressBar(pb, i)
 }
-save(fit1.JMb, file = 'Simulations/fits/gaussianK-1_JMbayes2.RData')
+save(fit1.JMb, file = 'Simulations/fits/gaussianK-1_JMbayes2-2.RData')
 
 # K=2 JMbayes 2------------------------------------------------------------
-data2 <- .loader('Simulations/data/gaussianK-2.RData')
-fit2.JMb <- vector('list', 100)
-pb <- utils::txtProgressBar(max=100,style=3)
-for(i in 1:100){
-  d <- data2[[i]]
-  fit2.JMb[[i]] <- JMbayes2fit(d, 2, 'gaussian')
-  utils::setTxtProgressBar(pb, i)
-}
-save(fit2.JMb, file = 'Simulations/fits/gaussianK-2_JMbayes2.RData')
-
-# K=3 JMbayes 2------------------------------------------------------------
-data3 <- .loader('Simulations/data/gaussianK-3.RData')
-fit3.JMb <- vector('list', 100)
-pb <- utils::txtProgressBar(max=100,style=3)
-for(i in 1:100){
-  d <- data3[[i]]
-  fit3.JMb[[i]] <- JMbayes2fit(d, 3, 'gaussian')
-  utils::setTxtProgressBar(pb, i)
-}
-
-save(fit3.JMb, file = 'Simulations/fits/gaussianK-3_JMbayes2.RData')
-
+  
 # END GAUSSIAN --------
 # Poisson -----------------------------------------------------------------
 # rm(data1, data2, data3) already done!
@@ -250,16 +225,16 @@ data3 <- .loader('Simulations/data/poissonK-3.RData')
 
 # JMbayes2
 pb <- utils::txtProgressBar(max = 100, style = 3)
-for(i in 1:100){
+for(i in 1:100){ # 21/7/22 do k=2 poisson jmb2
   d1 <- data1[[i]]; d2 <- data2[[i]]; d3 <- data3[[i]]
-  fit1.JMb[[i]] <- JMbayes2fit(d1, 1, 'poisson')
+  # fit1.JMb[[i]] <- JMbayes2fit(d1, 1, 'poisson')
   fit2.JMb[[i]] <- JMbayes2fit(d2, 2, 'poisson')
-  fit3.JMb[[i]] <- JMbayes2fit(d3, 3, 'poisson')
+  # fit3.JMb[[i]] <- JMbayes2fit(d3, 3, 'poisson')
   utils::setTxtProgressBar(pb, i)
 }
-save(fit1.JMb, file = 'Simulations/fits/poissonK-1_JMbayes2.RData')
-save(fit2.JMb, file = 'Simulations/fits/poissonK-2_JMbayes2.RData')
-save(fit3.JMb, file = 'Simulations/fits/poissonK-3_JMbayes2.RData')
+# save(fit1.JMb, file = 'Simulations/fits/poissonK-1_JMbayes2-2.RData')
+save(fit2.JMb, file = 'Simulations/fits/poissonK-2_JMbayes2-2.RData')
+# save(fit3.JMb, file = 'Simulations/fits/poissonK-3_JMbayes2-2.RData')
 
 
 # INLAjoint ---------------------------------------------------------------
