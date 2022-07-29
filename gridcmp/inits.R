@@ -46,6 +46,22 @@ Longit.inits <- function(long.formula, disp.formula, data){
   )
 }
 
+disp.init <- function(formulas, disp.formula, data){
+  
+  data$Y <- data[,formulas$response]
+  
+  # Dispersion across time
+  time.disps <- with(data, tapply(Y, time, var))/with(data, tapply(Y, time, mean))
+  
+  # Setup a dataframe
+  df <- data.frame(time = as.numeric(names(time.disps)), disp = unname(time.disps))
+  
+  # Return linear model
+  f <- paste0('disp', paste0(as.character(disp.formula), collapse = ''))
+  lm(f, data = df)$coeff
+  
+}
+
 # Survival Inits ----------------------------------------------------------
 # Getting data into time1/time2 format...
 .ToStartStop <- function(data){

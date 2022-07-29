@@ -1,13 +1,74 @@
 test.sets <- replicate(100,
                        simData_joint2(n = 250, delta = c(.8,-.2), 
                                       ntms = 10, theta = c(-2, .1), fup = 3,
-                                      beta = c(0.0, 0.5, 0.05, -0.1), gamma = 0.6, zeta= c(0.0, -0.2),
+                                      beta = c(2, -0.1, 0.1, -0.2), gamma = 0.6, zeta= c(0.0, -0.2),
                                       D = matrix(c(0.25, 0, 0, 0.00), 2, 2)),
                        simplify = F)
 
+test.sets <- lapply(test.sets, el)
+# At each time point and then lm'd ----------------------------------------
+time.disps <- lapply(test.sets, function(x){
+  time.disps <- with(x, tapply(Y, time, var))/with(x, tapply(Y, time, mean))
+  df <- data.frame(time = as.numeric(names(time.disps)), disp = unname(time.disps))
+  df
+})
+
+#' Okay, so correctly captures initial \delta value (0.8), and captures fact that dispersion
+#' INCREASES over time. But this doesn't directly translate into true value -0.2 (value into \nu).
+
+plot(sapply(time.disps, function(x) x$disp[1]))
+abline(h=0.8, col = 'red', lty = 5)
+
+# Linear models
+time.disp.lm <- lapply(time.disps, function(x) lm(disp ~ time, data = x)$coeff)
+points(sapply(time.disp.lm, function(x) x[1]), pch = 3) # Intercept values a little different.
+
+collect.disps.lms <- do.call(rbind, time.disp.lm)
+
+apply(collect.disps.lms, 2, quantile) # Log (intercept) for larger Y values?
+
+
+# Turn this into a function -----------------------------------------------
+disp.init <- function(formulas, disp.formula, data){
+  
+  data$Y <- data[,formulas$response]
+  
+  # Dispersion across time
+  time.disps <- with(data, tapply(Y, time, var))/with(data, tapply(Y, time, mean))
+  
+  # Setup a dataframe
+  df <- data.frame(time = as.numeric(names(time.disps)), disp = unname(time.disps))
+  
+  # Return linear model
+  f <- paste0('disp', paste0(as.character(disp.formula), collapse = ''))
+  lm(f, data = df)$coeff
+  
+}
+formulas <- list(response='Y')
+
+# For time specification
+disp.formula1 <- ~ time
+
+inits1 <- lapply(test.sets, function(x) disp.init(formulas, disp.formula1, x))
+apply(do.call(rbind, inits1),2,mean) # Pretty good.
+
+
+# Intercept only...
+test.setsI <- replicate(100,
+                       simData_joint2(n = 250, delta = c(.8, 0.0), 
+                                      ntms = 10, theta = c(-2, .1), fup = 3,
+                                      beta = c(0.0, 0.5, 0.05, -0.1), gamma = 0.6, zeta= c(0.0, -0.2),
+                                      D = matrix(c(0.25, 0, 0, 0.00), 2, 2)),
+                       simplify = F)
+test.setsI <- lapply(test.setsI, el)
+disp.formula2 <- ~ 1
+inits2 <- lapply(test.setsI, function(x) disp.init(formulas, disp.formula2, x)) # Seems to overshoot a little
+
+
+
 # Straight var(x)/mean(x) //
 1/sapply(test.sets, function(x){
-  y <- x$data$Y
+  y <- x$Y
   var(y)/mean(y)
 }) ## Not good at all.
 
