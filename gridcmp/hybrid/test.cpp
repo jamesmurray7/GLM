@@ -350,7 +350,7 @@ double joint_density(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Dat
     uvec nan_ind = find_nonfinite(m), fin_ind = find_finite(m);
 
     vec mu_nans = mu.elem(nan_ind), nu_nans = nu.elem(nan_ind);
-
+    
     lambda.elem(nan_ind) += lambda_appx(mu_nans, nu_nans, summax);
     vec temp = log(lambda);
     vec temp2 = temp.elem(nan_ind);
@@ -393,7 +393,7 @@ vec joint_density_ddb(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Da
   vec nu = exp(G * delta);
   
   // Lookup lambda and logZ
-  vec m = get_indices(mu, all_mus), n = get_indices(nu, all_nus); // uncomment if needed!
+  vec m = get_indices(mu, all_mus), n = get_indices(nu, all_nus);
   vec lambda = vec(mi), logZ = vec(mi), V = vec(mi);
   if(m.has_nan()){ // If any generated mus (via optim) are outside of the range, need to directly approximate; nu shouldnt ever need this.
     uvec nan_ind = find_nonfinite(m), fin_ind = find_finite(m);
@@ -403,16 +403,16 @@ vec joint_density_ddb(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Da
     lambda.elem(nan_ind) += lambda_appx(mu_nans, nu_nans, summax);
     vec temp = lambda.elem(nan_ind); // This is lambda,
     vec temp2 = log(temp);           //  ... log(lambda).
-    logZ.elem(nan_ind) += logZ_c(temp2, nu_nans, summax);
+    logZ.elem(nan_ind) = logZ_c(temp2, nu_nans, summax);
     vec temp3 = logZ.elem(nan_ind);
-    V.elem(nan_ind) += calc_V_vec(mu_nans, temp, nu_nans, temp3, summax);
+    V.elem(nan_ind) = calc_V_vec(mu_nans, temp, nu_nans, temp3, summax);
 
     // The properly behaved ones -->
     if(fin_ind.size() > 0){
       vec m_fin = m.elem(fin_ind), n_fin = n.elem(fin_ind);
-      lambda.elem(fin_ind) += mat_lookup(m_fin, n_fin, lambdamat);
-      logZ.elem(fin_ind) += mat_lookup(m_fin, n_fin, logZmat);
-      V.elem(fin_ind) += mat_lookup(m_fin, n_fin, Vmat);
+      lambda.elem(fin_ind) = mat_lookup(m_fin, n_fin, lambdamat);
+      logZ.elem(fin_ind) = mat_lookup(m_fin, n_fin, logZmat);
+      V.elem(fin_ind) = mat_lookup(m_fin, n_fin, Vmat);
     }
 
   }else{ // Otherwise, just proceed as normal and lookup V...
@@ -440,11 +440,9 @@ mat joint_density_sdb(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Da
                       int summax, double eps = 1e-3){
   int q = b.size();
   mat out = zeros<mat>(q, q);
-  // Rcout << "0------------" << std::endl;
   vec f0 = joint_density_ddb(b, X, Y, lY, Z, G, beta, delta, D, S, SS, Fi, Fu, l0i, haz, Delta, gamma, zeta, 
                              lambdamat, Vmat, logZmat, all_mus, all_nus, summax);
   for(int i = 0; i < q; i++){
-    // Rcout << q << "-------------" << std::endl;
     vec bb = b;
     double xi = std::max(1.0, b[i]);
     bb[i] = b[i] + (xi * eps);

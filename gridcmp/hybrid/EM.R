@@ -1,23 +1,23 @@
 #' #######
-#' EM.R
+#' EM.R                 ((HYBRID))
 #' ----
-#' Doesn't use a grid for quicker lookups for \lambda(\mu,\nu); logZ(\mu,\nu) and V(\mu, \nu) values.
+#' At each iteration, constructs grid, or adds to existing grid...
 #' ######
 
+# rm(list=ls())
 library(survival)
 library(Rcpp)
 library(RcppArmadillo)
 library(glmmTMB)
 source('_Functions.R')
-source('inits.R')
-source('grid-vcov-nogrids.R')
-source('grid-simData.R')
-sourceCpp('testing-nogrids.cpp')
+source('simData.R')
+source('../inits.R')
+
+sourceCpp('test.cpp')
 vech <- function(x) x[lower.tri(x, T)]
-lambda.mat <- V.mat <- logZ.mat <- matrix(0,1,1)
 
 EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
-                     sv, w, v, n, m, summax, debug, N){
+                     sv, w, v, num, m, summax, debug, all.mus, nu.vec, lambda.mat, logZ.mat, V.mat){
   s <- proc.time()[3]
   #' Unpack Omega, the parameter vector
   D <- Omega$D; beta <- Omega$beta; delta <- Omega$delta; gamma <- Omega$gamma; zeta <- Omega$zeta
@@ -28,7 +28,9 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
           X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
           S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
           gamma = gamma, zeta = zeta, 
-          lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, N = N, summax = summax, method = 'BFGS')$par
+          lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, 
+          all_mus = all.mus, all_nus = round(nu.vec, 3),
+          summax = summax, method = 'BFGS')$par
   }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
   l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
 
@@ -37,9 +39,10 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
     solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
                             S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
                             gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, 
-                            N = N, summax = summax, eps = .001))
+                            all_mus = all.mus, all_nus = round(nu.vec, 3), summax = summax, eps = .001))
   }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
   l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
+  
   if(debug){DEBUG.b.hat <<- b.hat; DEBUG.Sigma <<- Sigma}
   
   check <- sapply(Sigma, det)
@@ -47,62 +50,49 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
     message('Some non pos def Sigma...')
     ind <- which(check<0)
     for(i in seq_along(ind)){
-      Sigma[[ind[i]]] <- as.matrix(Matrix::nearPD(Sigma[[ind[i]]], corr = T)$mat)
+      Sigma[[ind[i]]] <- matrix(0, length(b.hat[[ind[i]]]), length(b.hat[[ind[i]]]))
     }
   }
   #' #########
   #' E-step ##
   #' #########
   
+  #' NEW \mus, \nus, and calculate \tau
   mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b.hat, SIMPLIFY = F)
   nus <- mapply(function(G) exp(G %*% delta), G = G, SIMPLIFY = F)
   tau <- mapply(function(Z, S) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), S = Sigma, Z = Z, SIMPLIFY = F)
-
-  #' lambda, logZ and V lookups ----
-  lambdas <- mapply(function(mu, nu){
-    # get_lambda(mu, nu, summax, N, lambda.mat)
-    lambda_appx(mu, nu, summax)
-  }, mu = mus, nu = nus, SIMPLIFY = F)
   
-  logZs <- mapply(function(mu, nu, lambda){
-    # get_logZ(mu, nu, summax, N, lambda, logZ.mat)
-    logZ_c(log(lambda), nu, summax)
-  }, mu = mus, nu = nus, lambda = lambdas, SIMPLIFY = F)
+  #' Indices for lookup given new \b.hat
+  m <- mapply(function(a) get_indices(a, all.mus), a = mus, SIMPLIFY = F)
+  n <- mapply(function(a) get_indices(a, round(nu.vec, 3)), a = nus, SIMPLIFY = F)
   
-  Vs <- mapply(function(mu, nu, lambda, logZ){
-    # get_V(mu, nu, summax, N, lambda, logZ, V.mat)
-    m <- length(mu)
-    sapply(1:m, function(i) calc_V(mu[i], lambda[i], nu[i], logZ[i], summax))
-  }, mu = mus, nu = nus, lambda = lambdas, logZ = logZs, SIMPLIFY = F)
+  #' \lambdas, Vs for \beta update.
+  lambdas <- mapply(function(m, n) mat_lookup(m, n, lambda.mat), m = m, n = n, SIMPLIFY = F)
+  Vs <- mapply(function(m, n) mat_lookup(m, n, V.mat), m = m, n = n, SIMPLIFY = F)
   
-  # D
+  #' D
   D.update <- mapply(function(Sigma, b) Sigma + tcrossprod(b), Sigma = Sigma, b = b.hat, SIMPLIFY = F)
   
-  # \beta
+  #' \beta
   Sb <- mapply(Sbeta, X, Y, mus, nus, lambdas, Vs, SIMPLIFY = F)
   Hb <- mapply(getW1, X, mus, nus, lambdas, Vs, SIMPLIFY = F)
   
-  # \delta
+  #' \delta
   Sd <- mapply(function(G, b, X, Z, Y, lY, tau){
     Sdelta_cdiff(delta, G, b, X, Z, Y, lY, beta, tau, w, v, summax, eps=.Machine$double.eps^(1/3))
   }, G = G, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
-
-  # Hd <- mapply(function(G, b, X, Z, Y, lY, tau){
-  #   pracma::hessian(E_llcmp_delta, delta, G = G, b = b, X = X, Z = Z,
-  #                   Y = Y, lY = lY, beta = beta, tau = tau, w = w, v = v, summax = summax)
-  # }, G = G, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
   
   Hd <- mapply(function(G, b, X, Z, Y, lY, tau){
     Hdelta(delta, G, b, X, Z, Y, lY, beta, tau, w, v, summax, eps=.Machine$double.eps^(1/4))
   }, G = G, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
   
-  # Survival parameters (\gamma, \zeta)
+  #' Survival parameters (\gamma, \zeta)
   Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
-    Sgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, 10/N)
+    Sgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, .Machine$double.eps^(1/3))
   }, b = b.hat, Sigma = Sigma, S = S, SS = SS, Fu = Fu, Fi = Fi, l0u = l0u, Delta = Delta)
   
   Hgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
-    Hgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, 10/N)
+    Hgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, .Machine$double.eps^(1/4))
   }, b = b.hat, Sigma = Sigma, S = S, SS = SS, Fu = Fu, Fi = Fi, l0u = l0u, Delta = Delta, SIMPLIFY = F)
   
   #' #########
@@ -110,14 +100,14 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   #' #########
   
   # D
-  (D.new <- Reduce('+', D.update)/n)
+  (D.new <- Reduce('+', D.update)/num)
   
   # \beta and \delta
   (beta.new <- beta - solve(Reduce('+', Hb), Reduce('+', Sb)))
   (delta.new <- delta - solve(Reduce('+', Hd), c(Reduce('+', Sd))))
 
   # Survival parameters (gamma, zeta)
-  gammazeta.new <- c(gamma, zeta) - solve(Reduce('+', Hgz), rowSums(Sgz))
+  (gammazeta.new <- c(gamma, zeta) - solve(Reduce('+', Hgz), rowSums(Sgz)))
   
   # The baseline hazard and related objects
   lambda.update <- lambdaUpdate(sv$surv.times, sv$ft.mat, gamma, zeta, S, Sigma, b.hat, w, v)
@@ -147,7 +137,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, N, 
   #' Parsing formula objects ----
   formulas <- parseFormula(long.formula)
   surv <- parseCoxph(surv.formula, data)
-  n <- surv$n
+  num <- surv$n
   
   #' Initial conditions ----
   inits.long <- Longit.inits(long.formula, disp.formula, data)
@@ -156,7 +146,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, N, 
   # Longitudinal parameters
   beta <- inits.long$beta.init
   D <- inits.long$D.init
-  b <- lapply(1:n, function(i) inits.long$b[i, ])
+  b <- lapply(1:num, function(i) inits.long$b[i, ])
   delta <- inits.long$delta.init
   if(!is.null(delta.init)) delta <- c(delta.init)
   # Survival parameters
@@ -195,7 +185,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, N, 
   if(auto.summax){
     summax.old <- summax
     summax <- max(sapply(Y, max)) + 10
-    cat(sprintf("Automatically setting summax to %d\n", summax))
+    cat(sprintf("Setting summax to %d\n", summax))
   }
   
   
@@ -204,16 +194,48 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, N, 
   GH <- statmod::gauss.quad.prob(.gh, 'normal', sigma = .sigma)
   w <- GH$w; v <- GH$n
   
+  #' Matrices ---
+  # Define mus and nus one expects at initial conditions...
+  mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b)
+  nus <- mapply(function(G) exp(G %*% delta), G = G)
+  mm <- do.call(c, mus); nn <- do.call(c, nus); 
+  nu.vec <- as.vector(unique(nn))
+  all.mus <- generate_mus(max(0, min(mm) - (5 + 1e-3)), max(mm) + (5 + 1e-3))
+  
+  if(verbose) start.grids <- proc.time()[3]
+  lambda.mat <- structure(gen_lambda_mat(min(all.mus), max(all.mus), nu.vec, summax),
+                          dimnames = list(as.character(all.mus),
+                                          as.character(nu.vec))
+  )
+  
+  logZ.mat <- structure(gen_logZ_mat(min(all.mus), max(all.mus), nu.vec, lambda.mat, summax),
+                        dimnames = list(as.character(all.mus),
+                                        as.character(nu.vec))
+  )
+  
+  V.mat <- structure(gen_V_mat(min(all.mus), max(all.mus), nu.vec, lambda.mat, logZ.mat, summax),
+                     dimnames = list(as.character(all.mus),
+                                     as.character(nu.vec))
+  )
+  if(verbose){
+    end.grids <- proc.time()[3]
+    d <- dim(lambda.mat)
+    cat(sprintf("First %d x %d lambda, logZ and V grids calculated in %.3f seconds.\n", d[1], d[2], round(end.grids - start.grids, 3)))
+  }
+  
   #' Begin EM ----
   diff <- 100; iter <- 0
   EMstart <- proc.time()[3]
   step.times <- c()
   while(diff > tol && iter < maxit){
     update <- EMupdate(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
-                       sv, w, v, n, m, summax, debug, N)
+                       sv, w, v, num, m, summax, debug, all.mus, nu.vec,
+                       lambda.mat, logZ.mat, V.mat)
+    
     if(debug) DEBUG.update <<- update
     params.new <- c(vech(update$D), update$beta, update$delta, update$gamma, update$zeta)
     names(params.new) <- names(params)
+    
     # Convergence criteria + print (if wanted).
     diff <- difference(params, params.new, conv)
     if(verbose){
@@ -221,6 +243,94 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, N, 
       message("Iteration ", iter + 1, ' maximum ', conv, ' difference: ', round(diff, 4))
       message("Largest RE relative difference: ", round(max(difference(do.call(cbind, update$b), do.call(cbind, b), conv)), 4))
     }
+    
+    # Add to CURRENT dispersion estimates given potential new mu values.
+    all.mus.old <- all.mus
+    mm <- do.call(c, update$mus); 
+    all.mus <- generate_mus(max(0, min(mm) - (5 + 1e-3)), max(mm) + (5 + 1e-3))
+    .diff <- setdiff(all.mus, all.mus.old)
+    
+    if(length(.diff) > 0){
+      if(verbose) cat(sprintf("%d new mu elements.\n" ,length(.diff)))
+      
+      # New lambda values for the new mu values...
+      new.lambdas <- structure(gen_lambda_mat(mu_lower = .diff[1], mu_upper = .diff[length(.diff)],
+                                              nus = nu.vec, summax = summax),
+                               dimnames = list(as.character(.diff), as.character(nu.vec)))
+      
+      # New logZ values
+      new.logZ <- structure(gen_logZ_mat(mu_lower = .diff[1], mu_upper = .diff[length(.diff)],
+                                         nus = nu.vec, lambdamat = new.lambdas, summax = summax),
+                            dimnames = list(as.character(.diff), as.character(nu.vec)))
+      # New V values
+      new.V <- structure(gen_V_mat(mu_lower = .diff[1], mu_upper = .diff[length(.diff)],
+                                   nus = nu.vec, lambdamat = new.lambdas, logZmat = new.logZ, summax = summax),
+                         dimnames = list(as.character(.diff), as.character(nu.vec)))
+      
+      # Update lookup matrices mats for new values of mu...
+      if(all(.diff > max(all.mus.old))){        # Case 1: If all new mu values are greater, then simply rbind below...
+        if (verbose) cat('All new elements > old mus.\n')
+        lambda.mat.new <- rbind(lambda.mat, new.lambdas)
+        logZ.mat.new <- rbind(logZ.mat, new.logZ)
+        V.mat.new <- rbind(V.mat, new.V)
+      }else if(all(.diff < min(all.mus.old))){  # Case 2: If all new mu values are smaller, simply rbind above...
+        if (verbose) cat('All new elements < old mus.\n')
+        lambda.mat.new <- rbind(new.lambdas, lambda.mat)
+        logZ.mat.new <- rbind(new.logZ, logZ.mat)
+        V.mat.new <- rbinD(new.V, V.mat)
+      }else{                             # Case 3: Mixture above and below old mus.
+        lts <- which(.diffs < min(all.mus.old)); gts <- which(.diffs > max(all.mus.old))
+        if (verbose) cat(sprintf("%d elements < old mus; %d elements > old mus.\n", lts, gts))
+        lambda.mat.new <- rbind(rbind(new.lambdas[lts,,drop=F], lambda.mat), new.lambas[gts,,drop=F])
+        logZ.mat.new <- rbind(rbind(new.logZ[lts,,drop=F], logZ.mat), new.logZ[gts,,drop=F])
+        V.mat.new <- rbind(rbind(new.V[lts,,drop=F], V.mat), new.V[gts,,drop=F])
+      }
+    }else{
+      if(verbose) cat('No new mu elements to estimate.\n')
+      lambda.mat.new <- lambda.mat; logZ.mat.new <- logZ.mat; V.mat.new <- V.mat
+    }
+    
+    # The same for new nu values, in form of brand new columns...
+    nu.vec.old <- nu.vec
+    nus <- mapply(function(G) exp(G %*% update$delta), G = G)
+    nn <- do.call(c, nus); nu.vec <- sort(c(nu.vec.old, unique(nn)))
+    
+    # Calculate \lambda, logZ and V at possible new nu values.
+    if(verbose) start.grids <- proc.time()[3]
+    lambda.new.nu <- structure(gen_lambda_mat(mu_lower = min(all.mus), mu_upper = max(all.mus),
+                                              nus = nu.vec[which(!nu.vec %in% nu.vec.old)], summax = summax),
+                               dimnames = list(as.character(all.mus),
+                                               as.character(nu.vec[which(!nu.vec %in% nu.vec.old)])))
+    
+    logZ.new.nu <- structure(gen_logZ_mat(mu_lower = min(all.mus), mu_upper = max(all.mus),
+                                          nus = nu.vec[which(!nu.vec %in% nu.vec.old)], lambdamat = lambda.new.nu, summax = summax),
+                             dimnames = list(as.character(all.mus),
+                                             as.character(nu.vec[which(!nu.vec %in% nu.vec.old)])))
+    
+    V.new.nu <- structure(gen_V_mat(mu_lower = min(all.mus), mu_upper = max(all.mus),
+                                    nus = nu.vec[which(!nu.vec %in% nu.vec.old)], lambdamat = lambda.new.nu, logZmat = logZ.new.nu, summax = summax),
+                          dimnames = list(as.character(all.mus),
+                                          as.character(nu.vec[which(!nu.vec %in% nu.vec.old)])))
+    if(verbose){
+      end.grids <- proc.time()[3]
+      d <- dim(lambda.mat)
+      cat(sprintf("Iteration %d new %d x %d lambda, logZ and V grids calculated in %.3f seconds.\n", iter + 1, d[1], d[2], round(end.grids - start.grids, 3)))
+    }
+    
+    # Fit these into the lambda grid
+    lambda.new <- cbind(lambda.mat.new, lambda.new.nu)
+    new.order <- order(as.numeric(dimnames(lambda.new)[[2]]))
+    lambda.mat <- lambda.new[,new.order] # reorder columns to be in ascending \nu values.
+    # logZ
+    logZ.new <- cbind(logZ.mat.new, logZ.new.nu)
+    logZ.mat <- logZ.new[,new.order]
+    # V
+    V.new <- cbind(V.mat.new, V.new.nu)
+    V.mat <- V.new[,new.order]
+    rm(lambda.mat.new, lambda.new, lambda.new.nu, 
+       logZ.mat.new, logZ.new, logZ.new.nu, 
+       V.mat.new, V.new, V.new.nu,
+       all.mus.old, nu.vec.old) # large data objects
 
     #' Set new estimates as current
     b <- update$b
@@ -256,15 +366,17 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, N, 
             S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
             gamma = gamma, zeta = zeta, 
             lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, 
-            N = N, summax = summax, method = 'BFGS')$par
+            all_mus = all.mus, all_nus = nu.vec,
+            summax = summax, method = 'BFGS')$par
     }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
     l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
+    
     
     Sigma <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
       solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
                               S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
                               gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, 
-                              N = N, summax = summax, eps = 10/N))
+                              all_mus = all.mus, all_nus = nu.vec, summax = summax, eps = .001))
     }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
     l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
   
