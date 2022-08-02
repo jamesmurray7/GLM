@@ -378,5 +378,6 @@ load.grid <- function(N, what = 'lambda', pete = pete.flag){
 plot.stepmat <- function(fit){
   plot(fit$stepmat, type = 'o', col = 'blue', ylab = 'Time (s)', xlab = 'Iteration #', pch = 20,
        main = paste0("EM took ", round(fit$EMtime + fit$postprocess.time, 2), 's'))
+  abline(h = median(fit$stepmat), lty = 5, col = 'red')
 }
 
