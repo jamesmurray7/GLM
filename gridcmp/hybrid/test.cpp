@@ -6,6 +6,9 @@ using namespace Rcpp;
 using namespace arma;
 #define EPSILON DBL_EPSILON
 
+arma::vec SEQ_Z(long double summax){ // Shorthand for Z_(lambda_i, nu_i)
+  return arma::linspace(0, summax, summax + 1.0);
+}
 
 double round_thousandth_dbl(double x){
   return floor(x*1000. + 0.50)/1000.;
@@ -97,8 +100,26 @@ vec calc_V_vec(vec& mu, vec& lambda, vec& nu, vec& logZ, int summax){
 }
 
 // UNIROOT -------------------------------------------------------------
+// double mu_lambdaZ_eq(double lambda, double mu, double nu, int summax){
+//   vec js = linspace(1, summax, summax);
+//   // double Z = exp(logZ_c_scalar(log(lambda), nu, summax));
+//   double rhs = 0.0;
+//   for(int j = 0; j < js.size(); j++){
+//     rhs += (js[j] - mu) * pow(lambda, js[j]) / pow(tgamma(js[j] + 1.0), nu);
+//   }
+//   return rhs;
+// }
+
+// [[Rcpp::export]]
+void test(int summax){
+  vec one = linspace(1, summax, summax);
+  vec two = SEQ_Z(summax);
+  Rcout << one.t() << std::endl;
+  Rcout << two.t() << std::endl;
+}
+
 double mu_lambdaZ_eq(double lambda, double mu, double nu, int summax){
-  vec js = linspace(1, summax, summax);
+  vec js = SEQ_Z(summax);
   // double Z = exp(logZ_c_scalar(log(lambda), nu, summax));
   double rhs = 0.0;
   for(int j = 0; j < js.size(); j++){
@@ -351,21 +372,21 @@ double joint_density(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Dat
 
     vec mu_nans = mu.elem(nan_ind), nu_nans = nu.elem(nan_ind);
     
-    lambda.elem(nan_ind) += lambda_appx(mu_nans, nu_nans, summax);
+    lambda.elem(nan_ind) = lambda_appx(mu_nans, nu_nans, summax);
     vec temp = log(lambda);
     vec temp2 = temp.elem(nan_ind);
-    logZ.elem(nan_ind) += logZ_c(temp2, nu_nans, summax);
+    logZ.elem(nan_ind) = logZ_c(temp2, nu_nans, summax);
 
     // The properly behaved ones -->
     if(fin_ind.size() > 0){
       vec m_fin = m.elem(fin_ind), n_fin = n.elem(fin_ind);
-      lambda.elem(fin_ind) += mat_lookup(m_fin, n_fin, lambdamat);
-      logZ.elem(fin_ind) += mat_lookup(m_fin, n_fin, logZmat);
+      lambda.elem(fin_ind) = mat_lookup(m_fin, n_fin, lambdamat);
+      logZ.elem(fin_ind) = mat_lookup(m_fin, n_fin, logZmat); 
     }
 
   }else{ // Otherwise, just proceed as normal and lookup everything...
-    lambda += mat_lookup(m, n, lambdamat);
-    logZ += mat_lookup(m, n, logZmat);
+    lambda = mat_lookup(m, n, lambdamat);
+    logZ = mat_lookup(m, n, logZmat);
   }
   
   // Calculate loglik CMP and then for other consituent distns.
@@ -403,8 +424,7 @@ vec joint_density_ddb(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Da
     lambda.elem(nan_ind) += lambda_appx(mu_nans, nu_nans, summax);
     vec temp = lambda.elem(nan_ind); // This is lambda,
     vec temp2 = log(temp);           //  ... log(lambda).
-    logZ.elem(nan_ind) = logZ_c(temp2, nu_nans, summax);
-    vec temp3 = logZ.elem(nan_ind);
+    vec temp3 = logZ_c(temp2, nu_nans, summax); // logZ(\lambda, \nu)
     V.elem(nan_ind) = calc_V_vec(mu_nans, temp, nu_nans, temp3, summax);
 
     // The properly behaved ones -->
@@ -445,14 +465,13 @@ mat joint_density_sdb(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Da
   for(int i = 0; i < q; i++){
     vec bb = b;
     double xi = std::max(1.0, b[i]);
-    bb[i] = b[i] + (xi * eps);
+    bb[i] = b[i] + eps;
     vec fdiff = joint_density_ddb(bb, X, Y, lY, Z, G, beta, delta, D, S, SS, Fi, Fu, l0i, haz, Delta, gamma, zeta, 
                                   lambdamat, Vmat, logZmat, all_mus, all_nus, summax) - f0;
     out.col(i) = fdiff/(bb[i]-b[i]);
   }
   return 0.5 * (out + out.t()); // Ensure symmetry
 }
-
 
 // Updates for the survival pair (gamma, zeta) -------------------------
 // Define the conditional expectation
@@ -552,9 +571,8 @@ vec Sdelta_cdiff(vec& delta, mat& G, vec& b, mat& X, mat& Z, vec& Y, vec& lY, ve
   vec out = vec(a);
   for(int i = 0; i < a; i++){
     vec aa = delta, bb = delta;
-    double xi = std::max(std::fabs(delta[i]), 1.0);
-    aa[i] = delta[i] + eps * xi;
-    bb[i] = delta[i] - eps * xi;
+    aa[i] = delta[i] + eps;
+    bb[i] = delta[i] - eps;
     double E1 = E_llcmp_delta(aa, G, b, X, Z, Y, lY, beta, tau, w, v, summax);
     double E2 = E_llcmp_delta(bb, G, b, X, Z, Y, lY, beta, tau, w, v, summax);
     out[i] = (E1 - E2)/(aa[i]-bb[i]);

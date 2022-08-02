@@ -12,7 +12,7 @@ library(glmmTMB)
 source('_Functions.R')
 source('simData.R')
 source('../inits.R')
-
+source('vcov.R')
 sourceCpp('test.cpp')
 vech <- function(x) x[lower.tri(x, T)]
 
@@ -130,7 +130,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   
 }
 
-EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, N, post.process = T, control = list(),
+EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, post.process = T, control = list(),
                delta.init=NULL){
   start.time <- proc.time()[3]
   
@@ -181,6 +181,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, N, 
   if(!is.null(control$conv)) conv <- control$conv else conv <- "relative"
   if(!conv%in%c('absolute', 'relative')) stop('Only "absolute" and "relative" difference convergence criteria implemented.')
   if(!is.null(control$auto.summax)) auto.summax <- control$auto.summax else auto.summax <- F
+  if(!is.null(control$net)) net <- control$net else net <- 0.5
   
   if(auto.summax){
     summax.old <- summax
@@ -200,20 +201,22 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, N, 
   nus <- mapply(function(G) exp(G %*% delta), G = G)
   mm <- do.call(c, mus); nn <- do.call(c, nus); 
   nu.vec <- as.vector(unique(nn))
-  all.mus <- generate_mus(max(0, min(mm) - (5 + 1e-3)), max(mm) + (5 + 1e-3))
+  # Generate mu vector
+  .min <- max(0, min(mm) - net); .max <- max(mm) + net
+  all.mus <- generate_mus(.min, .max)
   
   if(verbose) start.grids <- proc.time()[3]
-  lambda.mat <- structure(gen_lambda_mat(min(all.mus), max(all.mus), nu.vec, summax),
+  lambda.mat <- structure(gen_lambda_mat(.min, .max, nu.vec, summax),
                           dimnames = list(as.character(all.mus),
                                           as.character(nu.vec))
   )
   
-  logZ.mat <- structure(gen_logZ_mat(min(all.mus), max(all.mus), nu.vec, lambda.mat, summax),
+  logZ.mat <- structure(gen_logZ_mat(.min, .max, nu.vec, lambda.mat, summax),
                         dimnames = list(as.character(all.mus),
                                         as.character(nu.vec))
   )
   
-  V.mat <- structure(gen_V_mat(min(all.mus), max(all.mus), nu.vec, lambda.mat, logZ.mat, summax),
+  V.mat <- structure(gen_V_mat(.min, .max, nu.vec, lambda.mat, logZ.mat, summax),
                      dimnames = list(as.character(all.mus),
                                      as.character(nu.vec))
   )
@@ -244,93 +247,47 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, N, 
       message("Largest RE relative difference: ", round(max(difference(do.call(cbind, update$b), do.call(cbind, b), conv)), 4))
     }
     
-    # Add to CURRENT dispersion estimates given potential new mu values.
-    all.mus.old <- all.mus
-    mm <- do.call(c, update$mus); 
-    all.mus <- generate_mus(max(0, min(mm) - (5 + 1e-3)), max(mm) + (5 + 1e-3))
-    .diff <- setdiff(all.mus, all.mus.old)
-    
-    if(length(.diff) > 0){
-      if(verbose) cat(sprintf("%d new mu elements.\n" ,length(.diff)))
-      
-      # New lambda values for the new mu values...
-      new.lambdas <- structure(gen_lambda_mat(mu_lower = .diff[1], mu_upper = .diff[length(.diff)],
-                                              nus = nu.vec, summax = summax),
-                               dimnames = list(as.character(.diff), as.character(nu.vec)))
-      
-      # New logZ values
-      new.logZ <- structure(gen_logZ_mat(mu_lower = .diff[1], mu_upper = .diff[length(.diff)],
-                                         nus = nu.vec, lambdamat = new.lambdas, summax = summax),
-                            dimnames = list(as.character(.diff), as.character(nu.vec)))
-      # New V values
-      new.V <- structure(gen_V_mat(mu_lower = .diff[1], mu_upper = .diff[length(.diff)],
-                                   nus = nu.vec, lambdamat = new.lambdas, logZmat = new.logZ, summax = summax),
-                         dimnames = list(as.character(.diff), as.character(nu.vec)))
-      
-      # Update lookup matrices mats for new values of mu...
-      if(all(.diff > max(all.mus.old))){        # Case 1: If all new mu values are greater, then simply rbind below...
-        if (verbose) cat('All new elements > old mus.\n')
-        lambda.mat.new <- rbind(lambda.mat, new.lambdas)
-        logZ.mat.new <- rbind(logZ.mat, new.logZ)
-        V.mat.new <- rbind(V.mat, new.V)
-      }else if(all(.diff < min(all.mus.old))){  # Case 2: If all new mu values are smaller, simply rbind above...
-        if (verbose) cat('All new elements < old mus.\n')
-        lambda.mat.new <- rbind(new.lambdas, lambda.mat)
-        logZ.mat.new <- rbind(new.logZ, logZ.mat)
-        V.mat.new <- rbinD(new.V, V.mat)
-      }else{                             # Case 3: Mixture above and below old mus.
-        lts <- which(.diffs < min(all.mus.old)); gts <- which(.diffs > max(all.mus.old))
-        if (verbose) cat(sprintf("%d elements < old mus; %d elements > old mus.\n", lts, gts))
-        lambda.mat.new <- rbind(rbind(new.lambdas[lts,,drop=F], lambda.mat), new.lambas[gts,,drop=F])
-        logZ.mat.new <- rbind(rbind(new.logZ[lts,,drop=F], logZ.mat), new.logZ[gts,,drop=F])
-        V.mat.new <- rbind(rbind(new.V[lts,,drop=F], V.mat), new.V[gts,,drop=F])
-      }
-    }else{
-      if(verbose) cat('No new mu elements to estimate.\n')
-      lambda.mat.new <- lambda.mat; logZ.mat.new <- logZ.mat; V.mat.new <- V.mat
-    }
-    
-    # The same for new nu values, in form of brand new columns...
-    nu.vec.old <- nu.vec
+    # create new matrices
+    mm <- do.call(c, update$mus)
+    .min <- max(0, min(mm) - net); .max <- max(mm) + net
+    new.mus <- generate_mus(.min, .max)
     nus <- mapply(function(G) exp(G %*% update$delta), G = G)
-    nn <- do.call(c, nus); nu.vec <- sort(c(nu.vec.old, unique(nn)))
+    nn <- do.call(c, nus); nu.vec <- sort(c(unique(nn)))
     
     # Calculate \lambda, logZ and V at possible new nu values.
     if(verbose) start.grids <- proc.time()[3]
-    lambda.new.nu <- structure(gen_lambda_mat(mu_lower = min(all.mus), mu_upper = max(all.mus),
-                                              nus = nu.vec[which(!nu.vec %in% nu.vec.old)], summax = summax),
-                               dimnames = list(as.character(all.mus),
-                                               as.character(nu.vec[which(!nu.vec %in% nu.vec.old)])))
+    lambda.new.nu <- structure(gen_lambda_mat(mu_lower = .min, mu_upper = .max,
+                                              nus = nu.vec, summax = summax),
+                               dimnames = list(as.character(new.mus),
+                                               as.character(nu.vec)))
     
-    logZ.new.nu <- structure(gen_logZ_mat(mu_lower = min(all.mus), mu_upper = max(all.mus),
-                                          nus = nu.vec[which(!nu.vec %in% nu.vec.old)], lambdamat = lambda.new.nu, summax = summax),
-                             dimnames = list(as.character(all.mus),
-                                             as.character(nu.vec[which(!nu.vec %in% nu.vec.old)])))
+    logZ.new.nu <- structure(gen_logZ_mat(mu_lower = .min, mu_upper = .max,
+                                          nus = nu.vec, lambdamat = lambda.new.nu, summax = summax),
+                             dimnames = list(as.character(new.mus),
+                                             as.character(nu.vec)))
     
-    V.new.nu <- structure(gen_V_mat(mu_lower = min(all.mus), mu_upper = max(all.mus),
-                                    nus = nu.vec[which(!nu.vec %in% nu.vec.old)], lambdamat = lambda.new.nu, logZmat = logZ.new.nu, summax = summax),
-                          dimnames = list(as.character(all.mus),
-                                          as.character(nu.vec[which(!nu.vec %in% nu.vec.old)])))
+    V.new.nu <- structure(gen_V_mat(mu_lower = .min, mu_upper = .max,
+                                    nus = nu.vec, lambdamat = lambda.new.nu, logZmat = logZ.new.nu, summax = summax),
+                          dimnames = list(as.character(new.mus),
+                                          as.character(nu.vec)))
+    
+    # Fit these into the lambda grid
+    new.order <- order(as.numeric(dimnames(lambda.new.nu)[[2]]))
+    lambda.mat <- lambda.new.nu[,new.order,drop=F] # reorder columns to be in ascending \nu values.
+    # logZ
+    logZ.mat <- logZ.new.nu[,new.order,drop=F]
+    # V
+    V.mat <- V.new.nu[,new.order,drop=F]
+    # Update all.mus and all.nus
+    all.mus <- new.mus; nu.vec <- nu.vec
+    rm(lambda.new.nu, logZ.new.nu, V.new.nu, mm, nn, new.mus) # large data objects
+    
     if(verbose){
       end.grids <- proc.time()[3]
       d <- dim(lambda.mat)
-      cat(sprintf("Iteration %d new %d x %d lambda, logZ and V grids calculated in %.3f seconds.\n", iter + 1, d[1], d[2], round(end.grids - start.grids, 3)))
+      cat(sprintf("Iteration %d: %d x %d lambda, logZ and V grids obtained in %.3f seconds.\n", iter + 1, d[1], d[2], round(end.grids - start.grids, 3)))
     }
     
-    # Fit these into the lambda grid
-    lambda.new <- cbind(lambda.mat.new, lambda.new.nu)
-    new.order <- order(as.numeric(dimnames(lambda.new)[[2]]))
-    lambda.mat <- lambda.new[,new.order] # reorder columns to be in ascending \nu values.
-    # logZ
-    logZ.new <- cbind(logZ.mat.new, logZ.new.nu)
-    logZ.mat <- logZ.new[,new.order]
-    # V
-    V.new <- cbind(V.mat.new, V.new.nu)
-    V.mat <- V.new[,new.order]
-    rm(lambda.mat.new, lambda.new, lambda.new.nu, 
-       logZ.mat.new, logZ.new, logZ.new.nu, 
-       V.mat.new, V.new, V.new.nu,
-       all.mus.old, nu.vec.old) # large data objects
 
     #' Set new estimates as current
     b <- update$b
@@ -360,13 +317,14 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, N, 
     message('\nCalculating SEs...')
     start.time.p <- proc.time()[3]
     #' Calculating \b and \Sigma at MLEs
+    #' Find b.hat and Sigma
     b.hat <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
       optim(b, joint_density, joint_density_ddb,
             X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
             S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
             gamma = gamma, zeta = zeta, 
             lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, 
-            all_mus = all.mus, all_nus = nu.vec,
+            all_mus = all.mus, all_nus = round(nu.vec, 3),
             summax = summax, method = 'BFGS')$par
     }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
     l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
@@ -376,12 +334,13 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, N, 
       solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
                               S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
                               gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, 
-                              all_mus = all.mus, all_nus = nu.vec, summax = summax, eps = .001))
+                              all_mus = all.mus, all_nus = round(nu.vec, 3), summax = summax, eps = .001))
     }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
     l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
   
     # The Information matrix
-    I <- structure(vcov(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, n, N, summax),
+    I <- structure(vcov(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, num, summax,
+                        all.mus, nu.vec, lambda.mat, logZ.mat, V.mat),
                    dimnames = list(names(params), names(params)))
     I.inv <- tryCatch(solve(I), error = function(e) e)
     if(inherits(I.inv, 'error')) I.inv <- structure(MASS::ginv(I),

@@ -1,5 +1,6 @@
 
-vcov <- function(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, n, N, summax){
+vcov <- function(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, num, summax,
+                 all.mus, nu.vec, lambda.mat, logZ.mat, V.mat){
   #' Unpack Omega ----
   D <- Omega$D
   beta <- c(Omega$beta)
@@ -51,30 +52,22 @@ vcov <- function(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, n, N, summax){
   sD <- sapply(1:nrow(vech.indices), sDi)
   sD <- lapply(1:nrow(sD), function(x) sD[x, ]) # Cast to list
   
-  #' Calculate things we need for scores on \beta and \delta
+  #' NEW \mus, \nus, and calculate \tau
   mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b, SIMPLIFY = F)
   nus <- mapply(function(G) exp(G %*% delta), G = G, SIMPLIFY = F)
+  tau <- mapply(function(Z, S) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), S = Sigma, Z = Z, SIMPLIFY = F)
   
-  #' Grid lookups ----
-  lambdas <- mapply(function(mu, nu){
-    # get_lambda(mu, nu, summax, N, lambda.mat)
-    lambda_appx(mu, nu, summax)
-  }, mu = mus, nu = nus, SIMPLIFY = F)
+  #' Indices for lookup given new \b.hat
+  m <- mapply(function(a) get_indices(a, all.mus), a = mus, SIMPLIFY = F)
+  n <- mapply(function(a) get_indices(a, round(nu.vec, 3)), a = nus, SIMPLIFY = F)
   
-  logZs <- mapply(function(mu, nu, lambda){
-    # get_logZ(mu, nu, summax, N, lambda, logZ.mat)
-    logZ_c(log(lambda), nu, summax)
-  }, mu = mus, nu = nus, lambda = lambdas, SIMPLIFY = F)
-  
-  Vs <- mapply(function(mu, nu, lambda, logZ){
-    # get_V(mu, nu, summax, N, lambda, logZ, V.mat)
-    m <- length(mu)
-    sapply(1:m, function(i) calc_V(mu[i], lambda[i], nu[i], logZ[i], summax))
-  }, mu = mus, nu = nus, lambda = lambdas, logZ = logZs, SIMPLIFY = F)
-  
+  #' \lambdas, Vs for \beta update.
+  lambdas <- mapply(function(m, n) mat_lookup(m, n, lambda.mat), m = m, n = n, SIMPLIFY = F)
+  Vs <- mapply(function(m, n) mat_lookup(m, n, V.mat), m = m, n = n, SIMPLIFY = F)
   
   #' Score for the fixed effects, \beta 
   Sb <- mapply(Sbeta, X, Y, mus, nus, lambdas, Vs, SIMPLIFY = F)
+  
   #' Score for the dispersion parameter(s), \delta 
   tau <- mapply(function(Z, S) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), S = Sigma, Z = Z, SIMPLIFY = F)
   Sd <- mapply(function(G, b, X, Z, Y, lY, tau){
@@ -92,7 +85,7 @@ vcov <- function(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, n, N, summax){
   }, sD = sD, Sb = Sb, Sd = Sd, Sgz = Sgz)
 
   SS <- rowSums(S) # sum S
-  I <- Reduce('+', lapply(1:n, function(i) tcrossprod(S[, i]))) - tcrossprod(SS)/n
+  I <- Reduce('+', lapply(1:num, function(i) tcrossprod(S[, i]))) - tcrossprod(SS)/num
   # ^ observed empirical information matrix (Mclachlan and Krishnan, 2008).
   I
 }
