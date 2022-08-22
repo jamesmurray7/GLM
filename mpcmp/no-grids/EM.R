@@ -127,8 +127,8 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   
 }
 
-EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, post.process = T, control = list(),
-               delta.init = NULL){
+EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, post.process = T, 
+               control = list(), disp.control = list(), delta.init = NULL){
   start.time <- proc.time()[3]
   
   #' Parsing formula objects ----
@@ -172,8 +172,13 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   if(!is.null(control$conv)) conv <- control$conv else conv <- "relative"
   if(!conv%in%c('absolute', 'relative')) stop('Only "absolute" and "relative" difference convergence criteria implemented.')
   if(!is.null(control$auto.summax)) auto.summax <- control$auto.summax else auto.summax <- T
-  if(!is.null(control$delta.method)) delta.method <- control$delta.method else delta.method <- 'uniroot'
-  if(delta.method %in% c('uniroot', 'optim')) stop('delta.method must be either "optim" or "uniroot".\n')
+  #' Control arguments specific to dispersion estimates ----
+  if(!is.null(disp.control$delta.method)) delta.method <- disp.control$delta.method else delta.method <- 'uniroot'
+  if(!delta.method %in% c('uniroot', 'optim')) stop('delta.method must be either "optim" or "uniroot".\n')
+  if(!is.null(disp.control$min.profile.length)) min.profile.length <- disp.control$min.profile.length else min.profile.length <- 1
+  if(!is.null(disp.control$what)) what <- disp.control$what else what <- 'mean'
+  if(!what %in% c('mean', 'median')) stop("what must be either 'mean' or 'median'.")
+  
   
   if(auto.summax){
     summax.old <- summax
@@ -183,11 +188,16 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   
   # Initial conditon for delta
   if(is.null(delta.init)){
-    delta.inits.raw <- get.delta.inits(dmats, beta, b, delta.method, summax, verbose)  
-    delta <- setNames(delta.inits.raw$median.estimate, names(inits.long$delta.init))
+    delta.inits.raw <- get.delta.inits(dmats, beta, b, delta.method, summax, verbose, min.profile.length)  
+    # Return the median estimate...
+    initdelta <- if(what == 'mean') delta.inits.raw$mean.estimate else delta.inits.raw$median.estimate
+    delta <- setNames(initdelta, names(inits.long$delta.init))
+    if(verbose) cat(sprintf('Initial condition for delta: %.3f.\n', delta))
   }else{
     delta <- setNames(delta.init, names(inits.long$delta.init))
+    delta.min <- delta - net; delta.max <- delta + net
   }
+  
   
   #' Parameter vector and list ----
   Omega <- list(D=D, beta = beta, delta = delta, gamma = gamma, zeta = zeta)
@@ -239,8 +249,9 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   )
   if(auto.summax) modelInfo$summax.type <- 'automatic' else modelInfo$summax.type <- 'manual'
   if(is.null(delta.init)){
-    temp <- delta.inits.raw$median.estimate
+    temp <- initdelta
     attr(temp, 'time taken (s)') <- delta.inits.raw$time
+    attr(temp, 'summary statistic') <- what
     modelInfo$delta.init <- temp
   }else{
     modelInfo$delta.init <- delta.init

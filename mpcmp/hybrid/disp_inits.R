@@ -72,7 +72,8 @@ delta.optim <- function(Y, G, mu, summax){
     .interval <- determine.interval(mu, summax)
     out <- tryCatch(optim(c(0), ff3, NULL,
                           Y = Y, G = G, mu = mu, summax = summax,
-                          method = 'Brent', lower = .interval[1], upper = .interval[2])$par,
+                          method = 'Brent', lower = .interval[1], upper = .interval[2],
+                          control = list(reltol = 1e-4))$par,
                     error = function(e) NA)
   }else{
     out <- tryCatch(optim(rep(0, g), ff3, NULL,

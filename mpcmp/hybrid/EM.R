@@ -1,7 +1,7 @@
 #' #######
 #' EM.R                 ((HYBRID))
 #' ----
-#' At each iteration, constructs grid, or adds to existing grid...
+#' At each iteration, constructs grid based on POINT ESTIMATE (i.e. no `scale` argument) for \delta.
 #' ######
 
 # rm(list=ls())
@@ -9,11 +9,11 @@ library(survival)
 library(Rcpp)
 library(RcppArmadillo)
 library(glmmTMB)
+sourceCpp('hybrid.cpp')
 source('_Functions.R')
 source('simData.R')
-source('../inits.R')
+source('inits.R')
 source('vcov.R')
-sourceCpp('test.cpp')
 vech <- function(x) x[lower.tri(x, T)]
 
 EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
@@ -66,9 +66,32 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   m <- mapply(function(a) get_indices(a, all.mus), a = mus, SIMPLIFY = F)
   n <- mapply(function(a) get_indices(a, round(nu.vec, 3)), a = nus, SIMPLIFY = F)
   
-  #' \lambdas, Vs for \beta update.
-  lambdas <- mapply(function(m, n) mat_lookup(m, n, lambda.mat), m = m, n = n, SIMPLIFY = F)
-  Vs <- mapply(function(m, n) mat_lookup(m, n, V.mat), m = m, n = n, SIMPLIFY = F)
+  #' \lambdas, Vs for \beta update. (With hardcode for NA/out-of-range values).
+  lambdas <- mapply(function(mu, nu, m, n){
+    out <- numeric(length(mu))
+    if(any(is.na(m))){
+      nas <- is.na(m)
+      out[nas] <- lambda_appx(mu[nas], nu[nas], summax)
+      out[!nas] <- mat_lookup(m[!nas], n[!nas], lambda.mat)
+    }else{
+      out <- mat_lookup(m, n, lambda.mat)
+    }
+    out
+  }, mu = mus, nu = nus, m = m, n = n, SIMPLIFY = F)
+  
+  Vs <- mapply(function(mu, nu, m, n){
+    out <- numeric(length(mu))
+    if(any(is.na(m))){
+      nas <- is.na(m)
+      lams <- lambda_appx(mu[nas], nu[nas], summax)
+      logZs <- logZ_c(log(lams), nu[nas], summax)
+      out[nas] <- calc_V_vec(mu[nas], lams, nu[nas], logZs, summax)
+      out[!nas] <- mat_lookup(m[!nas], n[!nas], V.mat)
+    }else{
+      out <- mat_lookup(m, n, V.mat)
+    }
+    out
+  }, mu = mus, nu = nus, m = m, n = n, SIMPLIFY = F)
   
   #' D
   D.update <- mapply(function(Sigma, b) Sigma + tcrossprod(b), Sigma = Sigma, b = b.hat, SIMPLIFY = F)
@@ -126,14 +149,14 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
     l0 = l0.new, l0u = l0u.new, l0i = as.list(l0i.new),  # ---""---
     b = b.hat, mus = mus,                                #   REs.
     t = round(e-s,3)
-  )
+  ) 
   
 }
 
-EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, post.process = T, control = list(),
-               delta.init=NULL){
+EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, post.process = T, 
+               control = list(), disp.control = list(), delta.init = NULL){
   start.time <- proc.time()[3]
-  
+    
   #' Parsing formula objects ----
   formulas <- parseFormula(long.formula)
   surv <- parseCoxph(surv.formula, data)
@@ -147,8 +170,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   beta <- inits.long$beta.init
   D <- inits.long$D.init
   b <- lapply(1:num, function(i) inits.long$b[i, ])
-  delta <- inits.long$delta.init
-  if(!is.null(delta.init)) delta <- c(delta.init)
+  
   # Survival parameters
   zeta <- inits.surv$inits[match(colnames(surv$ph$x), names(inits.surv$inits))]
   names(zeta) <- paste0('zeta_', names(zeta))
@@ -166,11 +188,6 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   l0 <- sv$l0
   S <- sv$S; SS <- sv$SS
   
-  #' Parameter vector and list ----
-  Omega <- list(D=D, beta = beta, delta = delta, gamma = gamma, zeta = zeta)
-  params <- c(setNames(vech(D), paste0('D[', apply(which(lower.tri(D, T), arr.ind = T), 1, paste, collapse = ','), ']')),
-              beta, delta, gamma, zeta)
-  
   #' Unpack control args ----
   if(!is.null(control$tol)) tol <- control$tol else tol <- 1e-2
   if(!is.null(control$verbose)) verbose <- control$verbose else verbose <- F
@@ -180,36 +197,66 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   if(!is.null(control$maxit)) maxit <- control$maxit else maxit <- 200
   if(!is.null(control$conv)) conv <- control$conv else conv <- "relative"
   if(!conv%in%c('absolute', 'relative')) stop('Only "absolute" and "relative" difference convergence criteria implemented.')
-  if(!is.null(control$auto.summax)) auto.summax <- control$auto.summax else auto.summax <- F
+  if(!is.null(control$auto.summax)) auto.summax <- control$auto.summax else auto.summax <- T
   if(!is.null(control$net)) net <- control$net else net <- 0.5
+  #' Control arguments specific to dispersion estimates ----
+  if(!is.null(disp.control$delta.method)) delta.method <- disp.control$delta.method else delta.method <- 'uniroot'
+  if(!delta.method %in% c('uniroot', 'optim')) stop('delta.method must be either "optim" or "uniroot".\n')
+  # if(!is.null(disp.control$delta.scale)) delta.scale <- disp.control$delta.scale else delta.scale <- 0.2
+  if(!is.null(disp.control$min.profile.length)) min.profile.length <- disp.control$min.profile.length else min.profile.length <- 1
+  if(!is.null(disp.control$what)) what <- disp.control$what else what <- 'mean'
+  if(!what %in% c('mean', 'median')) stop("what must be either 'mean' or 'median'.")
   
+
   if(auto.summax){
     summax.old <- summax
-    summax <- as.integer(max(sapply(Y, max)) * 2)
-    if(verbose) cat(sprintf("Setting summax to %d\n", summax))
+    summax <- max(sapply(Y, max)) * 2
+    if(verbose) cat(sprintf("Automatically setting summax to %d\n", summax))
   }
+  
+  # Initial conditon for delta
+  if(is.null(delta.init)){
+    delta.inits.raw <- get.delta.inits(dmats, beta, b, delta.method, summax, verbose, min.profile.length)  
+    # Return the median estimate...
+    initdelta <- if(what == 'mean') delta.inits.raw$mean.estimate else delta.inits.raw$median.estimate
+    delta <- setNames(initdelta, names(inits.long$delta.init))
+    # delta.min <- delta - delta.scale * delta.inits.raw$sd.estimates
+    # delta.max <- delta + delta.scale * delta.inits.raw$sd.estimates
+    if(verbose) cat(sprintf('Initial condition for delta: %.3f.\n', delta))
+  }else{
+    delta <- setNames(delta.init, names(inits.long$delta.init))
+    delta.min <- delta - net; delta.max <- delta + net
+  }
+  
+  #' Parameter vector and list ----
+  Omega <- list(D=D, beta = beta, delta = delta, gamma = gamma, zeta = zeta)
+  params <- c(setNames(vech(D), paste0('D[', apply(which(lower.tri(D, T), arr.ind = T), 1, paste, collapse = ','), ']')),
+              beta, delta, gamma, zeta)
   
   
   if(debug){DEBUG.inits <<- params; DEBUG.dmats <<- dmats; DEBUG.sv <<- sv; DEBUG.surv <<- surv}
   #' Gauss-hermite quadrature ----
   GH <- statmod::gauss.quad.prob(.gh, 'normal', sigma = .sigma)
   w <- GH$w; v <- GH$n
-  
-  #' Matrices ---
-  # Define mus and nus one expects at initial conditions...
+    
+  #' Matrices ----------------------------
+  #' Define mus ----
   mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b)
-  nus <- mapply(function(G) exp(G %*% delta), G = G)
-  mm <- do.call(c, mus); nn <- do.call(c, nus); 
-  nu.vec <- as.vector(unique(nn))
+  mm <- do.call(c, mus)
   # Generate mu vector
   .min <- max(0, min(mm) - net); .max <- max(mm) + net
   all.mus <- generate_mus(.min, .max)
   
-  if(verbose) start.grids <- proc.time()[3]
+  #' Define nus ----
+  nus <- mapply(function(G) exp(G %*% delta), G = G);
+  nu.vec <- as.vector(unique(do.call(c, nus)))
+  
+  grid.times <- numeric()
+  start.grids <- proc.time()[3]
   lambda.mat <- structure(gen_lambda_mat(.min, .max, nu.vec, summax),
                           dimnames = list(as.character(all.mus),
                                           as.character(nu.vec))
-  )
+                )
   
   logZ.mat <- structure(gen_logZ_mat(.min, .max, nu.vec, lambda.mat, summax),
                         dimnames = list(as.character(all.mus),
@@ -220,8 +267,9 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
                      dimnames = list(as.character(all.mus),
                                      as.character(nu.vec))
   )
+  end.grids <- proc.time()[3]
+  grid.times[1] <- end.grids - start.grids
   if(verbose){
-    end.grids <- proc.time()[3]
     d <- dim(lambda.mat)
     cat(sprintf("First %d x %d lambda, logZ and V grids calculated in %.3f seconds.\n", d[1], d[2], round(end.grids - start.grids, 3)))
   }
@@ -252,10 +300,10 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
     .min <- max(0, min(mm) - net); .max <- max(mm) + net
     new.mus <- generate_mus(.min, .max)
     nus <- mapply(function(G) exp(G %*% update$delta), G = G)
-    nn <- do.call(c, nus); nu.vec <- sort(c(unique(nn)))
+    nn <- do.call(c, nus); nu.vec <- as.vector(sort(c(unique(nn))))
     
     # Calculate \lambda, logZ and V at possible new nu values.
-    if(verbose) start.grids <- proc.time()[3]
+    start.grids <- proc.time()[3]
     lambda.new.nu <- structure(gen_lambda_mat(mu_lower = .min, mu_upper = .max,
                                               nus = nu.vec, summax = summax),
                                dimnames = list(as.character(new.mus),
@@ -270,6 +318,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
                                     nus = nu.vec, lambdamat = lambda.new.nu, logZmat = logZ.new.nu, summax = summax),
                           dimnames = list(as.character(new.mus),
                                           as.character(nu.vec)))
+    end.grids <- proc.time()[3]
     
     # Fit these into the lambda grid
     new.order <- order(as.numeric(dimnames(lambda.new.nu)[[2]]))
@@ -283,12 +332,11 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
     rm(lambda.new.nu, logZ.new.nu, V.new.nu, mm, nn, new.mus) # large data objects
     
     if(verbose){
-      end.grids <- proc.time()[3]
       d <- dim(lambda.mat)
       cat(sprintf("Iteration %d: %d x %d lambda, logZ and V grids obtained in %.3f seconds.\n", iter + 1, d[1], d[2], round(end.grids - start.grids, 3)))
     }
+    grid.times[iter + 1] <- end.grids - start.grids
     
-
     #' Set new estimates as current
     b <- update$b
     D <- update$D; beta <- update$beta; delta <- update$delta
@@ -312,6 +360,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   out$modelInfo <- modelInfo
   out$hazard <- cbind(ft = sv$ft, haz = l0, nev = sv$nev)
   out$stepmat <- cbind(iter = 1:iter, time = step.times)
+  out$gridmat <- cbind(iter = 0:(iter - 1), time = grid.times)
   
   if(post.process){
     message('\nCalculating SEs...')

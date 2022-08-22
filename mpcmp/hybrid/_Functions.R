@@ -353,20 +353,6 @@ log.lik <- function(coeffs, dmats, b, surv, sv, l0u, l0i, summax){
   out
 }
 
-# Load grid ---------------------------------------------------------------
-save.dir <- unname(ifelse(Sys.info()[1]=='Linux', '/data/c0061461/cmp-grids/', paste0(getwd(),'/data.nosync/')))
-
-load.grid <- function(N, what = 'lambda', pete = pete.flag){
-  what <- match.arg(what, c('lambda', 'V', 'logZ'))
-  if(pete) append <- '_Pete' else append <- ''
-  if(N==1000) n <- '' else n <- '10K'
-  file.name <- paste0(what, n, append, '.RData')
-  assign('out', get(load(paste0(save.dir, file.name))))
-  if(what=='lambda' & N==10000 & pete == T) out <- out[-10000,]
-  out
-}
-
-.rmall <- function() rm(list = setdiff(c('lambda.mat', 'V.mat', 'logZ.mat'), ls()))
 #' ########################################################################
 # Misc functions ----------------------------------------------------------
 #' ########################################################################
@@ -380,4 +366,5 @@ plot.stepmat <- function(fit){
        main = paste0("EM took ", round(fit$EMtime + fit$postprocess.time, 2), 's'))
   abline(h = median(fit$stepmat), lty = 5, col = 'red')
 }
+
 
