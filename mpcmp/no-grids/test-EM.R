@@ -19,7 +19,7 @@ disp.formula <- ~1
 
 fit <- EM(long.formula, disp.formula, surv.formula, data, 
           control = list(verbose = T),
-          disp.control = list(what = 'mean', delta.method = 'optim'))
+          disp.control = list(what = 'mean', delta.method = 'uniroot'))
 
 plot.stepmat(fit)
 
