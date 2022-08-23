@@ -176,8 +176,9 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   if(!is.null(disp.control$delta.method)) delta.method <- disp.control$delta.method else delta.method <- 'uniroot'
   if(!delta.method %in% c('uniroot', 'optim')) stop('delta.method must be either "optim" or "uniroot".\n')
   if(!is.null(disp.control$min.profile.length)) min.profile.length <- disp.control$min.profile.length else min.profile.length <- 1
-  if(!is.null(disp.control$what)) what <- disp.control$what else what <- 'mean'
+  if(!is.null(disp.control$what)) what <- disp.control$what else what <- 'median'
   if(!what %in% c('mean', 'median')) stop("what must be either 'mean' or 'median'.")
+  if(!is.null(disp.control$cut)) cut <- disp.control$cut else cut <- T
   
   
   if(auto.summax){
@@ -189,13 +190,15 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   # Initial conditon for delta
   if(is.null(delta.init)){
     delta.inits.raw <- get.delta.inits(dmats, beta, b, delta.method, summax, verbose, min.profile.length)  
-    # Return the median estimate...
-    initdelta <- if(what == 'mean') delta.inits.raw$mean.estimate else delta.inits.raw$median.estimate
+    # Return the user-specified estimate (Defaulting to cut + median)
+    if(cut)
+      initdelta <- if(what == 'mean') delta.inits.raw$mean.estimate else delta.inits.raw$median.estimate
+    else
+      initdelta <- if(what == 'mean') delta.inits.raw$mean.cut.estimate else delta.inits.raw$median.cut.estimate
     delta <- setNames(initdelta, names(inits.long$delta.init))
     if(verbose) cat(sprintf('Initial condition for delta: %.3f.\n', delta))
   }else{
     delta <- setNames(delta.init, names(inits.long$delta.init))
-    delta.min <- delta - net; delta.max <- delta + net
   }
   
   
@@ -249,10 +252,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   )
   if(auto.summax) modelInfo$summax.type <- 'automatic' else modelInfo$summax.type <- 'manual'
   if(is.null(delta.init)){
-    temp <- initdelta
-    attr(temp, 'time taken (s)') <- delta.inits.raw$time
-    attr(temp, 'summary statistic') <- what
-    modelInfo$delta.init <- temp
+    modelInfo$delta.init <- delta.inits.raw # Return ALL information.
   }else{
     modelInfo$delta.init <- delta.init
   }
