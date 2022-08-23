@@ -173,7 +173,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   if(!conv%in%c('absolute', 'relative')) stop('Only "absolute" and "relative" difference convergence criteria implemented.')
   if(!is.null(control$auto.summax)) auto.summax <- control$auto.summax else auto.summax <- T
   #' Control arguments specific to dispersion estimates ----
-  if(!is.null(disp.control$delta.method)) delta.method <- disp.control$delta.method else delta.method <- 'uniroot'
+  if(!is.null(disp.control$delta.method)) delta.method <- disp.control$delta.method else delta.method <- 'optim'
   if(!delta.method %in% c('uniroot', 'optim')) stop('delta.method must be either "optim" or "uniroot".\n')
   if(!is.null(disp.control$min.profile.length)) min.profile.length <- disp.control$min.profile.length else min.profile.length <- 1
   if(!is.null(disp.control$what)) what <- disp.control$what else what <- 'median'
