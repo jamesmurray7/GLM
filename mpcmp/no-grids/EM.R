@@ -192,9 +192,9 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
     delta.inits.raw <- get.delta.inits(dmats, beta, b, delta.method, summax, verbose, min.profile.length)  
     # Return the user-specified estimate (Defaulting to cut + median)
     if(cut)
-      initdelta <- if(what == 'mean') delta.inits.raw$mean.estimate else delta.inits.raw$median.estimate
-    else
       initdelta <- if(what == 'mean') delta.inits.raw$mean.cut.estimate else delta.inits.raw$median.cut.estimate
+    else
+      initdelta <- if(what == 'mean') delta.inits.raw$mean.estimate else delta.inits.raw$median.estimate
     delta <- setNames(initdelta, names(inits.long$delta.init))
     if(verbose) cat(sprintf('Initial condition for delta: %.3f.\n', delta))
   }else{
