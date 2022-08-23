@@ -216,95 +216,16 @@ getlambda <- function(mu, nu, summax){
   lambdas
 }
 
-# Functions for expectations ----------------------------------------------
-E.lfactorialY <- function(lambda, nu, Z, summax){ # mu, nu, vectors
-  out <- matrix(0, nr = length(lambda), nc = summax)
-  for(j in 1:summax){
-    out[, j] <- lgamma(j) * exp((j-1) * log(lambda) - nu * lgamma(j) - Z)
-  }
-  apply(out, 1, sum)
-}
-#  # very diff. results for t->oo as summax is increased...
-E.YlfactorialY <- function(lambda, nu, Z, summax){
-  out <- matrix(0, nr = length(lambda), nc = summax)
-  for(j in 1:summax){
-    out[, j] <- exp(
-      log(j - 1) + log(lgamma(j)) + (j - 1) * log(lambda) - nu * lgamma(j) - Z
-    )
-  }
-  apply(out, 1, sum)
-}
-
-V.lfactorialY <- function(lambda, nu, Z, summax, B){
-  out <- matrix(0, nr = length(lambda), nc = summax)
-  for(j in 1:summax){
-    out[, j] <- lgamma(j)^2 * exp((j-1)*log(lambda) - nu * lgamma(j) - Z)
-  }
-  apply(out, 1, sum) - B^2
-}
-
-calc.ABC <- function(mu, nu, lambda, summax){
-  # lambda <- lambda_uniroot_wrap(1e-6, 1e3, mu, nu, summax)
-  Z <- calcZ(log(lambda), nu, summax)
-  B <- E.lfactorialY(lambda, nu, Z, summax)
-  A <- E.YlfactorialY(lambda, nu, Z, summax) - mu * B
-  C <- V.lfactorialY(lambda, nu, Z, summax, B) # c is potentially needed in W2 matrix creation, remove if not!
-  list(A = A, B = B, C = C)
-}
-
-calc2.ABC <- function(mu, nu, lambda, summax, tau, w, v){
-  # lambda <- lambda_uniroot_wrap(1e-6, 1e3, mu, nu, summax)
-  Z <- calcZ(log(lambda), nu, summax)
-  B <- E.lfactorialY(lambda, nu, Z, summax)
-  rhs <- numeric(length(mu))
-  for(l in 1:length(w)) rhs <- rhs + w[l] * mu * exp(tau * v[l]) * B
-  A <- E.YlfactorialY(lambda, nu, Z, summax) - rhs # mu * B
-  C <- V.lfactorialY(lambda, nu, Z, summax, B) # c is potentially needed in W2 matrix creation, remove if not!
-  list(A = A, B = B, C = C)
-}
-
-# Score for \beta and \delta ----------------------------------------------
-# Sbeta <- function(beta, X, Y, Z, G, b, delta, summax){
-#   mu <- exp(X %*% beta + Z %*% b)
-#   nu <- exp(G %*% delta)
-#   lambda <- lambda_uniroot_wrap(1e-6, 1e3, mu, nu, summax)
-#   V <- V_mu_lambda(mu, lambda, nu, summax)
-#   if(length(mu) > 1) lhs <- diag(c(mu)) else lhs <- diag(mu)
-#   crossprod(lhs %*% X, ((Y-mu) / V))
-# }
-
 Sbeta <- function(X, Y, mu, nu, lambda, V){
   if(length(mu) > 1) lhs <- diag(c(mu)) else lhs <- diag(mu)
   crossprod(lhs %*% X, ((Y-mu) / V))
 }
-
-# This the same as forward differencing, and probably slightly more preferrable given it's analytic!
-# getW1 <- function(X, Z, G, b, beta, delta, summax){
-#   mu <- exp(X %*% beta + Z %*% b)
-#   nu <- exp(G %*% delta)
-#   lambda <- lambda_uniroot_wrap(1e-6, 1e3, mu, nu, summax)
-#   V <- V_mu_lambda(mu, lambda, nu, summax)
-#   if(length(mu) > 1) lhs <- diag(c(mu^2)/c(V)) else lhs <- diag(mu^2/V)
-#   -crossprod(X, lhs) %*% X
-# }
 
 getW1 <- function(X, mu, nu, lambda, V){
   if(length(mu) > 1) lhs <- diag(c(mu^2)/c(V)) else lhs <- diag(mu^2/V)
   -crossprod(X, lhs) %*% X
 }
 
-
-# Correct, but no longer in use...
-Sdelta <- function(delta, X, Y, lY, Z, b, G, beta, summax){
-  mu <- exp(X %*% beta + Z %*% b)
-  nu <- exp(G %*% delta)
-  lambda <- lambda_uniroot_wrap(1e-6, 1e3, mu, nu, summax)
-  V <- V_mu_lambda(mu, lambda, nu, summax)
-  AB <- calc.ABC(mu, nu, lambda, summax)
-  Snu <- AB$A * (Y-mu) / V - (lY-AB$B)
-  if(length(nu) > 1) lhs <- diag(c(nu)) else lhs <- diag(nu)
-  crossprod(lhs %*% G, Snu)
-}
 
 # Taking difference -------------------------------------------------------
 difference <- function(params.old, params.new, type){
@@ -322,6 +243,7 @@ difference <- function(params.old, params.new, type){
 
 
 # Calculating the log-likelihood ------------------------------------------
+# NYI!!!!!!!!!!!!
 log.lik <- function(coeffs, dmats, b, surv, sv, l0u, l0i, summax){
   # joint density - REs; Marginal ll of Y(s) added to f(T_i,\Delta_i|...).
   Y <- dmats$Y; X <- dmats$X; Z <- dmats$Z; G <- dmats$G; lY <- lapply(Y, lfactorial)
@@ -353,20 +275,6 @@ log.lik <- function(coeffs, dmats, b, surv, sv, l0u, l0i, summax){
   out
 }
 
-# Load grid ---------------------------------------------------------------
-save.dir <- unname(ifelse(Sys.info()[1]=='Linux', '/data/c0061461/cmp-grids/', paste0(getwd(),'/data.nosync/')))
-
-load.grid <- function(N, what = 'lambda', pete = pete.flag){
-  what <- match.arg(what, c('lambda', 'V', 'logZ'))
-  if(pete) append <- '_Pete' else append <- ''
-  if(N==1000) n <- '' else n <- '10K'
-  file.name <- paste0(what, n, append, '.RData')
-  assign('out', get(load(paste0(save.dir, file.name))))
-  if(what=='lambda' & N==10000 & pete == T) out <- out[-10000,]
-  out
-}
-
-.rmall <- function() rm(list = setdiff(c('lambda.mat', 'V.mat', 'logZ.mat'), ls()))
 #' ########################################################################
 # Misc functions ----------------------------------------------------------
 #' ########################################################################
@@ -380,3 +288,30 @@ plot.stepmat <- function(fit){
        main = paste0("EM took ", round(fit$EMtime + fit$postprocess.time, 2), 's'))
 }
 
+plot.delta.inits <- function(fit, show.medians = F, show.means = F){
+  
+  # Extract delta info
+  x <- fit$modelInfo$delta.init
+  s <- x$subject.estimates
+  # Make 'cut' object
+  cuts <- s[round(abs(s), 3) < 2 & !is.na(s)]
+  
+  # Densities and plot limits
+  d1 <- density(s); d2 <- density(cuts)
+  xlims <- c(min(d1$x, d2$x), max(d1$x, d2$x))
+  ylims <- c(min(d1$y, d2$y), max(d1$y, d2$y))
+  
+  # The plot
+  plot(d1, main = '', xlab = expression(delta), xlim = xlims, ylim = ylims)
+  lines(d2, col = 'red')
+  
+  # (optional vertical lines)
+  if(show.means)
+    abline(v = c(x$mean.estimate, x$mean.cut.estimate), col = c('black', 'red'))
+  if(show.medians)
+    abline(v = c(x$median.estimate, x$median.cut.estimate), col = c('black', 'red'))
+  
+  # The legend
+  legend('topleft', col = c('black', 'red'), lty = c(1, 1),
+         legend = c('No cuts', 'Cuts'), bty = 'n')
+}
