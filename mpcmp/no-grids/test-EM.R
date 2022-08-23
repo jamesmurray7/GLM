@@ -30,20 +30,14 @@ source('EM.R')
 test <- simData_joint2(n = 250, delta = c(.2,0), 
                        ntms = 10, theta = c(-2, .1), fup = 3,
                        beta = c(2, -0.1, 0.1, -0.2), gamma = 0.6, zeta= c(0.0, -0.2),
-                       D = matrix(c(0.25, 0, 0, 0.05), 2, 2))
-fit <- glmmTMB(Y~time+cont+bin+(1+time|id),test$data, family = poisson) 
-fit
-VarCorr(fit)$cond$id
-fixef(fit)$cond
-range(test$data$Y)
+                       D = matrix(c(0.25, 0, 0, 0), 2, 2))
 data <- test$data
 
-long.formula <- Y~time+cont+bin+(1+time|id)
+long.formula <- Y~time+cont+bin+(1|id)
 surv.formula <- Surv(survtime, status) ~ bin
 disp.formula <- ~1
 
 fit <- EM(long.formula, disp.formula, surv.formula, data,
-          control = list(auto.summax = T, verbose = T),
-          disp.control = list(what = 'mean', delta.method = 'optim'))
+          control = list(auto.summax = T, verbose = T))
 fit$comp.time
 plot.stepmat(fit)
