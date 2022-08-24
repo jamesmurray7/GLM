@@ -154,3 +154,22 @@ boxplot(times.hu, times.lu, times.lo,
         ylab = 'seconds', main = 'Elapsed time', xaxt = 'n')
 axis(1, at = c(1,2,3), labels = c(expression(delta==0.8),expression(delta==0.3),expression(delta==-0.2)))
 
+
+# Is the target ALWAYS within .25/.75 percentile? -------------------------
+check.q <- function(l, true.delta, p =c(.25, .75)){
+  if(length(p)!=2) stop('p must be c(lower, upper) percentile to look in.')
+  ests <- lapply(l, el)
+  ests <- lapply(ests, function(x) x[round(abs(x), 3) < 2 & !is.na(x)]) # Assume we are using ``cut''.
+  
+   qn <- do.call(rbind, lapply(ests, quantile, probs = p))
+   cp <- qn[,1] <= true.delta & qn[,2] >= true.delta # pseudo-coverage.
+   
+   # What is the 'distance' between exp(lq, uq)?
+   dist <- exp(qn[,2]) - exp(qn[,1])
+   
+   list(cp=cp,dist=dist)
+}
+
+check.q(heavy.under.estimates, .8, c(.45, .55))
+check.q(light.under.estimates, .3, c(.4, .6))
+check.q(light.over.estimates, -.2, c(.4, .6))
