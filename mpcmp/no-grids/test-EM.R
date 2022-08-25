@@ -24,7 +24,7 @@ fit <- EM(long.formula, disp.formula, surv.formula, data,
 plot.stepmat(fit)
 
 
-# Intercept and slope -----------------------------------------------------
+# Larger beta values ------------------------------------------------------
 rm(list=ls())
 source('EM.R')
 test <- simData_joint2(n = 250, delta = c(.2,0), 
@@ -38,6 +38,24 @@ surv.formula <- Surv(survtime, status) ~ bin
 disp.formula <- ~1
 
 fit <- EM(long.formula, disp.formula, surv.formula, data,
-          control = list(auto.summax = T, verbose = T))
-fit$comp.time
-plot.stepmat(fit)
+          control = list(verbose = T))
+fit2 <- EM(long.formula, disp.formula, surv.formula, data,
+           control = list(verbose = T),
+           disp.control = list(re.maximise = F)) # See difference with/out remaximisation
+
+
+# Intercept + slope -------------------------------------------------------
+rm(list=ls())
+source('EM.R')
+test <- simData_joint2(n = 250, delta = c(.2,0), 
+                       ntms = 10, theta = c(-2, .1), fup = 3,
+                       beta = c(2, -0.1, 0.1, -0.2), gamma = 0.6, zeta= c(0.0, -0.2),
+                       D = matrix(c(0.25, 0, 0, 0.05), 2, 2))
+data <- test$data
+
+long.formula <- Y~time+cont+bin+(1+time|id)
+surv.formula <- Surv(survtime, status) ~ bin
+disp.formula <- ~1
+
+fit <- EM(long.formula, disp.formula, surv.formula, data,
+          control = list(verbose = T))
