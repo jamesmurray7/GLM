@@ -237,7 +237,42 @@ double ll_cmp(vec& loglambda, vec& nu, vec& logZ, vec& Y, vec& lY){
   return sum(Y % loglambda - nu % lY - logZ);
 }
 
+// The marginal density (and its gradient) of Y|b,delta...
+// [[Rcpp::export]]
+double marginal_Y(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Data matrices
+                  vec& beta, vec& delta, mat& D, int summax){
+  // Define mu, nu
+  vec mu = exp(X * beta + Z * b);
+  vec nu = exp(G * delta);
+  // Calculate lambda and logZ
+  vec lambda = lambda_appx(mu, nu, summax);
+  vec loglambda = log(lambda);
+  vec logZ = logZ_c(loglambda, nu, summax);
+  // Calculate loglik CMP
+  double ll = ll_cmp(loglambda, nu, logZ, Y, lY);
+  int q = b.size();
+  return -ll -1.0 * as_scalar(-(double)q/2.0 * log2pi - 0.5 * log(det(D)) - 0.5 * b.t() * D.i() * b);
+}
 
+// [[Rcpp::export]]
+vec marginal_Y_db(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Data matrices
+                  vec& beta, vec& delta, mat& D, int summax){
+  // Define mu, nu
+  vec mu = exp(X * beta + Z * b);
+  vec nu = exp(G * delta);
+  
+  // Calculate lambda, logZ and V
+  vec lambda = lambda_appx(mu, nu, summax);
+  vec loglambda = log(lambda);
+  vec logZ = logZ_c(loglambda, nu, summax);
+  vec V = calc_V_vec(mu, lambda, nu, logZ, summax);
+  
+  // Score of CMP and other constituent distns.
+  mat lhs_mat = diagmat(mu) * Z;          
+  return -1. *  lhs_mat.t() * ((Y-mu) / V) -1.0 * (-D.i() * b); 
+}
+
+// The full joint density f(b,Y,T,...) and its gradient wrt. b
 // [[Rcpp::export]]
 double joint_density(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Data matrices
                      vec& beta, vec& delta, mat& D,                       // Longit. + RE parameters

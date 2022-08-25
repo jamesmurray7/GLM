@@ -179,6 +179,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   if(!is.null(disp.control$what)) what <- disp.control$what else what <- 'median'
   if(!what %in% c('mean', 'median')) stop("what must be either 'mean' or 'median'.")
   if(!is.null(disp.control$cut)) cut <- disp.control$cut else cut <- T
+  if(!is.null(disp.control$re.maximise)) re.maximise <- disp.control$re.maximise else re.maximise <- T
   
   
   if(auto.summax){
@@ -213,10 +214,23 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   GH <- statmod::gauss.quad.prob(.gh, 'normal', sigma = .sigma)
   w <- GH$w; v <- GH$n
   
+  #' Re-maximise Marginal wrt b for CMP rather than Poisson (obtained thus far)
+  if(re.maximise){
+    s <- proc.time()[3]
+    if(verbose) cat('Re-maximising in light of new delta estimate.\n')
+    b <- mapply(function(b, X, Y, lY, Z, G){
+      optim(b, marginal_Y, marginal_Y_db,
+            X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, 
+            D = D,summax = summax, method = 'BFGS')$par
+    }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, SIMPLIFY = F)
+    remaximisation.time <- round(proc.time()[3] - s, 3)
+  }
+  startup.time <- round(proc.time()[3] - start.time, 3)
   #' Begin EM ----
   diff <- 100; iter <- 0
   EMstart <- proc.time()[3]
   step.times <- c()
+  if(verbose) message('Starting EM algorithm.')
   while(diff > tol && iter < maxit){
     update <- EMupdate(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
                        sv, w, v, n, m, summax, debug)
@@ -243,8 +257,8 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   }
   if(debug) DEBUG.Omega <<- Omega
   EMend <- proc.time()[3]
+  EMtime <- round(EMend - EMstart, 3)
   out <- list(coeffs = Omega,
-              EMtime = round(EMend - EMstart, 3),
               iter = iter)
   modelInfo <- list(
     forms = formulas,
@@ -288,13 +302,21 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
     out$SE <- sqrt(diag(I.inv))
     out$vcov <- I
     out$RE <- do.call(rbind, b)
-    out$postprocess.time <- round(proc.time()[3]-start.time.p, 2)
+    postprocess.time <- round(proc.time()[3]-start.time.p, 2)
     
     #' Calculate the log-likelihood.
     # Timing done separately as EMtime + postprocess.time is for EM + SEs.
     #out$logLik <- log.lik(Omega, dmats, b, surv, sv, l0u, l0i, summax)
     #out$lltime <- round(proc.time()[3] - start.time, 2) - out$postprocess.time
   }
-  out$comp.time = round(proc.time()[3]-start.time, 3)
+  comp.time <- round(proc.time()[3]-start.time, 3)
+  
+  out$elapsed.time <- c(`delta optimisation` = if(is.null(delta.init)) unname(delta.inits.raw$time) else NULL,
+                        `re-maximisation` = if(re.maximise) unname(remaximisation.time) else NULL,
+                        `startup time` = unname(startup.time),
+                        `EM time` = unname(EMtime),
+                        `post processing` = if(post.process) unname(postprocess.time) else NULL,
+                        `Total computation time` = unname(comp.time))
+  
   out
 }
