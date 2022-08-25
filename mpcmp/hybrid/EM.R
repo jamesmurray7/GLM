@@ -200,12 +200,13 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   if(!is.null(control$auto.summax)) auto.summax <- control$auto.summax else auto.summax <- T
   if(!is.null(control$net)) net <- control$net else net <- 0.5
   #' Control arguments specific to dispersion estimates ----
-  if(!is.null(disp.control$delta.method)) delta.method <- disp.control$delta.method else delta.method <- 'uniroot'
+  if(!is.null(disp.control$delta.method)) delta.method <- disp.control$delta.method else delta.method <- 'optim'
   if(!delta.method %in% c('uniroot', 'optim')) stop('delta.method must be either "optim" or "uniroot".\n')
-  # if(!is.null(disp.control$delta.scale)) delta.scale <- disp.control$delta.scale else delta.scale <- 0.2
   if(!is.null(disp.control$min.profile.length)) min.profile.length <- disp.control$min.profile.length else min.profile.length <- 1
-  if(!is.null(disp.control$what)) what <- disp.control$what else what <- 'mean'
+  if(!is.null(disp.control$what)) what <- disp.control$what else what <- 'median'
   if(!what %in% c('mean', 'median')) stop("what must be either 'mean' or 'median'.")
+  if(!is.null(disp.control$cut)) cut <- disp.control$cut else cut <- T
+  if(!is.null(disp.control$re.maximise)) re.maximise <- disp.control$re.maximise else re.maximise <- T
   
 
   if(auto.summax){
@@ -217,15 +218,15 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   # Initial conditon for delta
   if(is.null(delta.init)){
     delta.inits.raw <- get.delta.inits(dmats, beta, b, delta.method, summax, verbose, min.profile.length)  
-    # Return the median estimate...
-    initdelta <- if(what == 'mean') delta.inits.raw$mean.estimate else delta.inits.raw$median.estimate
+    # Return the user-specified estimate (Defaulting to cut + median)
+    if(cut)
+      initdelta <- if(what == 'mean') delta.inits.raw$mean.cut.estimate else delta.inits.raw$median.cut.estimate
+    else
+      initdelta <- if(what == 'mean') delta.inits.raw$mean.estimate else delta.inits.raw$median.estimate
     delta <- setNames(initdelta, names(inits.long$delta.init))
-    # delta.min <- delta - delta.scale * delta.inits.raw$sd.estimates
-    # delta.max <- delta + delta.scale * delta.inits.raw$sd.estimates
     if(verbose) cat(sprintf('Initial condition for delta: %.3f.\n', delta))
   }else{
     delta <- setNames(delta.init, names(inits.long$delta.init))
-    delta.min <- delta - net; delta.max <- delta + net
   }
   
   #' Parameter vector and list ----
@@ -251,7 +252,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   nus <- mapply(function(G) exp(G %*% delta), G = G);
   nu.vec <- as.vector(unique(do.call(c, nus)))
   
-  grid.times <- numeric()
+  grid.times <- as.matrix(t(setNames(numeric(2), c('iteration', 'elapsed time'))))
   start.grids <- proc.time()[3]
   lambda.mat <- structure(gen_lambda_mat(.min, .max, nu.vec, summax),
                           dimnames = list(as.character(all.mus),
@@ -268,16 +269,32 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
                                      as.character(nu.vec))
   )
   end.grids <- proc.time()[3]
-  grid.times[1] <- end.grids - start.grids
+  grid.times[1,] <- c(0, end.grids - start.grids)
   if(verbose){
     d <- dim(lambda.mat)
     cat(sprintf("First %d x %d lambda, logZ and V grids calculated in %.3f seconds.\n", d[1], d[2], round(end.grids - start.grids, 3)))
   }
   
+  #' Re-maximise Marginal wrt b for CMP rather than Poisson (obtained thus far)
+  if(re.maximise){
+    s <- proc.time()[3]
+    if(verbose) cat('Re-maximising in light of new delta estimate.\n')
+    b <- mapply(function(b, X, Y, lY, Z, G){
+      optim(b, marginal_Y, marginal_Y_db,
+            X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, 
+            D = D, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, 
+            all_mus = all.mus, all_nus = round(nu.vec, 3),
+            summax = summax, method = 'BFGS')$par
+    }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, SIMPLIFY = F)
+    remaximisation.time <- round(proc.time()[3] - s, 3)
+  }
+  startup.time <- round(proc.time()[3] - start.time, 3)
+  
   #' Begin EM ----
   diff <- 100; iter <- 0
   EMstart <- proc.time()[3]
   step.times <- c()
+  if(verbose) message('Starting EM algorithm.')
   while(diff > tol && iter < maxit){
     update <- EMupdate(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
                        sv, w, v, num, m, summax, debug, all.mus, nu.vec,
@@ -335,7 +352,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
       d <- dim(lambda.mat)
       cat(sprintf("Iteration %d: %d x %d lambda, logZ and V grids obtained in %.3f seconds.\n", iter + 1, d[1], d[2], round(end.grids - start.grids, 3)))
     }
-    grid.times[iter + 1] <- end.grids - start.grids
+    grid.times <- rbind(grid.times, c(iter + 1, end.grids - start.grids))
     
     #' Set new estimates as current
     b <- update$b
@@ -349,8 +366,8 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   }
   if(debug) DEBUG.Omega <<- Omega
   EMend <- proc.time()[3]
+  EMtime <- round(EMend - EMstart, 3)
   out <- list(coeffs = Omega,
-              EMtime = round(EMend - EMstart, 3),
               iter = iter)
   modelInfo <- list(
     forms = formulas,
@@ -360,7 +377,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   out$modelInfo <- modelInfo
   out$hazard <- cbind(ft = sv$ft, haz = l0, nev = sv$nev)
   out$stepmat <- cbind(iter = 1:iter, time = step.times)
-  out$gridmat <- cbind(iter = 0:(iter - 1), time = grid.times)
+  out$gridtimes <- grid.times
   
   if(post.process){
     message('\nCalculating SEs...')
@@ -397,13 +414,21 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
     out$SE <- sqrt(diag(I.inv))
     out$vcov <- I
     out$RE <- do.call(rbind, b)
-    out$postprocess.time <- round(proc.time()[3]-start.time.p, 2)
+    postprocess.time <- round(proc.time()[3]-start.time.p, 2)
     
     #' Calculate the log-likelihood.
     # Timing done separately as EMtime + postprocess.time is for EM + SEs.
     #out$logLik <- log.lik(Omega, dmats, b, surv, sv, l0u, l0i, summax)
     #out$lltime <- round(proc.time()[3] - start.time, 2) - out$postprocess.time
   }
-  out$comp.time = round(proc.time()[3]-start.time, 3)
+  comp.time <- round(proc.time()[3]-start.time, 3)
+  
+  out$elapsed.time <- c(`delta optimisation` = if(is.null(delta.init)) unname(delta.inits.raw$time) else NULL,
+                        `re-maximisation` = if(re.maximise) unname(remaximisation.time) else NULL,
+                        `startup time` = unname(startup.time),
+                        `EM time` = unname(EMtime),
+                        `post processing` = if(post.process) unname(postprocess.time) else NULL,
+                        `Total computation time` = unname(comp.time))
+  
   out
 }

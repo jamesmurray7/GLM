@@ -362,9 +362,37 @@ log.lik <- function(coeffs, dmats, b, surv, sv, l0u, l0i, summax){
 .any <- function(x, f) any(f(x))
 
 plot.stepmat <- function(fit){
+  emtime <- fit$elapsed.time
+  emtime <- emtime[grepl('EM time', names(emtime))] + emtime[grepl('post processing', names(emtime))]
   plot(fit$stepmat, type = 'o', col = 'blue', ylab = 'Time (s)', xlab = 'Iteration #', pch = 20,
-       main = paste0("EM took ", round(fit$EMtime + fit$postprocess.time, 2), 's'))
+       main = paste0("EM took ", emtime, 's'))
   abline(h = median(fit$stepmat), lty = 5, col = 'red')
 }
 
+plot.grid.and.step <- function(fit){
+  emtime <- fit$elapsed.time
+  emtime <- emtime[grepl('EM time', names(emtime))] + emtime[grepl('post processing', names(emtime))]
+  # Merge step and grid times...
+  sm <- fit$stepmat
+  gm <- as.data.frame(fit$gridtimes)
+  sm <- rbind(c(0,0), sm)
+  sm <- as.data.frame(sm)
+  
+  gm$iter <- gm$iteration; gm$iteration <- NULL
+  gm$gridtime <- gm$`elapsed time`; gm$`elapsed time` <- NULL
+  
+  times <- merge(sm,gm,'iter')
+  times$total <- times$time + times$gridtime
+  times[times$iter==0,c('total','time')] <- NA
+  
+  ylims <- c(min(times$time, times$gridtime, times$total, na.rm = T),
+             max(times$time, times$gridtime, times$total, na.rm = T))
+  
+  with(times, plot(iter, gridtime, 'o', ylim = ylims, col = 'red', pch = 20,
+                   ylab = 'Elapsed time(s)', xlab = 'Iteration #'))
+  with(times, lines(iter, time, 'o', col = 'blue', pch = 20))
+  with(times, lines(iter, total, 'o', col = 'darkgreen', pch = 20))
+  legend('topleft', col = c('red', 'blue', 'darkgreen'), lty = rep(1, 3), pch = rep(20, 3),
+         legend = c('Grid', 'EM', 'Total'), bty = 'n', cex = .50)
+}
 
