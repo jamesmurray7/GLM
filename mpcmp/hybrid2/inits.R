@@ -48,7 +48,8 @@ Longit.inits <- function(long.formula, disp.formula, data){
 
 # Dispersion --------------------------------------------------------------
 source('disp_inits.R')
-get.delta.inits <- function(dmats, beta, b, method, summax = NULL, verbose = F){
+get.delta.inits <- function(dmats, beta, b, method, summax = NULL, verbose = F, 
+                            min.profile.length = 1, percentile){
   
   #' Data objects ----
   X <- dmats$X; Y <- dmats$Y; Z <- dmats$Z # Longitudinal data matrices
@@ -61,22 +62,33 @@ get.delta.inits <- function(dmats, beta, b, method, summax = NULL, verbose = F){
   if(verbose) message('Obtaining initial estimate for dispersion parameter delta...\n')
   a <- proc.time()[3]
   if(method == 'uniroot'){
-    raw <- find.deltas(Y, G, mus, summax, verbose)
+    raw <- find.deltas(Y, G, mus, summax, verbose, min.profile.length)
   }else{
-    raw <- find.deltas.optim(Y, G, mus, summax, verbose)  
+    raw <- find.deltas.optim(Y, G, mus, summax, verbose, min.profile.length)  
   }
   b <- proc.time()[3]
+  
+  # Adding to discount instances where estimate doesn't at all move.
+  o <- raw[round(abs(raw), 3) < 2 & !is.na(raw)]
+  
+  q.raw <- quantile(raw, probs = percentile, na.rm = T)
+  q.cut <- quantile(o, probs = percentile)
   
   # Return
   list(
     subject.estimates = raw,
     median.estimate = median(raw, na.rm = T),
+    mean.estimate = mean(raw, na.rm = T),
+    median.cut.estimate = median(o),
+    mean.cut.estimate = mean(o),
     IQR.estimates = IQR(raw, na.rm = T),
     sd.estimates = sd(raw, na.rm = T),
-    time = round(b-a,3)
+    time = round(b - a, 3),
+    pc.raw = q.raw, pc.cut = q.cut
   )
   
 }
+
 
 
 # Survival Inits ----------------------------------------------------------

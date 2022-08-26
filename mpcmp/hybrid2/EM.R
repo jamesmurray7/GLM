@@ -1,5 +1,5 @@
 #' #######
-#' EM.R                 ((HYBRID))
+#' EM.R                 ((HYBRID2))
 #' ----
 #' At each iteration, constructs grid, or adds to existing grid...
 #' ######
@@ -130,8 +130,8 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   
 }
 
-EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, post.process = T, control = list(),
-               delta.init=NULL){
+EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, post.process = T, 
+               control = list(), disp.control = list(),  delta.init = NULL){
   start.time <- proc.time()[3]
     
   #' Parsing formula objects ----
@@ -175,10 +175,19 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   if(!is.null(control$conv)) conv <- control$conv else conv <- "relative"
   if(!conv%in%c('absolute', 'relative')) stop('Only "absolute" and "relative" difference convergence criteria implemented.')
   if(!is.null(control$auto.summax)) auto.summax <- control$auto.summax else auto.summax <- T
-  if(!is.null(control$delta.method)) delta.method <- control$delta.method else delta.method <- 'uniroot'
-  if(!is.null(control$delta.scale)) delta.scale <- control$delta.scale else delta.scale <- 0.2
+  if(!is.null(control$delta.method)) delta.method <- control$delta.method else delta.method <- 'optim'
   if(!delta.method %in% c('uniroot', 'optim')) stop('delta.method must be either "optim" or "uniroot".\n')
   if(!is.null(control$net)) net <- control$net else net <- 0.5
+  #' Control arguments specific to dispersion estimates ----
+  if(!is.null(disp.control$delta.method)) delta.method <- disp.control$delta.method else delta.method <- 'optim'
+  if(!delta.method %in% c('uniroot', 'optim')) stop('delta.method must be either "optim" or "uniroot".\n')
+  if(!is.null(disp.control$min.profile.length)) min.profile.length <- disp.control$min.profile.length else min.profile.length <- 1
+  if(!is.null(disp.control$what)) what <- disp.control$what else what <- 'median'
+  if(!what %in% c('mean', 'median')) stop("what must be either 'mean' or 'median'.")
+  if(!is.null(disp.control$cut)) cut <- disp.control$cut else cut <- T
+  if(!is.null(disp.control$re.maximise)) re.maximise <- disp.control$re.maximise else re.maximise <- T
+  if(!is.null(disp.control$percentiles)) percentiles <- disp.control$percentiles else percentiles <- c(.4, .6)
+  if(any(percentiles > 1) | length(percentiles) != 2) stop("Provide percentiles as c(lower, upper).")
   
   if(auto.summax){
     summax.old <- summax
@@ -188,14 +197,20 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   
   # Initial conditon for delta
   if(is.null(delta.init)){
-    delta.inits.raw <- get.delta.inits(dmats, beta, b, delta.method, summax, verbose)  
-    # Return the median estimate...
-    delta <- setNames(delta.inits.raw$median.estimate, names(inits.long$delta.init))
-    delta.min <- delta - delta.scale * delta.inits.raw$sd.estimates
-    delta.max <- delta + delta.scale * delta.inits.raw$sd.estimates
+    delta.inits.raw <- get.delta.inits(dmats, beta, b, delta.method, summax, verbose, min.profile.length, percentiles)  
+    # Return the user-specified POINT estimate (Defaulting to cut + median)
+    if(cut){
+      initdelta <- if(what == 'mean') delta.inits.raw$mean.cut.estimate else delta.inits.raw$median.cut.estimate
+      pc.delta <- delta.inits.raw$pc.cut
+    }else{
+      initdelta <- if(what == 'mean') delta.inits.raw$mean.estimate else delta.inits.raw$median.estimate
+      pc.delta <- delta.inits.raw$pc.raw
+    }
+    delta <- setNames(initdelta, names(inits.long$delta.init))
+    if(verbose) cat(sprintf('Initial condition for delta: %.3f. [%.3f, %.3f].\n', 
+                            delta, pc.delta[1], pc.delta[2]))
   }else{
     delta <- setNames(delta.init, names(inits.long$delta.init))
-    delta.min <- delta - net; delta.max <- delta + net
   }
   
   #' Parameter vector and list ----
@@ -218,12 +233,18 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   all.mus <- generate_mus(.min, .max)
   
   #' Define nus ----
-  nu.lb <- mapply(function(G) exp(G %*% delta.min), G = G);
-  nu.ub <- mapply(function(G) exp(G %*% delta.max), G = G);
-  nn.lb <- round(unique(do.call(c, nu.lb)), 2); nn.ub <- round(unique(do.call(c, nu.ub)), 2)
-  nu.vec <- seq(nn.lb, nn.ub, 1e-2)
+  allG <- apply(do.call(rbind, G), 2, unique)
+  if(!is.list(allG)) allG <- as.list(allG)
+  allG <- do.call(cbind, allG)
+  nn.lb <- min(exp(allG %*% pc.delta[1])); nn.ub <- max(exp(allG %*% pc.delta[2]))
+  nu.vec <- seq(round(nn.lb, 2), round(nn.ub, 2), 1e-2)
+
+  if(verbose)
+    cat(sprintf("%d-vector of nu values generated from %.2f-%.2f\n", 
+                length(nu.vec), min(nu.vec), max(nu.vec)))
   
-  if(verbose) start.grids <- proc.time()[3]
+  grid.times <- as.matrix(t(setNames(numeric(2), c('iteration', 'elapsed time'))))
+  start.grids <- proc.time()[3]
   lambda.mat <- structure(gen_lambda_mat(.min, .max, nu.vec, summax),
                           dimnames = list(as.character(all.mus),
                                           as.character(nu.vec))
@@ -238,8 +259,9 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
                      dimnames = list(as.character(all.mus),
                                      as.character(nu.vec))
   )
+  end.grids <- proc.time()[3]
+  grid.times[1,] <- c(0, end.grids - start.grids)
   if(verbose){
-    end.grids <- proc.time()[3]
     d <- dim(lambda.mat)
     cat(sprintf("First %d x %d lambda, logZ and V grids calculated in %.3f seconds.\n", d[1], d[2], round(end.grids - start.grids, 3)))
   }
