@@ -352,7 +352,96 @@ vec get_indices(vec& current, vec& all){ // Ensure vec 'all' is rounded pre-use.
   return as<arma::vec>(out) - 1.; // Ensure zero-indexing...
 }
 
-// The joint density ...
+// The marginal density (and its gradient) of Y|b,delta...
+// [[Rcpp::export]]
+double marginal_Y(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,    // Data matrices
+                  vec& beta, vec& delta, mat& D,  
+                  mat& lambdamat, mat& Vmat, mat& logZmat,            // Matrices + lookups.
+                  vec& all_mus, vec& all_nus,                         // Vectors of possible values.
+                  int summax){
+  int mi = Y.size();
+  // Define mu, nu
+  vec mu = exp(X * beta + Z * b);
+  vec nu = exp(G * delta);
+  // Lookup lambda and logZ
+  vec m = get_indices(mu, all_mus), n = get_indices(nu, all_nus);
+  vec lambda = vec(mi), logZ = vec(mi);
+  if(m.has_nan()){ // If any generated mus (via optim) are outside of the range, need to directly approximate; nu shouldnt ever need this.
+    uvec nan_ind = find_nonfinite(m), fin_ind = find_finite(m);
+    
+    vec mu_nans = mu.elem(nan_ind), nu_nans = nu.elem(nan_ind);
+    
+    lambda.elem(nan_ind) = lambda_appx(mu_nans, nu_nans, summax);
+    vec temp = log(lambda);
+    vec temp2 = temp.elem(nan_ind);
+    logZ.elem(nan_ind) = logZ_c(temp2, nu_nans, summax);
+    
+    // The properly behaved ones -->
+    if(fin_ind.size() > 0){
+      vec m_fin = m.elem(fin_ind), n_fin = n.elem(fin_ind);
+      lambda.elem(fin_ind) = mat_lookup(m_fin, n_fin, lambdamat);
+      logZ.elem(fin_ind) = mat_lookup(m_fin, n_fin, logZmat); 
+    }
+    
+  }else{ // Otherwise, just proceed as normal and lookup everything...
+    lambda = mat_lookup(m, n, lambdamat);
+    logZ = mat_lookup(m, n, logZmat);
+  }
+  
+  // Calculate loglik CMP and then for other consituent distns.
+  vec loglambda = log(lambda);
+  double ll = ll_cmp(loglambda, nu, logZ, Y, lY);
+  int q = b.size();
+  return -ll  -1.0 * as_scalar(-(double)q/2.0 * log2pi - 0.5 * log(det(D)) - 0.5 * b.t() * D.i() * b);
+}
+
+// [[Rcpp::export]]
+vec marginal_Y_db(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,    // Data matrices
+                  vec& beta, vec& delta, mat& D,  
+                  mat& lambdamat, mat& Vmat, mat& logZmat,            // Matrices + lookups.
+                  vec& all_mus, vec& all_nus,                         // Vectors of possible values.
+                  int summax){
+  int mi = Y.size();
+  // Define mu, nu
+  vec mu = exp(X * beta + Z * b);
+  vec nu = exp(G * delta);
+  
+  // Lookup lambda and logZ
+  vec m = get_indices(mu, all_mus), n = get_indices(nu, all_nus);
+  vec lambda = vec(mi), logZ = vec(mi), V = vec(mi);
+  if(m.has_nan()){ // If any generated mus (via optim) are outside of the range, need to directly approximate; nu shouldnt ever need this.
+    uvec nan_ind = find_nonfinite(m), fin_ind = find_finite(m);
+    
+    vec mu_nans = mu.elem(nan_ind), nu_nans = nu.elem(nan_ind);
+    
+    lambda.elem(nan_ind) += lambda_appx(mu_nans, nu_nans, summax);
+    vec temp = lambda.elem(nan_ind); // This is lambda,
+    vec temp2 = log(temp);           //  ... log(lambda).
+    vec temp3 = logZ_c(temp2, nu_nans, summax); // logZ(\lambda, \nu)
+    V.elem(nan_ind) = calc_V_vec(mu_nans, temp, nu_nans, temp3, summax);
+    
+    // The properly behaved ones -->
+    if(fin_ind.size() > 0){
+      vec m_fin = m.elem(fin_ind), n_fin = n.elem(fin_ind);
+      lambda.elem(fin_ind) = mat_lookup(m_fin, n_fin, lambdamat);
+      logZ.elem(fin_ind) = mat_lookup(m_fin, n_fin, logZmat);
+      V.elem(fin_ind) = mat_lookup(m_fin, n_fin, Vmat);
+    }
+    
+  }else{ // Otherwise, just proceed as normal and lookup V...
+    V += mat_lookup(m, n, Vmat);
+  } 
+  
+  // Score of CMP .
+  mat lhs_mat = diagmat(mu) * Z;          
+  vec Score = lhs_mat.t() * ((Y - mu) / V); 
+  
+  // Sum w/ other consistuent density scores
+  return -Score + -1.0 * (-D.i() * b);
+}
+
+
+// The full joint density f(b,Y,T,...) and its gradient wrt. b
 // [[Rcpp::export]]
 double joint_density(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Data matrices
                      vec& beta, vec& delta, mat& D,                       // Longit. + RE parameters

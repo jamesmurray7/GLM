@@ -21,21 +21,21 @@ fit <- EM(long.formula, disp.formula, surv.formula, data, summax = 50, # if auto
 plot.stepmat(fit)
 
 
-# Intercept and slope -----------------------------------------------------
+# Intercept with bigger beta values ---------------------------------------
 rm(list=ls())
 source('EM.R')
 test <- simData_joint2(n = 250, delta = c(.8,0), 
                        ntms = 10, theta = c(-2, .1), fup = 3,
                        beta = c(2, -0.1, 0.1, -0.2), gamma = 0.6, zeta= c(0.0, -0.2),
-                       D = matrix(c(0.25, 0, 0, 0.05), 2, 2)) ## Doesn't appear to work particularlily well; instead can simply save data from non-hybrid dir.
-fit <- glmmTMB(Y~time+cont+bin+(1+time|id),test$data, family = poisson) 
+                       D = matrix(c(0.25, 0, 0, 0.00), 2, 2)) ## Doesn't appear to work particularlily well; instead can simply save data from non-hybrid dir.
+fit <- glmmTMB(Y~time+cont+bin+(1|id),test$data, family = poisson) 
 fit
 VarCorr(fit)$cond$id
 fixef(fit)$cond
 range(test$data$Y)
 data <- test$data
 
-long.formula <- Y~time+cont+bin+(1+time|id)
+long.formula <- Y~time+cont+bin+(1|id)
 surv.formula <- Surv(survtime, status) ~ bin
 disp.formula <- ~1
 

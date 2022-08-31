@@ -69,16 +69,15 @@ determine.interval.nd <- function(Y, G, mu, summax){
 delta.optim <- function(Y, G, mu, summax){
   g <- ncol(G)
   if(g == 1){
-    .interval <- determine.interval(mu, summax)
+    # .interval <- determine.interval(mu, summax)
     out <- tryCatch(optim(c(0), ff3, NULL,
                           Y = Y, G = G, mu = mu, summax = summax,
-                          method = 'Brent', lower = .interval[1], upper = .interval[2],
-                          control = list(reltol = 1e-4))$par,
+                          method = 'Brent', lower = -2, upper = 2)$par,
                     error = function(e) NA)
   }else{
     out <- tryCatch(optim(rep(0, g), ff3, NULL,
                           Y = Y, G = G, mu = mu, summax = summax,
-                          method = 'L-BFGS-B', lower = rep(-3, g), upper = rep(3, g))$par,
+                          method = 'L-BFGS-B', lower = rep(-2, g), upper = rep(2, g))$par,
                     error = function(e) NA)
   }
   out

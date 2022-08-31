@@ -90,6 +90,7 @@ double calc_V(double mu, double lambda, double nu, double logZ, int summax){
   return out;
 }
 
+// [[Rcpp::export]]
 vec calc_V_vec(vec& mu, vec& lambda, vec& nu, vec& logZ, int summax){
   int n = mu.size();
   vec out = vec(n);
@@ -342,11 +343,47 @@ double ll_cmp(vec& loglambda, vec& nu, vec& logZ, vec& Y, vec& lY){
   return sum(Y % loglambda - nu % lY - logZ);
 }
 
+// Set out a marginal log-likelihood for maximisation wrt delta inital condition.
+// [[Rcpp::export]]
+double marginal_Y(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Data matrices
+                  vec& beta, vec& delta, mat& D, int summax){
+  // Define mu, nu
+  vec mu = exp(X * beta + Z * b);
+  vec nu = exp(G * delta);
+  // Calculate lambda and logZ
+  vec lambda = lambda_appx(mu, nu, summax);
+  vec loglambda = log(lambda);
+  vec logZ = logZ_c(loglambda, nu, summax);
+  // Calculate loglik CMP
+  double ll = ll_cmp(loglambda, nu, logZ, Y, lY);
+  int q = b.size();
+  return -ll -1.0 * as_scalar(-(double)q/2.0 * log2pi - 0.5 * log(det(D)) - 0.5 * b.t() * D.i() * b);
+}
+
+// [[Rcpp::export]]
+vec marginal_Y_db(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Data matrices
+                  vec& beta, vec& delta, mat& D, int summax){
+  // Define mu, nu
+  vec mu = exp(X * beta + Z * b);
+  vec nu = exp(G * delta);
+  
+  // Calculate lambda, logZ and V
+  vec lambda = lambda_appx(mu, nu, summax);
+  vec loglambda = log(lambda);
+  vec logZ = logZ_c(loglambda, nu, summax);
+  vec V = calc_V_vec(mu, lambda, nu, logZ, summax);
+  
+  // Score of CMP and other constituent distns.
+  mat lhs_mat = diagmat(mu) * Z;          
+  return -1. *  lhs_mat.t() * ((Y-mu) / V) -1.0 * (-D.i() * b); 
+}
+
+
 // Function to match a given vector to the parent vector of all possible values 
 // (i.e. get their indices).
 // [[Rcpp::export]]
-vec get_indices(vec& current, vec& all){ // Ensure vec 'all' is rounded pre-use.
-  vec one = Rcpp::round(as<NumericVector>(wrap(current)), 3);
+vec get_indices(vec& current, vec& all, int dig){ // Ensure vec 'all' is rounded pre-use.
+  vec one = Rcpp::round(as<NumericVector>(wrap(current)), dig);
   IntegerVector out = Rcpp::match(as<Rcpp::NumericVector>(wrap(one)), as<Rcpp::NumericVector>(wrap(all)));
   return as<arma::vec>(out) - 1.; // Ensure zero-indexing...
 }
@@ -365,7 +402,9 @@ double joint_density(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Dat
   vec mu = exp(X * beta + Z * b);
   vec nu = exp(G * delta);
   // Lookup lambda and logZ
-  vec m = get_indices(mu, all_mus), n = get_indices(nu, all_nus);
+  vec m = get_indices(mu, all_mus, 3), n = get_indices(nu, all_nus, 2);
+  // Rcout << "m: " << m.t() << std::endl;
+  // Rcout << "n: " << n.t() << std::endl;
   vec lambda = vec(mi), logZ = vec(mi);
   if(m.has_nan()){ // If any generated mus (via optim) are outside of the range, need to directly approximate; nu shouldnt ever need this.
     uvec nan_ind = find_nonfinite(m), fin_ind = find_finite(m);
@@ -414,7 +453,7 @@ vec joint_density_ddb(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Da
   vec nu = exp(G * delta);
   
   // Lookup lambda and logZ
-  vec m = get_indices(mu, all_mus), n = get_indices(nu, all_nus);
+  vec m = get_indices(mu, all_mus, 3), n = get_indices(nu, all_nus, 2);
   vec lambda = vec(mi), logZ = vec(mi), V = vec(mi);
   if(m.has_nan()){ // If any generated mus (via optim) are outside of the range, need to directly approximate; nu shouldnt ever need this.
     uvec nan_ind = find_nonfinite(m), fin_ind = find_finite(m);

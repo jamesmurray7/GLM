@@ -67,17 +67,24 @@ get.delta.inits <- function(dmats, beta, b, method, summax = NULL, verbose = F, 
   }
   b <- proc.time()[3]
   
+  # Adding to discount instances where estimate doesn't at all move.
+  o <- raw[round(abs(raw), 3) < 2 & !is.na(raw)]
+  
+  
   # Return
   list(
     subject.estimates = raw,
     median.estimate = median(raw, na.rm = T),
     mean.estimate = mean(raw, na.rm = T),
+    median.cut.estimate = median(o),
+    mean.cut.estimate = mean(o),
     IQR.estimates = IQR(raw, na.rm = T),
     sd.estimates = sd(raw, na.rm = T),
-    time = round(b-a,3)
+    time = round(b - a,3)
   )
   
 }
+
 
 
 # Survival Inits ----------------------------------------------------------

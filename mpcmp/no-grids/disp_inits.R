@@ -73,12 +73,11 @@ delta.optim <- function(Y, G, mu, summax){
     out <- tryCatch(optim(c(0), ff3, NULL,
                           Y = Y, G = G, mu = mu, summax = summax,
                           method = 'Brent', lower = -2, upper = 2)$par,
-                          # method = 'Brent', lower = .interval[1], upper = .interval[2])$par,
                     error = function(e) NA)
   }else{
     out <- tryCatch(optim(rep(0, g), ff3, NULL,
                           Y = Y, G = G, mu = mu, summax = summax,
-                          method = 'L-BFGS-B', lower = rep(-3, g), upper = rep(3, g))$par,
+                          method = 'L-BFGS-B', lower = rep(-2, g), upper = rep(2, g))$par,
                     error = function(e) NA)
   }
   out
@@ -96,3 +95,15 @@ find.deltas.optim <- function(Ylist, Glist, mulist, summax, verbose = F, min.pro
   out
 }
 
+# mapply(function(Y,G,mu){
+#   g <- ncol(G)
+#   x <- tryCatch(optim(rep(0, g), ff3, NULL,
+#              Y = Y, G = G, mu = mu, summax = summax,
+#              method = 'L-BFGS-B', lower = rep(-2, g), upper = rep(2, g)),
+#              error = function(e) NULL)
+#   if(!is.null(x)) return(list(x$par, x$value, x$conver)) else return(rep(NA, 3))
+# }, Y = Y, G = G, mu = mus, SIMPLIFY = F) -> fits
+# 
+# obj <- do.call(c, lapply(fits, el, 2))
+# pars <- do.call(rbind, lapply(fits, el, 1))
+# apply(pars[obj < 1e-3 & !is.na(obj),],2,median)

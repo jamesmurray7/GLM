@@ -1,5 +1,5 @@
 #' #######
-#' EM.R                 ((HYBRID))
+#' EM.R                 ((HYBRID2))
 #' ----
 #' At each iteration, constructs grid, or adds to existing grid...
 #' ######
@@ -29,7 +29,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
           S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
           gamma = gamma, zeta = zeta, 
           lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, 
-          all_mus = all.mus, all_nus = round(nu.vec, 3),
+          all_mus = all.mus, all_nus = round(nu.vec, 2),
           summax = summax, method = 'BFGS')$par
   }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
   l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
@@ -39,7 +39,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
     solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
                             S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
                             gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, 
-                            all_mus = all.mus, all_nus = round(nu.vec, 3), summax = summax, eps = .001))
+                            all_mus = all.mus, all_nus = round(nu.vec, 2), summax = summax, eps = .001))
   }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
   l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
   
@@ -53,6 +53,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
       Sigma[[ind[i]]] <- matrix(0, length(b.hat[[ind[i]]]), length(b.hat[[ind[i]]]))
     }
   }
+  
   #' #########
   #' E-step ##
   #' #########
@@ -63,12 +64,35 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   tau <- mapply(function(Z, S) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), S = Sigma, Z = Z, SIMPLIFY = F)
   
   #' Indices for lookup given new \b.hat
-  m <- mapply(function(a) get_indices(a, all.mus), a = mus, SIMPLIFY = F)
-  n <- mapply(function(a) get_indices(a, round(nu.vec, 3)), a = nus, SIMPLIFY = F)
+  m <- mapply(function(a) get_indices(a, all.mus, 3), a = mus, SIMPLIFY = F)
+  n <- mapply(function(a) get_indices(a, round(nu.vec, 2), 2), a = nus, SIMPLIFY = F)
   
-  #' \lambdas, Vs for \beta update.
-  lambdas <- mapply(function(m, n) mat_lookup(m, n, lambda.mat), m = m, n = n, SIMPLIFY = F)
-  Vs <- mapply(function(m, n) mat_lookup(m, n, V.mat), m = m, n = n, SIMPLIFY = F)
+  #' \lambdas, Vs for \beta update. (With hardcode for NA/out-of-range values).
+  lambdas <- mapply(function(mu, nu, m, n){
+    out <- numeric(length(mu))
+    if(any(is.na(m))){
+      nas <- is.na(m)
+      out[nas] <- lambda_appx(mu[nas], nu[nas], summax)
+      out[!nas] <- mat_lookup(m[!nas], n[!nas], lambda.mat)
+    }else{
+      out <- mat_lookup(m, n, lambda.mat)
+    }
+    out
+  }, mu = mus, nu = nus, m = m, n = n, SIMPLIFY = F)
+  
+  Vs <- mapply(function(mu, nu, m, n){
+    out <- numeric(length(mu))
+    if(any(is.na(m))){
+      nas <- is.na(m)
+      lams <- lambda_appx(mu[nas], nu[nas], summax)
+      logZs <- logZ_c(log(lams), nu[nas], summax)
+      out[nas] <- calc_V_vec(mu[nas], lams, nu[nas], logZs, summax)
+      out[!nas] <- mat_lookup(m[!nas], n[!nas], V.mat)
+    }else{
+      out <- mat_lookup(m, n, V.mat)
+    }
+    out
+  }, mu = mus, nu = nus, m = m, n = n, SIMPLIFY = F)
   
   #' D
   D.update <- mapply(function(Sigma, b) Sigma + tcrossprod(b), Sigma = Sigma, b = b.hat, SIMPLIFY = F)
@@ -130,14 +154,14 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   
 }
 
-EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, post.process = T, control = list(),
-               delta.init=NULL){
+EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, post.process = T, 
+               control = list(), disp.control = list(),  delta.init = NULL){
   start.time <- proc.time()[3]
     
   #' Parsing formula objects ----
   formulas <- parseFormula(long.formula)
   surv <- parseCoxph(surv.formula, data)
-  n <- surv$n
+  num <- surv$n
   
   #' Initial conditions ----
   inits.long <- Longit.inits(long.formula, disp.formula, data)
@@ -175,10 +199,20 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   if(!is.null(control$conv)) conv <- control$conv else conv <- "relative"
   if(!conv%in%c('absolute', 'relative')) stop('Only "absolute" and "relative" difference convergence criteria implemented.')
   if(!is.null(control$auto.summax)) auto.summax <- control$auto.summax else auto.summax <- T
-  if(!is.null(control$delta.method)) delta.method <- control$delta.method else delta.method <- 'uniroot'
-  if(!is.null(control$delta.scale)) delta.scale <- control$delta.scale else delta.scale <- 0.2
+  if(!is.null(control$mu.rule)) mu.rule <- control$mu.rule else mu.rule <- 'quantile'
+  if(!is.null(control$mu.rule.probs)) mu.rule.probs <- control$mu.rule.probs else mu.rule.probs <- c(.25, .75)
+  if(!mu.rule%in%c('range', 'quantile')) stop("'mu.rule' must be either 'quantile' or 'range'.")
+  if(any(mu.rule.probs > 1) | length(mu.rule.probs) != 2) stop("Provide 'mu.rule.probs' as c(lower, upper).")
+  #' Control arguments specific to dispersion estimates ----
+  if(!is.null(disp.control$delta.method)) delta.method <- disp.control$delta.method else delta.method <- 'optim'
   if(!delta.method %in% c('uniroot', 'optim')) stop('delta.method must be either "optim" or "uniroot".\n')
-  if(!is.null(control$net)) net <- control$net else net <- 0.5
+  if(!is.null(disp.control$min.profile.length)) min.profile.length <- disp.control$min.profile.length else min.profile.length <- 1
+  if(!is.null(disp.control$what)) what <- disp.control$what else what <- 'median'
+  if(!what %in% c('mean', 'median')) stop("what must be either 'mean' or 'median'.")
+  if(!is.null(disp.control$cut)) cut <- disp.control$cut else cut <- T
+  if(!is.null(disp.control$re.maximise)) re.maximise <- disp.control$re.maximise else re.maximise <- T
+  if(!is.null(disp.control$percentiles)) percentiles <- disp.control$percentiles else percentiles <- c(.4, .6)
+  if(any(percentiles > 1) | length(percentiles) != 2) stop("Provide percentiles as c(lower, upper).")
   
   if(auto.summax){
     summax.old <- summax
@@ -188,14 +222,20 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   
   # Initial conditon for delta
   if(is.null(delta.init)){
-    delta.inits.raw <- get.delta.inits(dmats, beta, b, delta.method, summax, verbose)  
-    # Return the median estimate...
-    delta <- setNames(delta.inits.raw$median.estimate, names(inits.long$delta.init))
-    delta.min <- delta - delta.scale * delta.inits.raw$sd.estimates
-    delta.max <- delta + delta.scale * delta.inits.raw$sd.estimates
+    delta.inits.raw <- get.delta.inits(dmats, beta, b, delta.method, summax, verbose, min.profile.length, percentiles)  
+    # Return the user-specified POINT estimate (Defaulting to cut + median)
+    if(cut){
+      initdelta <- if(what == 'mean') delta.inits.raw$mean.cut.estimate else delta.inits.raw$median.cut.estimate
+      pc.delta <- delta.inits.raw$pc.cut
+    }else{
+      initdelta <- if(what == 'mean') delta.inits.raw$mean.estimate else delta.inits.raw$median.estimate
+      pc.delta <- delta.inits.raw$pc.raw
+    }
+    delta <- setNames(initdelta, names(inits.long$delta.init))
+    if(verbose) cat(sprintf('Initial condition for delta: %.3f. [%.3f, %.3f].\n', 
+                            delta, pc.delta[1], pc.delta[2]))
   }else{
     delta <- setNames(delta.init, names(inits.long$delta.init))
-    delta.min <- delta - net; delta.max <- delta + net
   }
   
   #' Parameter vector and list ----
@@ -214,16 +254,28 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b)
   mm <- do.call(c, mus)
   # Generate mu vector
-  .min <- max(0, min(mm) - net); .max <- max(mm) + net
+  if(mu.rule == 'range'){
+    .min <- max(0, min(mm)); .max <- max(mm)
+  }else{
+    qn <- quantile(mm, prob = mu.rule.probs)
+    .min <- max(0, qn[1]); .max <- qn[2]
+  }
+  
   all.mus <- generate_mus(.min, .max)
   
   #' Define nus ----
-  nu.lb <- mapply(function(G) exp(G %*% delta.min), G = G);
-  nu.ub <- mapply(function(G) exp(G %*% delta.max), G = G);
-  nn.lb <- round(unique(do.call(c, nu.lb)), 2); nn.ub <- round(unique(do.call(c, nu.ub)), 2)
-  nu.vec <- seq(nn.lb, nn.ub, 1e-2)
+  allG <- apply(do.call(rbind, G), 2, unique)
+  if(!is.list(allG)) allG <- as.list(allG)
+  allG <- do.call(cbind, allG)
+  nn.lb <- min(exp(allG %*% pc.delta[1])); nn.ub <- max(exp(allG %*% pc.delta[2]))
+  nu.vec <- seq(round(nn.lb, 2), round(nn.ub, 2), 1e-2)
+
+  if(verbose)
+    cat(sprintf("%d-vector of nu values generated from %.2f-%.2f\n", 
+                length(nu.vec), min(nu.vec), max(nu.vec)))
   
-  if(verbose) start.grids <- proc.time()[3]
+  grid.times <- as.matrix(t(setNames(numeric(2), c('iteration', 'elapsed time'))))
+  start.grids <- proc.time()[3]
   lambda.mat <- structure(gen_lambda_mat(.min, .max, nu.vec, summax),
                           dimnames = list(as.character(all.mus),
                                           as.character(nu.vec))
@@ -238,11 +290,25 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
                      dimnames = list(as.character(all.mus),
                                      as.character(nu.vec))
   )
+  end.grids <- proc.time()[3]
+  grid.times[1,] <- c(0, end.grids - start.grids)
   if(verbose){
-    end.grids <- proc.time()[3]
     d <- dim(lambda.mat)
     cat(sprintf("First %d x %d lambda, logZ and V grids calculated in %.3f seconds.\n", d[1], d[2], round(end.grids - start.grids, 3)))
   }
+  
+  #' Re-maximise Marginal wrt b for CMP rather than Poisson (obtained thus far)
+  if(re.maximise){
+    s <- proc.time()[3]
+    if(verbose) cat('Re-maximising in light of new delta estimate.\n')
+    b <- mapply(function(b, X, Y, lY, Z, G){
+      optim(b, marginal_Y, marginal_Y_db,
+            X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, 
+            D = D,summax = summax, method = 'BFGS')$par
+    }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, SIMPLIFY = F)
+    remaximisation.time <- round(proc.time()[3] - s, 3)
+  }
+  startup.time <- round(proc.time()[3] - start.time, 3)
   
   #' Begin EM ----
   diff <- 100; iter <- 0
@@ -265,12 +331,50 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
       message("Largest RE relative difference: ", round(max(difference(do.call(cbind, update$b), do.call(cbind, b), conv)), 4))
     }
     
-    # create new matrices
+    #' Create new matrices ------------------------------------------------
     mm <- do.call(c, update$mus)
-    .min <- max(0, min(mm) - net); .max <- max(mm) + net
+    
+    #' Define new mus ----
+    if(mu.rule == 'range'){
+      .min <- max(0, min(mm)); .max <- max(mm)
+    }else{
+      qn <- quantile(mm, prob = mu.rule.probs)
+      .min <- max(0, qn[1]); .max <- qn[2]
+    }
     new.mus <- generate_mus(.min, .max)
-    nus <- mapply(function(G) exp(G %*% update$delta), G = G)
-    nn <- do.call(c, nus); nu.vec <- sort(c(unique(nn)))
+    
+    #' Define nus ----
+    update.nu <- exp(allG %*% update$delta)
+    
+    # mus...
+    # Need to work out if the percentiles/range created by .min, .max above
+    # exist _outside_ last iter's dimensions.
+    temp1 <- setdiff(new.mus, all.mus) # check for new elements
+    num.new.mu <- length(temp1)        # ascertain number new elements.
+    if(num.new.mu > 0){
+      if(verbose) cat(sprintf("%d new mu values.\n", num.new.mu))  
+      # And work out what direction these are in
+      inds.dw.mu <- which(temp1 < min(all.mus)); inds.up.mu <- which(temp1 > max(all.mus))
+    }
+    
+    # nus...
+    # Need to work out if the new delta term results in a nu _outside_ last iter's 
+    # dimension
+    temp2 <- setdiff(round(update.nu, 2), nu.vec)
+    num.new.nu <- length(temp2)
+    if(num.new.nu > 0){
+      inds.dw.nu <- which(temp2 < min(nu.vec)); inds.up.nu <- which(temp2 > max(nu.vec))
+      if(length(inds.dw.nu) > 0 & length(inds.up.nu) > 0){ # I don't think this would _ever_ happen.
+        nu.vec.new <- unique(c(seq(temp2[inds.dw.nu], min(nu.vec), 1e-2), nu.vec,
+                               seq(max(nu.vec), temp2[inds.up.nu], 1e-2)))
+      }else if(length(inds.up.nu) == 0 & length(inds.dw.nu) > 0){ # If _all_ lower, then create new up to lowest existing value down.
+        nu.vec.new <- unique(c(seq(temp2[inds.dw.nu], min(nu.vec), 1e-2), nu.vec))
+      }else if(length(inds.up.nu) > 0 & length(inds.dw.nu) == 0){ # If _all_ higher, then create from highest existing value up.
+        nu.vec.new <- unique(c(nu.vec, seq(max(nu.vec), temp2[inds.up.nu], 1e-2)))
+      }
+      cat(sprintf("%d new nu values at iteration %d", length(nu.vec.new) - length(nu.vec), iter + 1))
+    }
+    
     
     # Calculate \lambda, logZ and V at possible new nu values.
     if(verbose) start.grids <- proc.time()[3]
