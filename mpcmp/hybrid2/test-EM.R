@@ -45,7 +45,7 @@ fit$elapsed
 plot.stepmat(fit)
 plot.grid.and.step(fit)
 
-# Let first grids be created on different truncation amount.
+# Let first grids be created on different truncation amount.  
 fit2 <- EM(long.formula, disp.formula, surv.formula, data, summax = 100,
             control = list(verbose = T), grid.summax = 'a')
 fit2$elapsed
