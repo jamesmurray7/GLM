@@ -57,19 +57,41 @@ vcov <- function(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, num, summax,
   nus <- mapply(function(G) exp(G %*% delta), G = G, SIMPLIFY = F)
   tau <- mapply(function(Z, S) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), S = Sigma, Z = Z, SIMPLIFY = F)
   
-  #' Indices for lookup given new \b.hat
-  m <- mapply(function(a) get_indices(a, all.mus), a = mus, SIMPLIFY = F)
-  n <- mapply(function(a) get_indices(a, round(nu.vec, 3)), a = nus, SIMPLIFY = F)
+  #' Indices for lookup
+  m <- mapply(function(a) get_indices(a, all.mus, 3), a = mus, SIMPLIFY = F)
+  n <- mapply(function(a) get_indices(a, round(nu.vec, 2) , 2), a = nus, SIMPLIFY = F)
   
-  #' \lambdas, Vs for \beta update.
-  lambdas <- mapply(function(m, n) mat_lookup(m, n, lambda.mat), m = m, n = n, SIMPLIFY = F)
-  Vs <- mapply(function(m, n) mat_lookup(m, n, V.mat), m = m, n = n, SIMPLIFY = F)
+  #' \lambdas, Vs for \beta update. (With hardcode for NA/out-of-range values).
+  lambdas <- mapply(function(mu, nu, m, n){
+    out <- numeric(length(mu))
+    if(any(is.na(m))){
+      nas <- is.na(m)
+      out[nas] <- lambda_appx(mu[nas], nu[nas], summax)
+      out[!nas] <- mat_lookup(m[!nas], n[!nas], lambda.mat)
+    }else{
+      out <- mat_lookup(m, n, lambda.mat)
+    }
+    out
+  }, mu = mus, nu = nus, m = m, n = n, SIMPLIFY = F)
+  
+  Vs <- mapply(function(mu, nu, m, n){
+    out <- numeric(length(mu))
+    if(any(is.na(m))){
+      nas <- is.na(m)
+      lams <- lambda_appx(mu[nas], nu[nas], summax)
+      logZs <- logZ_c(log(lams), nu[nas], summax)
+      out[nas] <- calc_V_vec(mu[nas], lams, nu[nas], logZs, summax)
+      out[!nas] <- mat_lookup(m[!nas], n[!nas], V.mat)
+    }else{
+      out <- mat_lookup(m, n, V.mat)
+    }
+    out
+  }, mu = mus, nu = nus, m = m, n = n, SIMPLIFY = F)
   
   #' Score for the fixed effects, \beta 
   Sb <- mapply(Sbeta, X, Y, mus, nus, lambdas, Vs, SIMPLIFY = F)
   
   #' Score for the dispersion parameter(s), \delta 
-  tau <- mapply(function(Z, S) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), S = Sigma, Z = Z, SIMPLIFY = F)
   Sd <- mapply(function(G, b, X, Z, Y, lY, tau){
     Sdelta_cdiff(delta, G, b, X, Z, Y, lY, beta, tau, w, v, summax, eps = .Machine$double.eps^(1/3))
   }, G = G, b = b, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)

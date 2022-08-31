@@ -65,7 +65,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   
   #' Indices for lookup given new \b.hat
   m <- mapply(function(a) get_indices(a, all.mus, 3), a = mus, SIMPLIFY = F)
-  n <- mapply(function(a) get_indices(a, round(nu.vec, 2), 2), a = nus, SIMPLIFY = F)
+  n <- mapply(function(a) get_indices(a, round(nu.vec, 2) , 2), a = nus, SIMPLIFY = F)
   
   #' \lambdas, Vs for \beta update. (With hardcode for NA/out-of-range values).
   lambdas <- mapply(function(mu, nu, m, n){
@@ -103,11 +103,11 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   
   #' \delta
   Sd <- mapply(function(G, b, X, Z, Y, lY, tau){
-    Sdelta_cdiff(delta, G, b, X, Z, Y, lY, beta, tau, w, v, summax, eps=.Machine$double.eps^(1/3))
+    Sdelta_cdiff(delta, G, b, X, Z, Y, lY, beta, tau, w, v, summax, eps = .Machine$double.eps^(1/3))
   }, G = G, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
   
   Hd <- mapply(function(G, b, X, Z, Y, lY, tau){
-    Hdelta(delta, G, b, X, Z, Y, lY, beta, tau, w, v, summax, eps=.Machine$double.eps^(1/4))
+    Hdelta(delta, G, b, X, Z, Y, lY, beta, tau, w, v, summax, eps = .Machine$double.eps^(1/4))
   }, G = G, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
   
   #' Survival parameters (\gamma, \zeta)
@@ -150,12 +150,12 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
     l0 = l0.new, l0u = l0u.new, l0i = as.list(l0i.new),  # ---""---
     b = b.hat, mus = mus,                                #   REs.
     t = round(e-s,3)
-  )
+  ) 
   
 }
 
 EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, post.process = T, 
-               control = list(), disp.control = list(),  delta.init = NULL){
+               control = list(), disp.control = list(),  delta.init = NULL, grid.summax = 'same'){
   start.time <- proc.time()[3]
     
   #' Parsing formula objects ----
@@ -170,7 +170,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   # Longitudinal parameters
   beta <- inits.long$beta.init
   D <- inits.long$D.init
-  b <- lapply(1:n, function(i) inits.long$b[i, ])
+  b <- lapply(1:num, function(i) inits.long$b[i, ])
   
   # Survival parameters
   zeta <- inits.surv$inits[match(colnames(surv$ph$x), names(inits.surv$inits))]
@@ -248,6 +248,20 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   #' Gauss-hermite quadrature ----
   GH <- statmod::gauss.quad.prob(.gh, 'normal', sigma = .sigma)
   w <- GH$w; v <- GH$n
+  
+  #' Re-maximise Marginal wrt b for CMP rather than Poisson (obtained thus far)
+  if(re.maximise){
+    s <- proc.time()[3]
+    if(verbose) cat('Re-maximising in light of new delta estimate')
+    b <- mapply(function(b, X, Y, lY, Z, G){
+      optim(b, marginal_Y, marginal_Y_db,
+            X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, 
+            D = D,summax = summax, method = 'BFGS')$par
+    }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, SIMPLIFY = F)
+    remaximisation.time <- round(proc.time()[3] - s, 3)
+    if(verbose) cat(sprintf(', this took %.2f seconds.\n', remaximisation.time))
+  }
+  startup.time <- round(proc.time()[3] - start.time, 3)
     
   #' Matrices ----------------------------
   #' Define mus ----
@@ -257,7 +271,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   if(mu.rule == 'range'){
     .min <- max(0, min(mm)); .max <- max(mm)
   }else{
-    qn <- quantile(mm, prob = mu.rule.probs)
+    qn <- unname(quantile(mm, prob = mu.rule.probs))
     .min <- max(0, qn[1]); .max <- qn[2]
   }
   
@@ -271,22 +285,22 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   nu.vec <- seq(round(nn.lb, 2), round(nn.ub, 2), 1e-2)
 
   if(verbose)
-    cat(sprintf("%d-vector of nu values generated from %.2f-%.2f\n", 
+    cat(sprintf("%d-vector of nu values generated from %.2f -- %.2f.\n", 
                 length(nu.vec), min(nu.vec), max(nu.vec)))
   
   grid.times <- as.matrix(t(setNames(numeric(2), c('iteration', 'elapsed time'))))
   start.grids <- proc.time()[3]
-  lambda.mat <- structure(gen_lambda_mat(.min, .max, nu.vec, summax),
+  if(grid.summax == 'same') grid.summax <- summax else grid.summax <- max(20, floor(summax / 4))
+  lambda.mat <- structure(gen_lambda_mat(.min, .max, nu.vec, grid.summax),
                           dimnames = list(as.character(all.mus),
-                                          as.character(nu.vec))
-                )
+                                          as.character(nu.vec)))
   
-  logZ.mat <- structure(gen_logZ_mat(.min, .max, nu.vec, lambda.mat, summax),
-                        dimnames = list(as.character(all.mus),
-                                        as.character(nu.vec))
+  logZ.mat <- structure(gen_logZ_mat(.min, .max, nu.vec, lambda.mat, grid.summax),
+                         dimnames = list(as.character(all.mus),
+                                         as.character(nu.vec))
   )
   
-  V.mat <- structure(gen_V_mat(.min, .max, nu.vec, lambda.mat, logZ.mat, summax),
+  V.mat <- structure(gen_V_mat(.min, .max, nu.vec, lambda.mat, logZ.mat, grid.summax),
                      dimnames = list(as.character(all.mus),
                                      as.character(nu.vec))
   )
@@ -294,21 +308,8 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   grid.times[1,] <- c(0, end.grids - start.grids)
   if(verbose){
     d <- dim(lambda.mat)
-    cat(sprintf("First %d x %d lambda, logZ and V grids calculated in %.3f seconds.\n", d[1], d[2], round(end.grids - start.grids, 3)))
+    cat(sprintf("First %d x %d lambda, logZ and V grids calculated in %.3f seconds.\n\n", d[1], d[2], end.grids - start.grids))
   }
-  
-  #' Re-maximise Marginal wrt b for CMP rather than Poisson (obtained thus far)
-  if(re.maximise){
-    s <- proc.time()[3]
-    if(verbose) cat('Re-maximising in light of new delta estimate.\n')
-    b <- mapply(function(b, X, Y, lY, Z, G){
-      optim(b, marginal_Y, marginal_Y_db,
-            X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, 
-            D = D,summax = summax, method = 'BFGS')$par
-    }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, SIMPLIFY = F)
-    remaximisation.time <- round(proc.time()[3] - s, 3)
-  }
-  startup.time <- round(proc.time()[3] - start.time, 3)
   
   #' Begin EM ----
   diff <- 100; iter <- 0
@@ -332,99 +333,129 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
     }
     
     #' Create new matrices ------------------------------------------------
-    mm <- do.call(c, update$mus)
+    mm.new <- do.call(c, update$mus)
     
     #' Define new mus ----
     if(mu.rule == 'range'){
-      .min <- max(0, min(mm)); .max <- max(mm)
+      .min.new <- max(0, min(mm.new)); .max.new <- max(mm.new)
     }else{
-      qn <- quantile(mm, prob = mu.rule.probs)
-      .min <- max(0, qn[1]); .max <- qn[2]
+      qn <- quantile(mm.new, prob = mu.rule.probs)
+      .min.new <- max(0, qn[1]); .max.new <- qn[2]
     }
-    new.mus <- generate_mus(.min, .max)
     
-    #' Define nus ----
+    #' Define new nus ----
     update.nu <- exp(allG %*% update$delta)
     
-    # mus...
-    # Need to work out if the percentiles/range created by .min, .max above
-    # exist _outside_ last iter's dimensions.
-    temp1 <- setdiff(new.mus, all.mus) # check for new elements
-    num.new.mu <- length(temp1)        # ascertain number new elements.
-    if(num.new.mu > 0){
-      if(verbose) cat(sprintf("%d new mu values.\n", num.new.mu))  
-      # And work out what direction these are in
-      inds.dw.mu <- which(temp1 < min(all.mus)); inds.up.mu <- which(temp1 > max(all.mus))
+    
+    #' Work out A/B1/B2/C matrices ----
+    start.grids <- proc.time()[3]
+    #' ======
+    #' A ====
+    #' ======
+    
+    #' Elements calculated at old mu values at new values of nu < nu.old.
+    if(round(update.nu, 2) < min(nu.vec)){
+      # If lower than smallest value, sequence from the new nu to the minimal value
+      temp.nu <- unique(seq(round(update.nu, 2), min(nu.vec) - 1e-2, 1e-2)) 
+      Amats <- gen_all_mats(.min, .max, temp.nu, summax)
+      nu.vec <- c(temp.nu, nu.vec)
+    }else{
+      # Otherwise, create an empty matrix to append to left of existing matrix.
+      Amats <- setNames(replicate(3, lambda.mat[,0,drop=F], simplify = F),
+                    c('lambda', 'logZ', 'V'))
     }
+    num.new <- unique(do.call(rbind, lapply(Amats, dim))[,2])
+    if(verbose) cat(sprintf('%d new nu values < old nu.\n', num.new))
     
-    # nus...
-    # Need to work out if the new delta term results in a nu _outside_ last iter's 
-    # dimension
-    temp2 <- setdiff(round(update.nu, 2), nu.vec)
-    num.new.nu <- length(temp2)
-    if(num.new.nu > 0){
-      inds.dw.nu <- which(temp2 < min(nu.vec)); inds.up.nu <- which(temp2 > max(nu.vec))
-      if(length(inds.dw.nu) > 0 & length(inds.up.nu) > 0){ # I don't think this would _ever_ happen.
-        nu.vec.new <- unique(c(seq(temp2[inds.dw.nu], min(nu.vec), 1e-2), nu.vec,
-                               seq(max(nu.vec), temp2[inds.up.nu], 1e-2)))
-      }else if(length(inds.up.nu) == 0 & length(inds.dw.nu) > 0){ # If _all_ lower, then create new up to lowest existing value down.
-        nu.vec.new <- unique(c(seq(temp2[inds.dw.nu], min(nu.vec), 1e-2), nu.vec))
-      }else if(length(inds.up.nu) > 0 & length(inds.dw.nu) == 0){ # If _all_ higher, then create from highest existing value up.
-        nu.vec.new <- unique(c(nu.vec, seq(max(nu.vec), temp2[inds.up.nu], 1e-2)))
-      }
-      cat(sprintf("%d new nu values at iteration %d", length(nu.vec.new) - length(nu.vec), iter + 1))
+    #' ======
+    #' C ====
+    #' ======
+    
+    #' Elements calculated at old mu values at new values of nu > nu.old
+    if(round(update.nu, 2) > max(nu.vec)){
+      # If greater than largest value, sequence from maximal value to the new nu.
+      temp.nu <- unique(seq(max(nu.vec) + 1e-2, round(update.nu, 2), 1e-2)) 
+      Cmats <- gen_all_mats(.min, .max, temp.nu, summax)
+      nu.vec <- c(nu.vec, temp.nu)
+    }else{
+      Cmats <- setNames(replicate(3, lambda.mat[,0,drop=F], simplify = F),
+                        c('lambda', 'logZ', 'V'))
     }
+    num.new <- unique(do.call(rbind, lapply(Cmats, dim))[,2])
+    if(verbose) cat(sprintf('%d new nu values > old nu.\n', num.new))
     
+    #' ======
+    #' B ====
+    #' ======
+
+    #' Elements calculated at new mu values at old values of nu.
+    if(round(.min.new, 3) < round(.min, 3)){
+      B1mats <- gen_all_mats(round(.min.new, 3), round(.min, 3) - 1e-3, nu.vec, summax)
+      all.mus <- c(seq(round(.min.new, 3), min(all.mus) - 1e-3, 1e-3), all.mus)
+    }else{
+      B1mats <- setNames(replicate(3, lambda.mat[0,], simplify = F),
+                         c('lambda', 'logZ', 'V'))
+    }
+    num.new <- unique(do.call(rbind, lapply(B1mats, dim))[,1])
+    if(verbose) cat(sprintf('%d new mu values < old mu.\n', num.new))
+      
+    if(round(.max.new, 3) > max(.max, 3)){
+      B2mats <- gen_all_mats(round(.max, 3) + 1e-3, round(.max.new, 3), nu.vec, summax)
+      all.mus <- c(all.mus, seq(max(all.mus) + 1e-3, round(.max.new, 3), 1e-3))
+    }else{
+      B2mats <- setNames(replicate(3, lambda.mat[0,], simplify = F),
+                         c('lambda', 'logZ', 'V'))
+    }
+    num.new <- unique(do.call(rbind, lapply(B2mats, dim))[,1])
+    if(verbose) cat(sprintf('%d new mu values > old mu.\n', num.new))
     
-    # Calculate \lambda, logZ and V at possible new nu values.
-    if(verbose) start.grids <- proc.time()[3]
-    lambda.new.nu <- structure(gen_lambda_mat(mu_lower = .min, mu_upper = .max,
-                                              nus = nu.vec, summax = summax),
-                               dimnames = list(as.character(new.mus),
-                                               as.character(nu.vec)))
+    end.grids <- proc.time()[3]
     
-    logZ.new.nu <- structure(gen_logZ_mat(mu_lower = .min, mu_upper = .max,
-                                          nus = nu.vec, lambdamat = lambda.new.nu, summax = summax),
-                             dimnames = list(as.character(new.mus),
-                                             as.character(nu.vec)))
-    
-    V.new.nu <- structure(gen_V_mat(mu_lower = .min, mu_upper = .max,
-                                    nus = nu.vec, lambdamat = lambda.new.nu, logZmat = logZ.new.nu, summax = summax),
-                          dimnames = list(as.character(new.mus),
-                                          as.character(nu.vec)))
-    
-    # Fit these into the lambda grid
-    new.order <- order(as.numeric(dimnames(lambda.new.nu)[[2]]))
-    lambda.mat <- lambda.new.nu[,new.order,drop=F] # reorder columns to be in ascending \nu values.
-    # logZ
-    logZ.mat <- logZ.new.nu[,new.order,drop=F]
-    # V
-    V.mat <- V.new.nu[,new.order,drop=F]
-    # Update all.mus and all.nus
-    all.mus <- new.mus; nu.vec <- nu.vec
-    rm(lambda.new.nu, logZ.new.nu, V.new.nu, mm, nn, new.mus) # large data objects
+    #' Create new matrices ------------------------------------------------
+    lambda.mat.new <- rbind(B1mats$lambda,
+                            cbind(cbind(Amats$lambda, lambda.mat), Cmats$lambda),
+                            B2mats$lambda)
+    logZ.mat.new  <- rbind(B1mats$logZ,
+                           cbind(cbind(Amats$logZ, logZ.mat), Cmats$logZ),
+                           B2mats$logZ)
+    V.mat.new  <- rbind(B1mats$V,
+                        cbind(cbind(Amats$V, V.mat), Cmats$V),
+                        B2mats$V)
     
     if(verbose){
-      end.grids <- proc.time()[3]
       d <- dim(lambda.mat)
-      cat(sprintf("Iteration %d: %d x %d lambda, logZ and V grids obtained in %.3f seconds.\n", iter + 1, d[1], d[2], round(end.grids - start.grids, 3)))
+      if(all(dim(lambda.mat.new) == dim(lambda.mat))) 
+        cat("No change from previous iteration's matrices!\n\n")
+      else
+        cat(sprintf("Iteration %d: %d x %d lambda, logZ and V grids obtained in %.3f seconds.\n\n", iter + 1, d[1], d[2], round(end.grids - start.grids, 3)))
     }
+    grid.times <- rbind(grid.times, c(iter + 1, end.grids - start.grids))
     
+    rm(Amats, B1mats, B2mats, Cmats) # (potentially) large data objects.
 
-    #' Set new estimates as current
+    #' Update parameter estimates, matrices, etc...
+    # Parameters
     b <- update$b
     D <- update$D; beta <- update$beta; delta <- update$delta
     gamma <- update$gamma; zeta <- update$zeta
     l0 <- update$l0; l0u <- update$l0u; l0i <- update$l0i
     iter <- iter + 1
-    Omega <- list(D=D, beta = beta, delta = delta, gamma = gamma, zeta = zeta)
+    Omega <- list(D = D, beta = beta, delta = delta, gamma = gamma, zeta = zeta)
     params <- params.new
+    
+    # Matrix stuff
+    # {all.mus, nu.vec} is done in creation of {A,B,C} matrices.
+    .min <- .min.new; .max <- .max.new
+    lambda.mat <- lambda.mat.new; logZ.mat <- logZ.mat.new; V.mat <- V.mat.new
+    rm(lambda.mat.new, logZ.mat.new, V.mat.new)
+    
+    # This iteration's time.
     step.times[iter] <- update$t # Store timings, as this could be interesting(?)
   }
   if(debug) DEBUG.Omega <<- Omega
   EMend <- proc.time()[3]
+  EMtime <- round(EMend - EMstart, 3)
   out <- list(coeffs = Omega,
-              EMtime = round(EMend - EMstart, 3),
               iter = iter)
   modelInfo <- list(
     forms = formulas,
@@ -434,6 +465,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   out$modelInfo <- modelInfo
   out$hazard <- cbind(ft = sv$ft, haz = l0, nev = sv$nev)
   out$stepmat <- cbind(iter = 1:iter, time = step.times)
+  out$gridtimes <- grid.times
   
   if(post.process){
     message('\nCalculating SEs...')
@@ -446,7 +478,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
             S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
             gamma = gamma, zeta = zeta, 
             lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, 
-            all_mus = all.mus, all_nus = round(nu.vec, 3),
+            all_mus = all.mus, all_nus = nu.vec,
             summax = summax, method = 'BFGS')$par
     }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
     l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
@@ -456,7 +488,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
       solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
                               S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
                               gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, 
-                              all_mus = all.mus, all_nus = round(nu.vec, 3), summax = summax, eps = .001))
+                              all_mus = all.mus, all_nus = nu.vec, summax = summax, eps = .001))
     }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
     l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
   
@@ -470,13 +502,21 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
     out$SE <- sqrt(diag(I.inv))
     out$vcov <- I
     out$RE <- do.call(rbind, b)
-    out$postprocess.time <- round(proc.time()[3]-start.time.p, 2)
+    postprocess.time <- round(proc.time()[3]-start.time.p, 2)
     
     #' Calculate the log-likelihood.
     # Timing done separately as EMtime + postprocess.time is for EM + SEs.
     #out$logLik <- log.lik(Omega, dmats, b, surv, sv, l0u, l0i, summax)
     #out$lltime <- round(proc.time()[3] - start.time, 2) - out$postprocess.time
   }
-  out$comp.time = round(proc.time()[3]-start.time, 3)
+  comp.time <-  round(proc.time()[3]-start.time, 3)
+  
+  out$elapsed.time <- c(`delta optimisation` = if(is.null(delta.init)) unname(delta.inits.raw$time) else NULL,
+                        `re-maximisation` = if(re.maximise) unname(remaximisation.time) else NULL,
+                        `startup time` = unname(startup.time),
+                        `EM time` = unname(EMtime),
+                        `post processing` = if(post.process) unname(postprocess.time) else NULL,
+                        `Total computation time` = unname(comp.time))
+  
   out
 }

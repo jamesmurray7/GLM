@@ -15,7 +15,7 @@ long.formula <- Y~time+cont+bin+(1|id)
 surv.formula <- Surv(survtime, status) ~ bin
 disp.formula <- ~1
 
-fit <- EM(long.formula, disp.formula, surv.formula, data, summax = 50, # if auto.summax doesn't work, then a summax of 50 should suffice.
+fit <- EM(long.formula, disp.formula, surv.formula, data, summax = 50, 
           control = list(verbose = T, auto.summax = F, tol = 1e-2, gh.nodes = 3, debug = T))
 
 plot.stepmat(fit)
@@ -39,7 +39,15 @@ long.formula <- Y~time+cont+bin+(1|id)
 surv.formula <- Surv(survtime, status) ~ bin
 disp.formula <- ~1
 
-fit <- EM(long.formula, disp.formula, surv.formula, data, summax = 100, # if auto.summax doesn't work, then a summax of 50 should suffice.
-          control = list(verbose = T, auto.summax = F, tol = 1e-2, gh.nodes = 3, debug = F, net = 2))
-fit$comp.time
+fit <- EM(long.formula, disp.formula, surv.formula, data, summax = 100,
+          control = list(verbose = T))
+fit$elapsed
 plot.stepmat(fit)
+plot.grid.and.step(fit)
+
+# Let first grids be created on different truncation amount.
+fit2 <- EM(long.formula, disp.formula, surv.formula, data, summax = 100,
+            control = list(verbose = T), grid.summax = 'a')
+fit2$elapsed
+plot.stepmat(fit2)
+plot.grid.and.step(fit2)
