@@ -34,21 +34,20 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
   l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
 
-
   Sigma <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
     solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
                             S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
                             gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, 
-                            all_mus = all.mus, all_nus = round(nu.vec, 2), summax = summax, eps = .001))
+                            all_mus = all.mus, all_nus = round(nu.vec, 2), summax = summax, eps = 1e-3))
   }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
   l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
   
   if(debug){DEBUG.b.hat <<- b.hat; DEBUG.Sigma <<- Sigma}
   
   check <- sapply(Sigma, det)
-  if(any(check < 0)){
-    message('Some non pos def Sigma...')
-    ind <- which(check<0)
+  if(any(check < 0 | is.nan(check))){
+    message('Some non pos-def or NaN Sigma...')
+    ind <- which(check < 0 | is.nan(check))
     for(i in seq_along(ind)){
       Sigma[[ind[i]]] <- matrix(0, length(b.hat[[ind[i]]]), length(b.hat[[ind[i]]]))
     }
@@ -155,7 +154,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
 }
 
 EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, post.process = T, 
-               control = list(), disp.control = list(),  delta.init = NULL, grid.summax = 'same'){
+               control = list(), disp.control = list(),  delta.init = NULL, grid.summax = 'same', return.matrices = F){
   start.time <- proc.time()[3]
     
   #' Parsing formula objects ----
@@ -325,10 +324,11 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
     names(params.new) <- names(params)
     
     # Convergence criteria + print (if wanted).
-    diff <- difference(params, params.new, conv)
+    diffs <- difference(params, params.new, conv)
+    diff <- max(diffs)
     if(verbose){
       print(sapply(params.new, round, 4))
-      message("Iteration ", iter + 1, ' maximum ', conv, ' difference: ', round(diff, 4))
+      message("Iteration ", iter + 1, ' maximum ', conv, ' difference: ', round(diff, 4), ' for parameter ', names(params.new)[which.max(diffs)])
       message("Largest RE relative difference: ", round(max(difference(do.call(cbind, update$b), do.call(cbind, b), conv)), 4))
     }
     
@@ -345,7 +345,6 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
     
     #' Define new nus ----
     update.nu <- exp(allG %*% update$delta)
-    
     
     #' Work out A/B1/B2/C matrices ----
     start.grids <- proc.time()[3]
@@ -390,20 +389,32 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
 
     #' Elements calculated at new mu values at old values of nu.
     if(round(.min.new, 3) < round(.min, 3)){
-      B1mats <- gen_all_mats(round(.min.new, 3), round(.min, 3) - 1e-3, nu.vec, summax)
-      all.mus <- c(seq(round(.min.new, 3), min(all.mus) - 1e-3, 1e-3), all.mus)
+      if(no.diff(round(.min.new, 3), round(.min, 3) - 1e-3)){ # Coding for special case where new element is one less than existing min.
+        B1mats <- gen_all_mats(round(.min.new, 3), round(.min, 3), nu.vec, summax) 
+        all.mus <- c(round(.min.new, 3), all.mus)
+      }else{
+        B1mats <- gen_all_mats(round(.min.new, 3), min(all.mus) - 1e-3, nu.vec, summax)
+        all.mus <- c(seq(round(.min.new, 3), min(all.mus) - 1e-3, 1e-3), all.mus)
+      }
+      .min <- .min.new
     }else{
-      B1mats <- setNames(replicate(3, lambda.mat[0,], simplify = F),
+      B1mats <- setNames(replicate(3, matrix(0, nr = 0, nc = length(nu.vec)), simplify = F),
                          c('lambda', 'logZ', 'V'))
     }
     num.new <- unique(do.call(rbind, lapply(B1mats, dim))[,1])
     if(verbose) cat(sprintf('%d new mu values < old mu.\n', num.new))
       
-    if(round(.max.new, 3) > max(.max, 3)){
-      B2mats <- gen_all_mats(round(.max, 3) + 1e-3, round(.max.new, 3), nu.vec, summax)
-      all.mus <- c(all.mus, seq(max(all.mus) + 1e-3, round(.max.new, 3), 1e-3))
+    if(round(.max.new, 3) > round(.max, 3)){ 
+      if(no.diff(round(.max.new, 3), round(.max, 3) + 1e-3)){ # Coding for special case where new element is one more than existing max.
+        B2mats <- gen_all_mats(round(.max, 3), round(.max.new, 3), nu.vec, summax)
+        all.mus <- c(all.mus, round(.max.new, 3))
+      }else{
+        B2mats <- gen_all_mats(max(all.mus) + 1e-3, round(.max.new, 3), nu.vec, summax)
+        all.mus <- c(all.mus, seq(max(all.mus) + 1e-3, round(.max.new, 3), 1e-3))
+      }
+      .max <- .max.new
     }else{
-      B2mats <- setNames(replicate(3, lambda.mat[0,], simplify = F),
+      B2mats <- setNames(replicate(3, matrix(0, nr = 0, nc = length(nu.vec)), simplify = F),
                          c('lambda', 'logZ', 'V'))
     }
     num.new <- unique(do.call(rbind, lapply(B2mats, dim))[,1])
@@ -423,7 +434,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
                         B2mats$V)
     
     if(verbose){
-      d <- dim(lambda.mat)
+      d <- dim(lambda.mat.new)
       if(all(dim(lambda.mat.new) == dim(lambda.mat))) 
         cat("No change from previous iteration's matrices!\n\n")
       else
@@ -445,7 +456,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
     
     # Matrix stuff
     # {all.mus, nu.vec} is done in creation of {A,B,C} matrices.
-    .min <- .min.new; .max <- .max.new
+    # .min <- .min.new; .max <- .max.new
     lambda.mat <- lambda.mat.new; logZ.mat <- logZ.mat.new; V.mat <- V.mat.new
     rm(lambda.mat.new, logZ.mat.new, V.mat.new)
     
@@ -478,7 +489,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
             S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
             gamma = gamma, zeta = zeta, 
             lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, 
-            all_mus = all.mus, all_nus = nu.vec,
+            all_mus = all.mus, all_nus = round(nu.vec, 2),
             summax = summax, method = 'BFGS')$par
     }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
     l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
@@ -488,7 +499,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
       solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
                               S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
                               gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, 
-                              all_mus = all.mus, all_nus = nu.vec, summax = summax, eps = .001))
+                              all_mus = all.mus, all_nus = round(nu.vec, 2), summax = summax, eps = .001))
     }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
     l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
   
@@ -517,6 +528,9 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
                         `EM time` = unname(EMtime),
                         `post processing` = if(post.process) unname(postprocess.time) else NULL,
                         `Total computation time` = unname(comp.time))
+  
+  if(return.matrices)
+    out$final.matrices <- list(`lambda` = lambda.mat, `logZ` = logZ.mat, `V` = V.mat)
   
   out
 }

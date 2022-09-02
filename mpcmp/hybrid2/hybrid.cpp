@@ -19,11 +19,30 @@ vec round_thousandth_vec(vec& x){
   return floor(x*1000. + 0.50)/1000.;
 }
 
+// vec generate_mus(double lower, double upper){
+//   // vec out = regspace(round_thousandth_dbl(lower), 1e-3, round_thousandth_dbl(upper) + 1e-3); // +1e-3 simply ensuring maximum value is included.
+//   vec out = regspace(lower, 1e-3, upper);
+//   return Rcpp::round(as<Rcpp::NumericVector>(wrap(out)), 3);
+// }
+
 // [[Rcpp::export]]
-vec generate_mus(double lower, double upper){
-  // vec out = regspace(round_thousandth_dbl(lower), 1e-3, round_thousandth_dbl(upper) + 1e-3); // +1e-3 simply ensuring maximum value is included.
-  vec out = regspace(lower, 1e-3, upper);
-  return Rcpp::round(as<Rcpp::NumericVector>(wrap(out)), 3);
+vec generate_mus(double start, double end){
+  double delta = 1e-3;
+  double start_round = round_thousandth_dbl(start), end_round = round_thousandth_dbl(end);
+  // M = floor((end-start)/delta)
+  int M = std::floor((end_round - start_round) / delta);
+  // Rcout << "I think there will be ..." << M << " elements." << std::endl;
+  double final_val = round_thousandth_dbl(start_round + (double)M * delta);
+  // Rcout << "I think final value will be ..." << final_val << std::endl;
+  
+  // Ensure that the last value is included in the output vector.
+  NumericVector out = as<Rcpp::NumericVector>(wrap(regspace(start_round, 1e-3, end_round)));
+  if(final_val < end_round){
+    // Rcout << "I think that " << final_val << " < " << end_round << std::endl;
+    out.push_back(end);
+  }
+  
+  return Rcpp::round(out, 3);
 }
 
 // Normalising constants, Z --------------------------------------------

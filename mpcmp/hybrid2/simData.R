@@ -7,7 +7,7 @@
 #' #######
 # rm(list=ls())
 # old.ls <- ls()
-# source('mpcmp-copy/mpcmp-copy.R')
+source('../mpcmp-copy/mpcmp-copy.R')
 # to.remove <- setdiff(ls(), old.ls)
 
 simData_joint <- function(n = 250, ntms = 10, summax = 100,  fup = 5,
