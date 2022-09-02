@@ -1,8 +1,7 @@
 #' Copies from Thomas Fung's mpcmp package.
-#' These are copied as tha package is not available for my version of R
-library(Rcpp)
-library(RcppArmadillo)
-cppFunction('NumericVector logZ_c(NumericVector log_lambda, NumericVector nu, int summax) {
+#' These are copied as the package is not available for my version of R
+
+cppFunction('NumericVector logZ_c_mpcmpcopy(NumericVector log_lambda, NumericVector nu, int summax) {
   // Control loop
   // int maxiter = 1e4;
   double log_epsilon = std::log(1e-10);
