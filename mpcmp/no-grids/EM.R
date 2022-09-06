@@ -16,7 +16,7 @@ source('inits.R')
 vech <- function(x) x[lower.tri(x, T)]
 
 EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
-                     sv, w, v, n, m, summax, debug){
+                     sv, w, v, n, m, summax, debug, optim.control){
   s <- proc.time()[3]
   #' Unpack Omega, the parameter vector
   D <- Omega$D; beta <- Omega$beta; delta <- Omega$delta; gamma <- Omega$gamma; zeta <- Omega$zeta
@@ -26,10 +26,10 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
     optim(b, joint_density, joint_density_ddb,
           X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
           S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-          gamma = gamma, zeta = zeta, summax = summax, method = 'BFGS', control = list(reltol=1e-2))$par
+          gamma = gamma, zeta = zeta, summax = summax, method = 'BFGS', control = optim.control)$par
   }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
   l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
-
+  
   Sigma <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
     solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
                             S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
@@ -39,9 +39,9 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
   if(debug){DEBUG.b.hat <<- b.hat; DEBUG.Sigma <<- Sigma}
   
   check <- sapply(Sigma, det)
-  if(any(check < 0)){
-    message('Some non pos def Sigma...')
-    ind <- which(check<0)
+  if(any(check < 0 | is.nan(check))){
+    message('Some non pos-def or NaN Sigma...')
+    ind <- which(check < 0 | is.nan(check))
     for(i in seq_along(ind)){
       Sigma[[ind[i]]] <- as.matrix(Matrix::nearPD(Sigma[[ind[i]]], corr = T)$mat)
     }
@@ -128,7 +128,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
 }
 
 EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, post.process = T, 
-               control = list(), disp.control = list(), delta.init = NULL){
+               control = list(), disp.control = list(), delta.init = NULL, optim.control = list()){
   start.time <- proc.time()[3]
   
   #' Parsing formula objects ----
@@ -217,13 +217,14 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   #' Re-maximise Marginal wrt b for CMP rather than Poisson (obtained thus far)
   if(re.maximise){
     s <- proc.time()[3]
-    if(verbose) cat('Re-maximising in light of new delta estimate.\n')
+    if(verbose) cat('Re-maximising in light of new delta estimate.')
     b <- mapply(function(b, X, Y, lY, Z, G){
       optim(b, marginal_Y, marginal_Y_db,
             X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, 
             D = D,summax = summax, method = 'BFGS')$par
     }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, SIMPLIFY = F)
     remaximisation.time <- round(proc.time()[3] - s, 3)
+    if(verbose) cat(sprintf(", this took %.2f seconds.\n", remaximisation.time))
   }
   startup.time <- round(proc.time()[3] - start.time, 3)
   #' Begin EM ----
@@ -233,7 +234,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   if(verbose) message('Starting EM algorithm.')
   while(diff > tol && iter < maxit){
     update <- EMupdate(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
-                       sv, w, v, n, m, summax, debug)
+                       sv, w, v, n, m, summax, debug, optim.control)
     if(debug) DEBUG.update <<- update
     params.new <- c(vech(update$D), update$beta, update$delta, update$gamma, update$zeta)
     names(params.new) <- names(params)
