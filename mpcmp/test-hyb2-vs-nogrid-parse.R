@@ -1,14 +1,14 @@
 # Load --------------------------------------------------------------------
 rm(list=ls())
-load('/data/c0061461/hybrid2_fits.RData')
-load('/data/c0061461/no-grids_fits.RData')
+load('/data/c0061461/hybrid2_fits4.RData')
+load('/data/c0061461/no-grids_fits4.RData')
 
 # Check for null fits -----------------------------------------------------
 to.remove <- unique(c(which(unlist(lapply(fits1, is.null))), which(unlist(lapply(fits2, is.null)))))
 # Can't compare if one fit doesn't exist!
 
 # Function to extract estimates of interest -------------------------------
-targets <- c(.25, 2, -0.1, 0.1, -0.2, 0.8, 0.6, -0.2)
+targets <- c(.25, 2, -0.1, 0.1, -0.2, 0.4, 0.6, -0.2)
 extract.model.estimates <- function(fit){
   if(is.null(fit)) return(NA)
   
@@ -59,9 +59,9 @@ ggplot(all.ests, aes(x = estimate, colour = method)) +
 # Coverages...
 all.CPs <- lapply(setdiff(1:50, to.remove), function(i){
   a <- data.frame(estimate = as.numeric(f1[[i]]$CP), target = targets, method = 'Hybrid grid', i = i)
-  a$parameter <- names(f1[[1]]$coeffs)
+  a$parameter <- names(f1[[i]]$coeffs)
   b <- data.frame(estimate = as.numeric(f2[[i]]$CP), target = targets, method = 'No grid', i = i)
-  b$parameter <- names(f1[[1]]$coeffs)
+  b$parameter <- names(f1[[i]]$coeffs)
   rbind(a, b)
 })
 
@@ -82,7 +82,7 @@ comp.times <- lapply(setdiff(1:50, to.remove), function(i){
 })
 comp.times <- do.call(rbind, comp.times)
 plot(comp.times[,1], comp.times[,2], pch = 20, ylab = 'Hybrid', xlab = 'No grids',
-     main = "Total computation time for overdispersed data")
+     main = "Total computation time for light underdispersed data")
 abline(0, 1, col = 'red', ) # So hybrid nearly always slower.
 
 # What about EM times?
@@ -93,7 +93,7 @@ EM.times <- lapply(setdiff(1:50, to.remove), function(i){
 })
 EM.times <- do.call(rbind, EM.times)
 plot(EM.times[,1], EM.times[,2], pch = 20, ylab = 'Hybrid', xlab = 'No grids',
-     main = "EM time for overdispersed data")
+     main = "EM time for light underdispersed data")
 abline(0, 1, col = 'red', ) # Again, hybrid nearly always slower.
 
 # Is this simply because too few iterations occur?
@@ -104,3 +104,4 @@ iters <- lapply(setdiff(1:50, to.remove), function(i){
 iters <- do.call(rbind, iters)
 iters[,1] > iters[,2]
 EM.times[iters[,1] > iters[,2],]
+EM.times[EM.times[,2] < EM.times[,1],]

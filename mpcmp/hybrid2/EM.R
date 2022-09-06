@@ -389,11 +389,12 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
 
     #' Elements calculated at new mu values at old values of nu.
     if(round(.min.new, 3) < round(.min, 3)){
-      if(no.diff(round(.min.new, 3), round(.min, 3) - 1e-3)){ # Coding for special case where new element is one less than existing min.
-        B1mats <- gen_all_mats(round(.min.new, 3), round(.min, 3), nu.vec, summax) 
+      # If no difference between .min.new and (.min-0.001), then only need to generate matrices for .min.new.
+      if(no.diff(round(.min.new, 3), round(.min, 3) - 1e-3)){
+        B1mats <- gen_all_mats(round(.min.new, 3), round(.min.new, 3), nu.vec, summax)
         all.mus <- c(round(.min.new, 3), all.mus)
       }else{
-        B1mats <- gen_all_mats(round(.min.new, 3), min(all.mus) - 1e-3, nu.vec, summax)
+        B1mats <- gen_all_mats(round(.min.new, 3), min(all.mus) -1e-3, nu.vec, summax)
         all.mus <- c(seq(round(.min.new, 3), min(all.mus) - 1e-3, 1e-3), all.mus)
       }
       .min <- .min.new
@@ -474,6 +475,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   )
   if(auto.summax) modelInfo$summax.type <- 'automatic' else modelInfo$summax.type <- 'manual'
   out$modelInfo <- modelInfo
+  if(is.null(delta.init)) out$modelInfo$delta.inits <- delta.inits.raw
   out$hazard <- cbind(ft = sv$ft, haz = l0, nev = sv$nev)
   out$stepmat <- cbind(iter = 1:iter, time = step.times)
   out$gridtimes <- grid.times

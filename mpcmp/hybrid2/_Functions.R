@@ -354,15 +354,13 @@ log.lik <- function(coeffs, dmats, b, surv, sv, l0u, l0i, summax){
 
 # Matrix generation (largely for update steps) ----------------------------
 gen_all_mats <- function(min.mu, max.mu, nu.vec, summax){
+  
   this.new.mu  <- generate_mus(min.mu, max.mu)
   
   this.new.lam <- structure(gen_lambda_mat(mu_lower = min.mu, mu_upper = max.mu,
                                            nus = nu.vec, summax = summax),
                             dimnames = list(as.character(this.new.mu),
                                             as.character(nu.vec)))
-  
-  
-  
   this.new.lgZ <- structure(gen_logZ_mat(mu_lower = min.mu, mu_upper = max.mu, nus = nu.vec, 
                                          lambdamat = this.new.lam, summax = summax),
                              dimnames = list(as.character(this.new.mu),
@@ -386,7 +384,7 @@ gen_all_mats <- function(min.mu, max.mu, nu.vec, summax){
 .safevar <- function(x) ifelse(length(x)>1, var(x, na.rm =T), 1)
 .summax <- function(x) ceiling(max(x) + 20 * sqrt(.safevar(x)))
 .any <- function(x, f) any(f(x))
-no.diff <- function(x,y) x - y == 0
+no.diff <- function(x,y) (x - y) < .Machine$double.eps^0.5
 
 plot.stepmat <- function(fit){
   emtime <- fit$elapsed.time
