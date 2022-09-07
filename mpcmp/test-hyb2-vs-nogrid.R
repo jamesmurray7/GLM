@@ -28,7 +28,7 @@ for(i in 1:N){
   utils::setTxtProgressBar(pb, i)
 }
 
-save(fits1, file = '/data/c0061461/hybrid2_fits4.RData')
+save(fits1, file = '/data/c0061461/hybrid2_fits.RData')
 
 
 # no-grids ----------------------------------------------------------------
@@ -36,7 +36,7 @@ rm(list=ls())
 N <- 50
 setwd('../no-grids')
 source('EM.R')
-load('/data/c0061461/a_bunch_of_tests_4.RData')
+load('/data/c0061461/a_bunch_of_tests.RData')
 long.formula <- Y~time+cont+bin+(1|id)
 surv.formula <- Surv(survtime, status) ~ bin
 disp.formula <- ~1
@@ -52,4 +52,4 @@ for(i in 1:N){
   utils::setTxtProgressBar(pb, i)
 }
 
-save(fits2, file = '/data/c0061461/no-grids_fits4.RData')
+save(fits2, file = '/data/c0061461/no-grids_fits.RData')
