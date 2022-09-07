@@ -1,14 +1,14 @@
 # Load --------------------------------------------------------------------
 rm(list=ls())
-load('/data/c0061461/hybrid2_fits4.RData')
-load('/data/c0061461/no-grids_fits4.RData')
+load('/data/c0061461/hybrid2_fits.RData')
+load('/data/c0061461/no-grids_fits.RData')
 
 # Check for null fits -----------------------------------------------------
 to.remove <- unique(c(which(unlist(lapply(fits1, is.null))), which(unlist(lapply(fits2, is.null)))))
 # Can't compare if one fit doesn't exist!
 
 # Function to extract estimates of interest -------------------------------
-targets <- c(.25, 2, -0.1, 0.1, -0.2, 0.4, 0.6, -0.2)
+targets <- c(.25, 2, -0.1, 0.1, -0.2, 0.8, 0.6, -0.2)
 extract.model.estimates <- function(fit){
   if(is.null(fit)) return(NA)
   
@@ -48,6 +48,7 @@ all.ests <- lapply(setdiff(1:50, to.remove), function(i){
 
 
 all.ests <- do.call(rbind, all.ests)
+
 ggplot(all.ests, aes(x = estimate, colour = method)) + 
   geom_vline(aes(xintercept = target), col = 'black', lty = 5) + 
   geom_density(alpha = .5) + 
@@ -82,7 +83,7 @@ comp.times <- lapply(setdiff(1:50, to.remove), function(i){
 })
 comp.times <- do.call(rbind, comp.times)
 plot(comp.times[,1], comp.times[,2], pch = 20, ylab = 'Hybrid', xlab = 'No grids',
-     main = "Total computation time for light underdispersed data")
+     main = "Total computation time for underdispersed data")
 abline(0, 1, col = 'red', ) # So hybrid nearly always slower.
 
 # What about EM times?
@@ -99,9 +100,43 @@ abline(0, 1, col = 'red', ) # Again, hybrid nearly always slower.
 # Is this simply because too few iterations occur?
 iters <- lapply(setdiff(1:50, to.remove), function(i){
   f1 <- fits1[[i]]$iter; f2 <- fits2[[i]]$iter
-  c(`No grid` = f1, `Hybrid` = f2)
+  c(`No grid` = f2, `Hybrid` = f1)
 })
 iters <- do.call(rbind, iters)
 iters[,1] > iters[,2]
 EM.times[iters[,1] > iters[,2],]
 EM.times[EM.times[,2] < EM.times[,1],]
+
+same.iters <- iters[,1] == iters[,2]
+longer.hybr <- iters[,2] > iters[,1]
+longer.nogr <- iters[,1] > iters[,2]
+
+EM.times[same.iters,]
+EM.same <- as.data.frame(EM.times[same.iters,])
+EM.lh <- as.data.frame(EM.times[longer.hybr,])
+EM.ng <- as.data.frame(EM.times[longer.nogr,])
+plot(EM.same); abline(0,1)
+plot(EM.lh);   abline(0,1)
+plot(EM.ng);   abline(0,1)
+
+# Is there some `crossover` for non-identical iters?
+EM.diffs <- as.data.frame(EM.times[!same.iters,])
+EM.diffs <- cbind(diff.iters = iters[!same.iters, 'Hybrid'] - iters[!same.iters, 'No grid'], EM.diffs)
+plot(EM.diffs$diff.iters, EM.diffs$`Hybrid grid` - EM.diffs$`No grid`, pch= 20,
+     xlab = 'Hybrid - Nogrid iteration',
+     ylab = 'Hybrid - Nogrid elapsed time (s)')
+
+EM.diffs <- as.data.frame(EM.times)
+EM.diffs <- cbind(diff.iters = iters[, 'Hybrid'] - iters[, 'No grid'], EM.diffs)
+plot(EM.diffs$diff.iters, EM.diffs$`Hybrid grid` - EM.diffs$`No grid`, pch= 20,
+     xlab = 'Hybrid - Nogrid iteration',
+     ylab = 'Hybrid - Nogrid elapsed time (s)', main = 'EM times')
+abline(h = 0, lty = 5, col = 'lightblue')
+
+# Contrast w/ total computation times...
+comp.times <- as.data.frame(comp.times)
+comp.times <- cbind(diff.iters = iters[, 'Hybrid'] - iters[, 'No grid'], comp.times)
+plot(comp.times$diff.iters, comp.times$`Hybrid grid` - comp.times$`No grid`, pch= 20,
+     xlab = 'Hybrid - Nogrid iteration',
+     ylab = 'Hybrid - Nogrid elapsed time (s)', main = 'Total computation time')
+abline(h = 0, lty = 5, col = 'lightblue')
