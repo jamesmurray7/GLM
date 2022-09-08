@@ -422,4 +422,67 @@ plot.grid.and.step <- function(fit){
 }
 
 
+# Tabulate summary --------------------------------------------------------
+
+my.summary <- function(myfit, printD = F){
+  if(is.null(myfit$SE)) stop('Need to run EM with post.process = T')
+  qz <- qnorm(.975)
+  .to3dp <- function(x) round(x, 3)
+  # Model fit info
+  K <- 1
+  responses <- myfit$modelInfo$forms$response
+  families <- "mean parameterised Conway-Maxwell Poisson"
+  # Standard errors and parameter estimates.
+  SE <- myfit$SE
+  D <- myfit$co$D
+  betas <- myfit$co$beta
+  sigmas <- unlist(myfit$co$sigma)
+  gammas <- myfit$co$gamma
+  delta <- myfit$co$delta
+  zetas <- myfit$co$zeta
+  
+  #' Random effects matrix
+  if(printD){
+    cat(paste0('Random effects variance-covariance matrix: \n'))
+    print(.to3dp(D))
+    cat('\n')
+  }
+  
+  beta <- setNames(c(betas), row.names(betas))
+  my <- c(beta, delta)
+  
+  rSE <- SE[grepl('^beta|^delta', names(SE))]
+  lb <- my - qz * rSE; ub <- my + qz * rSE
+  z <- my/rSE
+  p <- 2 * (pnorm(abs(z), lower.tail = F))
+  
+  cat(paste0(responses, ' (', families, ')\n'))
+  this.out <- setNames(data.frame(.to3dp(my), .to3dp(rSE), .to3dp(lb), .to3dp(ub), round(p, 3)),
+                       c('Estimate', 'SE', '2.5%', '97.5%', 'p-value'))
+  print(this.out)
+  cat('\n')
+  
+  # Longitudinal parts
+  
+  #' Survival
+  cat('Event-time sub-model: \n')
+  # Rename gammas?
+  survs <- c(zetas, gammas)
+  surv.SE <- SE[match(names(survs), names(SE))]
+  
+  lb <- survs - qz * surv.SE; ub <- survs + qz * surv.SE
+  z <- survs/surv.SE
+  p <- 2 * (pnorm(abs(z), lower.tail = F))
+  
+  surv.out <- setNames(data.frame(.to3dp(survs), .to3dp(surv.SE), .to3dp(lb), .to3dp(ub), round(p, 3)),
+                       c('Estimate', 'SE', '2.5%', '97.5%', 'p-value'))
+  print(surv.out)
+  
+  #' Elapsed times
+  cat('\nElapsed times as follows:\n')
+  print(.to3dp(myfit$elapsed.time))
+  invisible(1+1)
+}
+
+
 
