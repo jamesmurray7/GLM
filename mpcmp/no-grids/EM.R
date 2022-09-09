@@ -136,31 +136,20 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   surv <- parseCoxph(surv.formula, data)
   n <- surv$n
   
-  #' Initial conditions ----
+  #' Initial conditions --> Longitudinal... ----
   inits.long <- Longit.inits(long.formula, disp.formula, data)
-  inits.surv <- TimeVarCox(data, inits.long$b, surv$ph, formulas)
   
-  # Longitudinal parameters
+  #' Longitudinal parameters
   beta <- inits.long$beta.init
   D <- inits.long$D.init
   b <- lapply(1:n, function(i) inits.long$b[i, ])
   
-  # Survival parameters
-  zeta <- inits.surv$inits[match(colnames(surv$ph$x), names(inits.surv$inits))]
-  names(zeta) <- paste0('zeta_', names(zeta))
-  gamma <- inits.surv$inits[grepl('gamma', names(inits.surv$inits))]
-  
   #' Data objects ----
-  sv <- surv.mod(surv$ph, surv$survdata, formulas, inits.surv$l0.init)
   dmats <- createDataMatrices(data, formulas, disp.formula)
   X <- dmats$X; Y <- dmats$Y; Z <- dmats$Z # Longitudinal data matrices
   lY <- lapply(Y, lfactorial)
   G <- dmats$G                             # Dispersion data matrix
   m <- sapply(Y, length)
-  # survival
-  Fi <- sv$Fi; Fu <- sv$Fu; l0i <- sv$l0i; l0u <- sv$l0u; Delta <- surv$Delta 
-  l0 <- sv$l0
-  S <- sv$S; SS <- sv$SS
   
   #' Unpack control args ----
   if(!is.null(control$tol)) tol <- control$tol else tol <- 1e-2
@@ -202,22 +191,10 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
     delta <- setNames(delta.init, names(inits.long$delta.init))
   }
   
-  
-  #' Parameter vector and list ----
-  Omega <- list(D=D, beta = beta, delta = delta, gamma = gamma, zeta = zeta)
-  params <- c(setNames(vech(D), paste0('D[', apply(which(lower.tri(D, T), arr.ind = T), 1, paste, collapse = ','), ']')),
-              beta, delta, gamma, zeta)
-  
-  
-  if(debug){DEBUG.inits <<- params; DEBUG.dmats <<- dmats; DEBUG.sv <<- sv; DEBUG.surv <<- surv}
-  #' Gauss-hermite quadrature ----
-  GH <- statmod::gauss.quad.prob(.gh, 'normal', sigma = .sigma)
-  w <- GH$w; v <- GH$n
-  
   #' Re-maximise Marginal wrt b for CMP rather than Poisson (obtained thus far)
   if(re.maximise){
     s <- proc.time()[3]
-    if(verbose) cat('Re-maximising in light of new delta estimate.')
+    if(verbose) cat('Re-maximising in light of new delta estimate')
     b <- mapply(function(b, X, Y, lY, Z, G){
       optim(b, marginal_Y, marginal_Y_db,
             X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, 
@@ -226,6 +203,34 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
     remaximisation.time <- round(proc.time()[3] - s, 3)
     if(verbose) cat(sprintf(", this took %.2f seconds.\n", remaximisation.time))
   }
+   
+  #' Initial conditions --> survival ----
+  inits.surv <- TimeVarCox(data, do.call(rbind, b), surv$ph, formulas)
+  
+  # Survival data objects ...
+  sv <- surv.mod(surv$ph, surv$survdata, formulas, inits.surv$l0.init)
+  # survival
+  Fi <- sv$Fi; Fu <- sv$Fu; l0i <- sv$l0i; l0u <- sv$l0u; Delta <- surv$Delta 
+  l0 <- sv$l0
+  S <- sv$S; SS <- sv$SS
+  
+  # Survival parameters
+  zeta <- inits.surv$inits[match(colnames(surv$ph$x), names(inits.surv$inits))]
+  names(zeta) <- paste0('zeta_', names(zeta))
+  gamma <- inits.surv$inits[grepl('gamma', names(inits.surv$inits))]
+  
+  #' Parameter vector and list ----
+  Omega <- list(D=D, beta = beta, delta = delta, gamma = gamma, zeta = zeta)
+  params <- c(setNames(vech(D), paste0('D[', apply(which(lower.tri(D, T), arr.ind = T), 1, paste, collapse = ','), ']')),
+              beta, delta, gamma, zeta)
+  
+  #' Gauss-hermite quadrature ----
+  GH <- statmod::gauss.quad.prob(.gh, 'normal', sigma = .sigma)
+  w <- GH$w; v <- GH$n
+  
+  
+  if(debug){DEBUG.inits <<- params; DEBUG.dmats <<- dmats; DEBUG.sv <<- sv; DEBUG.surv <<- surv}
+  
   startup.time <- round(proc.time()[3] - start.time, 3)
   #' Begin EM ----
   diff <- 100; iter <- 0
