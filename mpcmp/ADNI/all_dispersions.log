@@ -1,0 +1,49 @@
+ADAS11 ----
+
+5 median profile length, mean/var summary:
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+ 0.1066  0.8137  1.5000  2.9339  2.7857 43.0000 
+Making plot...
+
+ADAS13 ----
+
+5 median profile length, mean/var summary:
+    Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+ 0.09884  0.88642  1.44629  3.28044  3.02300 67.00000 
+Making plot...
+
+MMSE ----
+
+5 median profile length, mean/var summary:
+    Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+  0.2998   5.6087  11.7402  22.6095  23.5000 329.0000 
+Making plot...
+
+RAVLT.immediate ----
+
+5 median profile length, mean/var summary:
+    Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+ 0.07101  0.85430  1.62032  4.17394  3.30303 82.00000 
+Making plot...
+
+RAVLT.learning ----
+
+5 median profile length, mean/var summary:
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+ 0.1579  0.7656  1.2225  1.9393  2.1844 31.0000 
+Making plot...
+
+RAVLT.forgetting ----
+
+5 median profile length, mean/var summary:
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+ 0.1111  1.0870  2.1111  3.7127  4.2500 39.0000 
+Making plot...
+
+FAQ ----
+
+5 median profile length, mean/var summary:
+    Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+ 0.05263  0.33181  0.66279  1.60898  1.33333 32.00000 
+Making plot...
+
