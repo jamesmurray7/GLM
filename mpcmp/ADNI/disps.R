@@ -2,7 +2,7 @@
 #' Getting handles dispersions of ADNI variables.
 #' #########
 rm(list=ls())
-load('../../PBC-case-study/ADNI.RData')
+load('../../PBC-case-study/ADNI.RData') # Same across Linux/Mac(!)
 source('EM.R')
 library(dplyr)
 # Define a function that 'resets' the data --------------------------------
@@ -55,7 +55,7 @@ sink()
 # Function to find delta... -----------------------------------------------
 disp.formula <- ~1
 surv.formula <- Surv(survtime, status) ~ APOE4
-tempfn <- function(response, RE = '(1 + time|id)'){
+tempfn <- function(response, RE = '(1 + time|id)', interval = c(-2, 2)){
   data <- newadni(response)
   long.formula <- as.formula(paste0(response, ' ~ ', paste('time','age_scaled','APOE4', sep = '+'), ' + ', RE))
   formulas <- parseFormula(long.formula)
@@ -84,7 +84,8 @@ tempfn <- function(response, RE = '(1 + time|id)'){
   summax <- max(sapply(dmats$Y, max)) * 2
   
   message('Doing optim...')
-  optim.inits <- suppressMessages(get.delta.inits(dmats, beta, b, 'optim', summax, verbose = T, min.profile.length = 1))
+  optim.inits <- suppressMessages(get.delta.inits(dmats, beta, b, 'optim', summax, verbose = T, min.profile.length = 1,
+                                                  interval = interval, percentile = c(.4,.6)))
   
   optim.inits$summax <- summax
   return(optim.inits)
@@ -93,7 +94,7 @@ tempfn <- function(response, RE = '(1 + time|id)'){
 # Command -----------------|  gen.summary | delta.optim |#   
 tempfn('ADAS11')          #|        1.500 |   0.34/0.42 |#
 tempfn('ADAS13')          #|        1.446 |   0.31/0.39 |#
-tempfn('MMSE')            #|        11.74 |    -- NA -- |# (NOT STABLE // TMB also singular...) -> See intercept only fit below...
+# MMSE requires intercept-only RE structure; done below...
 tempfn('RAVLT.immediate') #|        1.620 |   0.37/0.46 |#
 tempfn('RAVLT.learning')  #|        1.222 |   0.35/0.26 |#
 tempfn('RAVLT.forgetting')#|        2.111 |   0.88/0.64 |#
@@ -102,7 +103,53 @@ tempfn('FAQ')             #|        0.663 |  -0.31/0.45 |#
 #' Candidate measures may then be ADAS(..), RAVLT for underdispersed and FAQ for overdispersed.
 tempfn('MMSE', '(1|id)')  # Heavily underdispersed ...
                           # Might be worth expanding boundary conditions from [-2, 2] to [-6, 6] or something??
+tempfn('MMSE', RE = '(1|id)', interval = c(-5, 5))
+                          #|      11.742  |   2.43/2.50 |#
 
-# Try an EM fit to ADAS13?
-long.formula <- A
+
+# EM fits (hybrid first) --------------------------------------------------
+surv.formula <- Surv(survtime, status) ~ APOE4
+disp.formula <- ~ 1
+# ADAS11
+d <- newadni('ADAS11')
+long.formula <- ADAS11 ~ time + age_scaled + APOE4 + (1 + time|id)
+ADAS11.hybrid2 <- EM(long.formula, disp.formula, surv.formula,
+                     d, control = list(verbose = T), grid.summax = 'aaa')
+sink('../ADNI/ADAS11_hybrid2.log')
+my.summary(ADAS11.hybrid2, T)
+sink()
+
+# ADAS13
+d <- newadni('ADAS13')
+long.formula <- ADAS13 ~ time + age_scaled + APOE4 + (1|id)
+ADAS13.hybrid2 <- EM(long.formula, disp.formula, surv.formula, disp.control = list(interval = c(-5, 5)),
+                     data = d, control = list(verbose = T), grid.summax = 'a',
+                     optimiser = 'bobyqa')
+# Issue with betas...
+sink('../ADNI/ADAS13_hybrid2.log')
+my.summary(ADAS13.hybrid2, T)
+sink()
+
+# MMSE
+d <- newadni('MMSE') # Erroring... random effects are absolutely tiny.
+long.formula <- MMSE ~ time + age_scaled + APOE4 + (1|id)
+MMSE.hybrid2 <- EM(long.formula, disp.formula, surv.formula, d, 
+                   control = list(verbose = T), 
+                   disp.control = list(interval = c(-2, 2)), 
+                   grid.summax = 'same')
+
+# RAVLT.immediate
+d <- newadni('RAVLT.immediate')
+long.formula <- RAVLT.immediate ~ time + age_scaled + APOE4 + (1|id)
+RAVLT.immediate.hybrid2 <- EM(
+  long.formula, disp.formula, surv.formula, d,
+  control = list(verbose = T), grid.summax = 'a', optimiser = 'bobyqa'
+)
+
+# EM fits (No-grids) ------------------------------------------------------
+
+# Poisson fits (a la Multi-test) ------------------------------------------
+
+
+
 
