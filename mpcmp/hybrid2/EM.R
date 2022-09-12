@@ -17,30 +17,17 @@ source('vcov.R')
 vech <- function(x) x[lower.tri(x, T)]
 
 EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
-                     sv, w, v, num, m, summax, debug, all.mus, nu.vec, lambda.mat, logZ.mat, V.mat){
+                     sv, w, v, num, m, summax, debug, all.mus, nu.vec, lambda.mat, logZ.mat, V.mat, optimiser){
   s <- proc.time()[3]
   #' Unpack Omega, the parameter vector
   D <- Omega$D; beta <- Omega$beta; delta <- Omega$delta; gamma <- Omega$gamma; zeta <- Omega$zeta
   
   #' Find b.hat and Sigma
-  b.hat <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
-    optim(b, joint_density, joint_density_ddb,
-          X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
-          S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-          gamma = gamma, zeta = zeta, 
-          lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, 
-          all_mus = all.mus, all_nus = round(nu.vec, 2),
-          summax = summax, method = 'BFGS')$par
-  }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
-  l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
-
-  Sigma <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
-    solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
-                            S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-                            gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, 
-                            all_mus = all.mus, all_nus = round(nu.vec, 2), summax = summax, eps = 1e-3))
-  }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
-  l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
+  b.update <- b.minimise(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta, Omega, 
+                         lambda.mat, logZ.mat, V.mat, 
+                         all.mus, nu.vec, summax, optimiser, 'joint_density')
+  b.hat <- b.update$b.hat
+  Sigma <- b.update$Sigma
   
   if(debug){DEBUG.b.hat <<- b.hat; DEBUG.Sigma <<- Sigma}
   
@@ -154,7 +141,8 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
 }
 
 EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, post.process = T, 
-               control = list(), disp.control = list(),  delta.init = NULL, grid.summax = 'same', return.matrices = F){
+               control = list(), disp.control = list(),  delta.init = NULL, grid.summax = 'same', return.matrices = F,
+               optimiser = 'bobyqa'){
   start.time <- proc.time()[3]
     
   #' Parsing formula objects ----
@@ -212,6 +200,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   if(!is.null(disp.control$re.maximise)) re.maximise <- disp.control$re.maximise else re.maximise <- T
   if(!is.null(disp.control$percentiles)) percentiles <- disp.control$percentiles else percentiles <- c(.4, .6)
   if(any(percentiles > 1) | length(percentiles) != 2) stop("Provide percentiles as c(lower, upper).")
+  if(!is.null(disp.control$interval)) interval <- disp.control$interval else interval <- c(-2, 2)
   
   if(auto.summax){
     summax.old <- summax
@@ -221,7 +210,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   
   # Initial conditon for delta
   if(is.null(delta.init)){
-    delta.inits.raw <- get.delta.inits(dmats, beta, b, delta.method, summax, verbose, min.profile.length, percentiles)  
+    delta.inits.raw <- get.delta.inits(dmats, beta, b, delta.method, summax, verbose, min.profile.length, percentiles, interval)  
     # Return the user-specified POINT estimate (Defaulting to cut + median)
     if(cut){
       initdelta <- if(what == 'mean') delta.inits.raw$mean.cut.estimate else delta.inits.raw$median.cut.estimate
@@ -252,12 +241,11 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   if(re.maximise){
     s <- proc.time()[3]
     if(verbose) cat('Re-maximising in light of new delta estimate')
-    b <- mapply(function(b, X, Y, lY, Z, G){
-      optim(b, marginal_Y, marginal_Y_db,
-            X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, 
-            D = D,summax = summax, method = 'BFGS')$par
-    }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, SIMPLIFY = F)
-    remaximisation.time <- round(proc.time()[3] - s, 3)
+    b <- b.minimise(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta, Omega, 
+                    lambda.mat = NULL, logZ.mat = NULL, V.mat = NULL, 
+                    all.mus = NULL, nu.vec = NULL,
+                    summax, optimiser, 'marginal')$b.hat
+    remaximisation.time <- proc.time()[3]-s
     if(verbose) cat(sprintf(', this took %.2f seconds.\n', remaximisation.time))
   }
   startup.time <- round(proc.time()[3] - start.time, 3)
@@ -307,7 +295,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   grid.times[1,] <- c(0, end.grids - start.grids)
   if(verbose){
     d <- dim(lambda.mat)
-    cat(sprintf("First %d x %d lambda, logZ and V grids calculated in %.3f seconds.\n\n", d[1], d[2], end.grids - start.grids))
+    cat(sprintf("First %d x %d lambda, logZ and V grids calculated in %.3f seconds on summax %d.\n\n", d[1], d[2], end.grids - start.grids, grid.summax))
   }
   
   #' Begin EM ----
@@ -317,7 +305,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   while(diff > tol && iter < maxit){
     update <- EMupdate(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
                        sv, w, v, num, m, summax, debug, all.mus, nu.vec,
-                       lambda.mat, logZ.mat, V.mat)
+                       lambda.mat, logZ.mat, V.mat, optimiser)
     
     if(debug) DEBUG.update <<- update
     params.new <- c(vech(update$D), update$beta, update$delta, update$gamma, update$zeta)
@@ -485,25 +473,11 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
     start.time.p <- proc.time()[3]
     #' Calculating \b and \Sigma at MLEs
     #' Find b.hat and Sigma
-    b.hat <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
-      optim(b, joint_density, joint_density_ddb,
-            X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
-            S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-            gamma = gamma, zeta = zeta, 
-            lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, 
-            all_mus = all.mus, all_nus = round(nu.vec, 2),
-            summax = summax, method = 'BFGS')$par
-    }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
-    l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
-    
-    
-    Sigma <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
-      solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
-                              S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-                              gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, 
-                              all_mus = all.mus, all_nus = round(nu.vec, 2), summax = summax, eps = .001))
-    }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
-    l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
+    b.update <- b.minimise(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta, Omega, 
+                           lambda.mat, logZ.mat, V.mat, 
+                           all.mus, nu.vec, summax, optimiser, 'joint_density')
+    b.hat <- b.update$b.hat
+    Sigma <- b.update$Sigma
   
     # The Information matrix
     I <- structure(vcov(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, num, summax,

@@ -66,29 +66,31 @@ determine.interval.nd <- function(Y, G, mu, summax){
   }))
 }
 
-delta.optim <- function(Y, G, mu, summax){
+delta.optim <- function(Y, G, mu, summax, interval){
   g <- ncol(G)
+  if(length(interval)!=2) stop("'interval' must be of length two only e.g. c(-2, 2).")
   if(g == 1){
     # .interval <- determine.interval(mu, summax)
     out <- tryCatch(optim(c(0), ff3, NULL,
                           Y = Y, G = G, mu = mu, summax = summax,
-                          method = 'Brent', lower = -2, upper = 2)$par,
+                          method = 'Brent', lower = interval[1], upper = interval[2])$par,
                     error = function(e) NA)
   }else{
     out <- tryCatch(optim(rep(0, g), ff3, NULL,
                           Y = Y, G = G, mu = mu, summax = summax,
-                          method = 'L-BFGS-B', lower = rep(-2, g), upper = rep(2, g))$par,
+                          method = 'L-BFGS-B', lower = rep(interval[1], g), upper = rep(interval[2], g))$par,
                     error = function(e) NA)
   }
   out
 }
 
-find.deltas.optim <- function(Ylist, Glist, mulist, summax, verbose = F, min.profile.length = 1){
+find.deltas.optim <- function(Ylist, Glist, mulist, summax, verbose = F, 
+                              min.profile.length = 1, interval = c(-2, 2)){
   candidateY <- sapply(Ylist, length) > min.profile.length
   numY <- sum(candidateY); inds <- which(candidateY)
   out <- numeric(numY); p <- 1
   for(i in inds){
-    out[p] <- delta.optim(Ylist[[i]], Glist[[i]], mulist[[i]], summax)
+    out[p] <- delta.optim(Ylist[[i]], Glist[[i]], mulist[[i]], summax, interval)
     if(verbose) cat(sprintf('%d/%d\r', p, numY))
     p <- p + 1
   }

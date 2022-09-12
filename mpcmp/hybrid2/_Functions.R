@@ -351,6 +351,73 @@ log.lik <- function(coeffs, dmats, b, surv, sv, l0u, l0i, summax){
   out
 }
 
+b.minimise <- function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta, 
+                       Omega, lambda.mat, logZ.mat, V.mat, 
+                       all.mus, nu.vec, summax,
+                       method = 'optim', obj = 'joint_density'){
+  if(!obj%in%c('joint_density', 'marginal')) 
+    stop("'obj' must be either the 'joint_density' or the 'marginal' Y|~CMP(.).\n")
+  if(!method%in%c('optim', 'bobyqa'))
+    stop("'method' must be either 'optim' or 'bobyqa'.\n")
+  
+  beta <- Omega$beta; D <- Omega$D; gamma <- Omega$gamma; zeta <- Omega$zeta; delta <- Omega$delta
+  
+  if(obj == 'joint_density'){
+    if(method == 'optim'){
+      b.hat <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
+        optim(b, joint_density, joint_density_ddb,
+              X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
+              S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
+              gamma = gamma, zeta = zeta,
+              lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat,
+              all_mus = all.mus, all_nus = round(nu.vec, 2),
+              summax = summax, method = 'BFGS', hessian = F)$par
+      }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
+      l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
+    }else{
+      b.hat <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
+        nloptr::bobyqa(b, joint_density,
+                       X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
+                       S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
+                       gamma = gamma, zeta = zeta, 
+                       lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, 
+                       all_mus = all.mus, all_nus = round(nu.vec, 2),
+                       summax = summax)$par
+      }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
+      l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
+    }
+    
+    Sigma <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
+      solve(H_joint_density(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
+                            S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
+                            gamma = gamma, zeta = zeta, lambdamat = lambda.mat, Vmat = V.mat, logZmat = logZ.mat, 
+                            all_mus = all.mus, all_nus = round(nu.vec, 2), summax = summax, eps = .Machine$double.base^(1/4)))
+    }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
+    l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
+    
+  }else{
+    if(method == 'optim'){
+      b.hat <- mapply(function(b, X, Y, lY, Z, G){
+        optim(b, marginal_Y, marginal_Y_db,
+              X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
+              summax = summax, method = 'BFGS', hessian = F)$par
+      }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, SIMPLIFY = F)
+    }else{
+      b.hat <- mapply(function(b, X, Y, lY, Z, G){
+        nloptr::bobyqa(b, marginal_Y,
+                       X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, 
+                       D = D,summax = summax)$par
+      }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, SIMPLIFY = F)
+    }
+  }
+  
+  list(
+    b.hat = b.hat,
+    Sigma = if(obj == 'joint_density') Sigma else NULL
+  )
+
+}
+
 
 # Matrix generation (largely for update steps) ----------------------------
 gen_all_mats <- function(min.mu, max.mu, nu.vec, summax){

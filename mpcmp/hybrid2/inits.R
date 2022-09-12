@@ -49,7 +49,7 @@ Longit.inits <- function(long.formula, disp.formula, data){
 # Dispersion --------------------------------------------------------------
 source('disp_inits.R')
 get.delta.inits <- function(dmats, beta, b, method, summax = NULL, verbose = F, 
-                            min.profile.length = 1, percentile){
+                            min.profile.length = 1, percentile, interval){
   
   #' Data objects ----
   X <- dmats$X; Y <- dmats$Y; Z <- dmats$Z # Longitudinal data matrices
@@ -64,12 +64,12 @@ get.delta.inits <- function(dmats, beta, b, method, summax = NULL, verbose = F,
   if(method == 'uniroot'){
     raw <- find.deltas(Y, G, mus, summax, verbose, min.profile.length)
   }else{
-    raw <- find.deltas.optim(Y, G, mus, summax, verbose, min.profile.length)  
+    raw <- find.deltas.optim(Y, G, mus, summax, verbose, min.profile.length, interval)  
   }
   b <- proc.time()[3]
   
   # Adding to discount instances where estimate doesn't at all move.
-  o <- raw[round(abs(raw), 3) < 2 & !is.na(raw)]
+  o <- raw[round(abs(raw), 3) < interval[2] & !is.na(raw)]
   
   q.raw <- quantile(raw, probs = percentile, na.rm = T)
   q.cut <- quantile(o, probs = percentile)
