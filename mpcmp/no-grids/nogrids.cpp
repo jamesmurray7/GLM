@@ -68,9 +68,13 @@ vec cmp_pmf_scalar(vec& Y, double lambda, double nu, int summax){
 double calc_V(double mu, double lambda, double nu, double logZ, int summax){
   double out = 0.0;
   double Z = trunc_exp(logZ);
-  vec js = linspace(1, summax, summax);
-  for(int j = 0; j < summax; j++){
-    out += pow(js[j] - mu, 2.0) * pow(lambda, js[j]) / (pow(tgamma(js[j] + 1.0), nu) * Z);
+  // vec js = linspace(1, summax, summax);
+  double j = 0;
+  while(j <= summax){
+    double outj = pow(j - mu, 2.0) * pow(lambda, j) / (pow(tgamma(j + 1.0), nu) * Z);
+    if(isnan(outj)) break;
+    out += outj;
+    j++;
   }
   return out;
 }
