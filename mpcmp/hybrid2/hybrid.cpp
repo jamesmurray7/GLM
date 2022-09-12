@@ -614,12 +614,11 @@ mat H_joint_density(vec b, mat X, vec Y, vec lY, mat Z, mat G,
     mat H = mat(1, 1, fill::value(val));
     return H;
   }else{
-    vec e = vec(q, q, fill::value(eps));
+    vec e = vec(q, fill::value(eps));
     mat H = zeros<mat>(q, q), ee = diagmat(e);
     // Begin loop
     for(int i = 0; i < q; i++){
       vec ei = ee.col(i);
-      vec dpe = delta + ei, dme = delta - ei;
       // Diagonal terms
       H(i, i) = (joint_density2(b - ei, X, Y, lY, Z, G, beta, delta, D, S, SS, 
                                 Fi, Fu, l0i, haz, Delta, gamma, zeta, lambdamat, 
@@ -632,7 +631,6 @@ mat H_joint_density(vec b, mat X, vec Y, vec lY, mat Z, mat G,
                             Vmat, logZmat, all_mus, all_nus, summax))/pow(eps, 2.);
       for(int j = (i + 1); j < q; j++){
         vec ej = ee.col(j); // Off-diagonals
-        vec pp = delta + ei + ej, pm = delta + ei - ej, mp = delta - ei + ej, mm = delta - ei - ej;
         H(i,j) =  (joint_density2(b + ei + ej, X, Y, lY, Z, G, beta, delta, D, S, SS, 
                    Fi, Fu, l0i, haz, Delta, gamma, zeta, lambdamat, 
                    Vmat, logZmat, all_mus, all_nus, summax) - 
