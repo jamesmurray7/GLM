@@ -230,11 +230,9 @@ getW1 <- function(X, mu, nu, lambda, V){
 # Taking difference -------------------------------------------------------
 difference <- function(params.old, params.new, type){
   if(type == 'absolute'){
-    rtn <- max(abs(params.new - params.old))
+    rtn <- abs(params.new - params.old)
   }else if(type == 'relative'){
-    rtn <- max(
-      abs(params.new - params.old)/(abs(params.old) + 1e-3)
-    )
+    rtn <- abs(params.new - params.old)/(abs(params.old) + 1e-3)
   }else{
     rtn <- NA
   }
@@ -274,6 +272,86 @@ log.lik <- function(coeffs, dmats, b, surv, sv, l0u, l0i, summax){
   attr(out, 'BIC') <- -2 * c(out) + log(N) * df
   out
 }
+
+b.minimise <- function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta, 
+                       Omega, summax, method = 'optim', obj = 'joint_density', Hessian = 'grad'){
+  if(!obj%in%c('joint_density', 'marginal')) 
+    stop("'obj' must be either the 'joint_density' or the 'marginal' Y|~CMP(.).\n")
+  if(!method%in%c('optim', 'bobyqa'))
+    stop("'method' must be either 'optim' or 'bobyqa'.\n")
+  if(!Hessian%in%c('grad', 'obj'))
+    stop("'Hessian' must be either 'grad' (forward differencing on gradient function) or 'obj' (forward differencing on objective function).")
+  
+  beta <- Omega$beta; D <- Omega$D; gamma <- Omega$gamma; zeta <- Omega$zeta; delta <- Omega$delta
+  
+  if(obj == 'joint_density'){
+    if(method == 'optim'){
+      b.hat <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
+        optim(b, joint_density, joint_density_ddb,
+              X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
+              S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
+              gamma = gamma, zeta = zeta, summax = summax, method = 'BFGS', hessian = F)$par
+      }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
+      l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
+    }else{
+      b.hat <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
+        nloptr::newuoa(b, joint_density,
+                       X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
+                       S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
+                       gamma = gamma, zeta = zeta, summax = summax)$par
+      }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
+      l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
+    }
+    
+    #' Calculate the inverse of the second derivative of the negative log-likelihood ----
+    if(Hessian == 'obj'){
+      Sigma <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
+        out <- solve(H_joint_density(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
+                              S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
+                              gamma = gamma, zeta = zeta,
+                              summax = summax, eps = .Machine$double.eps^(1/4)))
+        if(det(out) <= 0){ # 1/4 __SHOULD__ work majoirty of time; fail-safe coded in case it doesn't.
+          out <- solve(H_joint_density(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
+                                       S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
+                                       gamma = gamma, zeta = zeta,
+                                       summax = summax, eps = .Machine$double.eps^(1/3)))
+        }
+        out
+      }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
+      l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
+    }else{
+      Sigma <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
+        solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
+                                S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
+                                gamma = gamma, zeta = zeta, summax = summax, eps = 1e-3))
+      }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
+      l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
+    }
+    
+    
+  }else{
+    if(method == 'optim'){
+      b.hat <- mapply(function(b, X, Y, lY, Z, G){
+        optim(b, marginal_Y, marginal_Y_db,
+              X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
+              summax = summax, method = 'BFGS')$par
+      }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, SIMPLIFY = F)
+    }else{
+      b.hat <- mapply(function(b, X, Y, lY, Z, G){
+        nloptr::bobyqa(b, marginal_Y,
+                       X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, 
+                       D = D,summax = summax)$par
+      }, b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, SIMPLIFY = F)
+    }
+  }
+  
+  list(
+    b.hat = b.hat,
+    Sigma = if(obj == 'joint_density') Sigma else NULL
+  )
+  
+}
+
 
 #' ########################################################################
 # Misc functions ----------------------------------------------------------
@@ -374,7 +452,7 @@ my.summary <- function(myfit, printD = F){
   print(surv.out)
   
   #' Elapsed times
-  cat('\nElapsed times as follows:\n')
+  cat(sprintf('\nElapsed times as follows (%d iterations):\n', myfit$iter))
   print(.to3dp(myfit$elapsed.time))
   invisible(1+1)
 }

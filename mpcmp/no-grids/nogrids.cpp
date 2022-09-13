@@ -345,6 +345,72 @@ mat joint_density_sdb(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Da
   return 0.5 * (out + out.t()); // Ensure symmetry
 }
 
+// Forward differencing on objective fn (joint_density) -------------------
+double joint_density2(vec b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,     // Data matrices
+                      vec& beta, vec& delta, mat& D,                       // Longit. + RE parameters
+                      rowvec& S, mat& SS, rowvec& Fi, mat& Fu, double l0i, rowvec& haz,
+                      int Delta, double gamma, vec& zeta, int summax){
+  // Define mu, nu
+  vec mu = exp(X * beta + Z * b);
+  vec nu = exp(G * delta);
+  // Calculate lambda and logZ
+  vec lambda = lambda_appx(mu, nu, summax);
+  vec loglambda = log(lambda);
+  vec logZ = logZ_c(loglambda, nu, summax);
+  // Calculate loglik CMP and then for other consituent distns.
+  double ll = ll_cmp(loglambda, nu, logZ, Y, lY);
+  int q = b.size();
+  double temp = 0.0;
+  if(Delta == 1) temp = log(l0i);
+  return -ll + -1.0 * as_scalar(-(double)q/2.0 * log2pi - 0.5 * log(det(D)) - 0.5 * b.t() * D.i() * b + 
+                                temp + Delta * (S * zeta + Fi * (gamma * b)) - haz * exp(SS * zeta + Fu * (gamma * b)));
+}
+
+// [[Rcpp::export]]
+mat H_joint_density(vec b, mat& X, vec& Y, vec& lY, mat& Z, mat& G,
+                    vec& beta, vec& delta, mat& D, rowvec& S, mat& SS, rowvec& Fi,
+                    mat& Fu, double l0i, rowvec& haz, int Delta, double gamma,
+                    vec zeta, int summax, double eps){
+  int q = b.size();
+  if(q == 1){
+    double val = (joint_density2(b + eps, X, Y, lY, Z, G, beta, delta, D, S, SS, 
+                                 Fi, Fu, l0i, haz, Delta, gamma, zeta, summax) - 
+             2. * joint_density2(b, X, Y, lY, Z, G, beta, delta, D, S, SS, 
+                                 Fi, Fu, l0i, haz, Delta, gamma, zeta, summax) + 
+                  joint_density2(b - eps, X, Y, lY, Z, G, beta, delta, D, S, SS, 
+                                 Fi, Fu, l0i, haz, Delta, gamma, zeta, summax))/pow(eps, 2.);
+    mat H = mat(1, 1, fill::value(val));
+    return H;
+  }else{
+    vec e = vec(q, fill::value(eps));
+    mat H = zeros<mat>(q, q), ee = diagmat(e);
+    // Begin loop
+    for(int i = 0; i < q; i++){
+      vec ei = ee.col(i);
+      // Diagonal terms
+      H(i, i) = (joint_density2(b - ei, X, Y, lY, Z, G, beta, delta, D, S, SS, 
+                 Fi, Fu, l0i, haz, Delta, gamma, zeta, summax) - 
+           2. * joint_density2(b, X, Y, lY, Z, G, beta, delta, D, S, SS, 
+                               Fi, Fu, l0i, haz, Delta, gamma, zeta, summax) + 
+                joint_density2(b + ei, X, Y, lY, Z, G, beta, delta, D, S, SS, 
+                               Fi, Fu, l0i, haz, Delta, gamma, zeta, summax))/pow(eps, 2.);
+      for(int j = (i + 1); j < q; j++){
+        vec ej = ee.col(j); // Off-diagonals
+        H(i,j) =  (joint_density2(b + ei + ej, X, Y, lY, Z, G, beta, delta, D, S, SS, 
+                   Fi, Fu, l0i, haz, Delta, gamma, zeta, summax) - 
+                   joint_density2(b + ei - ej, X, Y, lY, Z, G, beta, delta, D, S, SS, 
+                                  Fi, Fu, l0i, haz, Delta, gamma, zeta, summax) - 
+                   joint_density2(b - ei + ej, X, Y, lY, Z, G, beta, delta, D, S, SS, 
+                                  Fi, Fu, l0i, haz, Delta, gamma, zeta, summax) + 
+                   joint_density2(b - ei - ej, X, Y, lY, Z, G, beta, delta, D, S, SS, 
+                                  Fi, Fu, l0i, haz, Delta, gamma, zeta, summax))/(4.0 * pow(eps, 2.));
+        H(j,i) = H(i,j);
+      }
+    }
+    return H;
+  }
+}
+
 // Updates for the survival pair (gamma, zeta) ----------------------------
 
 // Define the conditional expectation
