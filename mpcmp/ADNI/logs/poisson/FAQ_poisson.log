@@ -1,0 +1,18 @@
+Random effects variance-covariance matrix: 
+      [,1]   [,2]
+[1,]  1.56 -0.030
+[2,] -0.03  0.133
+
+FAQ (poisson): 
+                Estimate    SE   2.5% 97.5% p-value
+FAQ_(Intercept)    0.734 0.068  0.601 0.868   0.000
+FAQ_time           0.324 0.020  0.285 0.364   0.000
+FAQ_age_scaled     0.009 0.039 -0.067 0.085   0.815
+FAQ_APOE4          0.096 0.172 -0.240 0.433   0.574
+
+Event-time sub-model: 
+           Estimate    SE   2.5% 97.5% p-value
+zeta_APOE4    0.339 0.285 -0.220 0.897   0.235
+gamma_FAQ     1.304 0.085  1.138 1.471   0.000
+
+Approximate EM algorithm took 9.12 seconds and total computation time was 10.64 seconds.

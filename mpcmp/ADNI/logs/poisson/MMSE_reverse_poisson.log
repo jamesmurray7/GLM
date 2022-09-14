@@ -1,0 +1,18 @@
+Random effects variance-covariance matrix: 
+      [,1]  [,2]
+[1,] 0.358 0.035
+[2,] 0.035 0.017
+
+MMSE.reverse (poisson): 
+                         Estimate    SE   2.5% 97.5% p-value
+MMSE.reverse_(Intercept)    0.903 0.036  0.832 0.973   0.000
+MMSE.reverse_time           0.154 0.012  0.130 0.178   0.000
+MMSE.reverse_age_scaled     0.049 0.031 -0.012 0.111   0.115
+MMSE.reverse_APOE4          0.123 0.126 -0.124 0.371   0.328
+
+Event-time sub-model: 
+                   Estimate    SE   2.5% 97.5% p-value
+zeta_APOE4            0.205 0.249 -0.284 0.694   0.412
+gamma_MMSE.reverse    1.553 0.090  1.377 1.729   0.000
+
+Approximate EM algorithm took 3.95 seconds and total computation time was 5.48 seconds.

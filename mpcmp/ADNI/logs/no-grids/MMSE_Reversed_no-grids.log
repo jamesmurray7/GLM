@@ -1,0 +1,22 @@
+Random effects variance-covariance matrix: 
+      [,1]
+[1,] 0.494
+
+MMSE.reverse (mean parameterised Conway-Maxwell Poisson)
+                  Estimate    SE   2.5% 97.5% p-value
+(Intercept)          0.902 0.039  0.827 0.978   0.000
+time                 0.124 0.004  0.116 0.132   0.000
+age_scaled           0.063 0.034 -0.003 0.130   0.062
+APOE4                0.234 0.147 -0.053 0.522   0.110
+delta_(Intercept)    0.263 0.035  0.195 0.331   0.000
+
+Event-time sub-model: 
+           Estimate    SE   2.5% 97.5% p-value
+zeta_APOE4    0.387 0.283 -0.167 0.942   0.171
+gamma         1.451 0.108  1.239 1.662   0.000
+
+Elapsed times as follows (19 iterations):
+    delta optimisation        re-maximisation           startup time                EM time 
+                 8.343                  5.286                 14.978                213.149 
+       post processing Total computation time 
+                 8.410                236.533 
