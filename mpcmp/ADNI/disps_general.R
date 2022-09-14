@@ -45,8 +45,8 @@ gen.summary <- function(response){
   abline(0, 1, col = 'red', lwd = 0.75)
   
 }
-
-responses <- c('ADAS11', 'ADAS13', 'MMSE', 'RAVLT.immediate', 'RAVLT.learning', 'RAVLT.forgetting', 'FAQ')
+adni$MMSE.reverse <- 30-adni$MMSE
+responses <- c('ADAS11', 'ADAS13', 'MMSE', 'MMSE.reverse', 'RAVLT.immediate', 'RAVLT.learning', 'RAVLT.forgetting', 'FAQ')
 sink('../ADNI/disps.txt')
 invisible(sapply(responses, gen.summary))
 sink()
