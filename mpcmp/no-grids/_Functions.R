@@ -457,6 +457,11 @@ my.summary <- function(myfit, printD = F){
   #' Elapsed times
   cat(sprintf('\nElapsed times as follows (%d iterations):\n', myfit$iter))
   print(.to3dp(myfit$elapsed.time))
+  
+  #' Optimiser info
+  cat('\n')
+  a <- myfit$modelInfo$optim
+  cat(sprintf('Optimiser used: %s, Hessian appraised: %s with epsilon %s', a[1], a[2], a[3]))
   invisible(1+1)
 }
 
