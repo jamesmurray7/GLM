@@ -48,7 +48,7 @@ Longit.inits <- function(long.formula, disp.formula, data){
 
 # Dispersion --------------------------------------------------------------
 source('disp_inits.R')
-get.delta.inits <- function(dmats, beta, b, method, summax = NULL, verbose = F, min.profile.length = 1){
+get.delta.inits <- function(dmats, beta, b, method, summax = NULL, verbose = F, min.profile.length = 1, max.val){
   
   #' Data objects ----
   X <- dmats$X; Y <- dmats$Y; Z <- dmats$Z # Longitudinal data matrices
@@ -60,15 +60,15 @@ get.delta.inits <- function(dmats, beta, b, method, summax = NULL, verbose = F, 
   
   if(verbose) message('Obtaining initial estimate for dispersion parameter delta...\n')
   a <- proc.time()[3]
-  if(method == 'uniroot'){
-    raw <- find.deltas(Y, G, mus, summax, verbose, min.profile.length)
+  if(method == 'bobyqa'){
+    raw <- find.deltas.bobyqa(Y, G, mus, summax, verbose, min.profile.length)
   }else{
     raw <- find.deltas.optim(Y, G, mus, summax, verbose, min.profile.length)  
   }
   b <- proc.time()[3]
   
   # Adding to discount instances where estimate doesn't at all move.
-  o <- raw[round(abs(raw), 3) < 2 & !is.na(raw)]
+  o <- raw[round(abs(raw), 3) < max.val & !is.na(raw)]
   
   
   # Return

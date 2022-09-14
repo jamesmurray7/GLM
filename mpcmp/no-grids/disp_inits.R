@@ -95,6 +95,29 @@ find.deltas.optim <- function(Ylist, Glist, mulist, summax, verbose = F, min.pro
   out
 }
 
+
+# Bounded non-linear optimisation by quadratic approximation of the objective function.
+delta.bobyqa <- function(Y, G, mu, summax){
+  g <- ncol(G)
+  out <- tryCatch(nloptr::bobyqa(rep(0, g), ff3,
+                                 Y = Y, G = G, mu = mu, summax = summax)$par,
+                  error = function(e) NA)
+  out
+}
+
+find.deltas.bobyqa <- function(Ylist, Glist, mulist, summax, verbose = F, min.profile.length = 1){
+  candidateY <- sapply(Ylist, length) > min.profile.length
+  numY <- sum(candidateY); inds <- which(candidateY)
+  out <- numeric(numY); p <- 1
+  for(i in inds){
+    out[p] <- delta.bobyqa(Ylist[[i]], Glist[[i]], mulist[[i]], summax)
+    if(verbose) cat(sprintf('%d/%d\r', p, numY))
+    p <- p + 1
+  }
+  out
+}
+
+
 # mapply(function(Y,G,mu){
 #   g <- ncol(G)
 #   x <- tryCatch(optim(rep(0, g), ff3, NULL,

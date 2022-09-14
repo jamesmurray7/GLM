@@ -16,14 +16,15 @@ source('inits.R')
 vech <- function(x) x[lower.tri(x, T)]
 
 EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
-                     sv, w, v, n, m, summax, debug, optimiser, Hessian){
+                     sv, w, v, n, m, summax, debug, optimiser.arguments){
   s <- proc.time()[3]
   #' Unpack Omega, the parameter vector
   D <- Omega$D; beta <- Omega$beta; delta <- Omega$delta; gamma <- Omega$gamma; zeta <- Omega$zeta
   
   #' Find b.hat and Sigma
   b.update <- b.minimise(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta, 
-                         Omega, summax, method = optimiser, obj = 'joint_density', Hessian = Hessian)
+                         Omega, summax, method = optimiser.arguments$optimiser, 
+                         obj = 'joint_density', Hessian = optimiser.arguments$Hessian, Hessian.eps = optimiser.arguments$eps)
   b.hat <- b.update$b.hat
   Sigma <- b.update$Sigma
   
@@ -118,7 +119,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l
 }
 
 EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, post.process = T, 
-               control = list(), disp.control = list(), delta.init = NULL, optimiser = 'optim', Hessian = 'grad'){
+               control = list(), disp.control = list(), delta.init = NULL, optim.control = list()){
   start.time <- proc.time()[3]
   
   #' Parsing formula objects ----
@@ -153,12 +154,13 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   if(!is.null(control$auto.summax)) auto.summax <- control$auto.summax else auto.summax <- T
   #' Control arguments specific to dispersion estimates ----
   if(!is.null(disp.control$delta.method)) delta.method <- disp.control$delta.method else delta.method <- 'optim'
-  if(!delta.method %in% c('uniroot', 'optim')) stop('delta.method must be either "optim" or "uniroot".\n')
+  if(!delta.method %in% c('bobyqa', 'optim')) stop('delta.method must be either "optim" or "bobyqa".\n')
   if(!is.null(disp.control$min.profile.length)) min.profile.length <- disp.control$min.profile.length else min.profile.length <- 1
   if(!is.null(disp.control$what)) what <- disp.control$what else what <- 'median'
   if(!what %in% c('mean', 'median')) stop("what must be either 'mean' or 'median'.")
   if(!is.null(disp.control$cut)) cut <- disp.control$cut else cut <- T
   if(!is.null(disp.control$re.maximise)) re.maximise <- disp.control$re.maximise else re.maximise <- T
+  if(!is.null(disp.control$max.val)) max.val <- disp.control$max.val else max.val <- 2
   
   if(auto.summax){
     summax.old <- summax
@@ -168,7 +170,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   
   # Initial conditon for delta
   if(is.null(delta.init)){
-    delta.inits.raw <- get.delta.inits(dmats, beta, b, delta.method, summax, verbose, min.profile.length)  
+    delta.inits.raw <- get.delta.inits(dmats, beta, b, delta.method, summax, verbose, min.profile.length, max.val)  
     # Return the user-specified estimate (Defaulting to cut + median)
     if(cut)
       initdelta <- if(what == 'mean') delta.inits.raw$mean.cut.estimate else delta.inits.raw$median.cut.estimate
@@ -180,12 +182,18 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
     delta <- setNames(delta.init, names(inits.long$delta.init))
   }
   
+  #' Set default optimiser arguments if _not_ specified.                      By default we...
+  if(is.null(optim.control$optimiser)) optim.control$optimiser <- 'optim'             # Use optim by default (BFGS).
+  if(is.null(optim.control$Hessian))   optim.control$Hessian <- 'obj'                 # Appraise 2nd deriv on objective function (not grad).
+  if(is.null(optim.control$eps))       optim.control$eps <- .Machine$double.eps^(1/4) # Usual for fd.
+  
   #' Re-maximise Marginal wrt b for CMP rather than Poisson (obtained thus far) ---------
   if(re.maximise){
     s <- proc.time()[3]
     if(verbose) cat('Re-maximising in light of new delta estimate')
     b <- b.minimise(b, X, Y, lY, Z, G, S = NULL, SS = NULL, Fi = NULL, Fu = NULL, l0i = NULL, l0u = NULL, Delta = NULL, 
-                    Omega = list(beta = beta, delta = delta, D = D), summax, method = optimiser, obj = 'marginal')$b.hat
+                    Omega = list(beta = beta, delta = delta, D = D), summax, 
+                    method = optim.control$optimiser, obj = 'marginal', optim.control$Hessian, optim.control$eps)$b.hat
     remaximisation.time <- round(proc.time()[3] - s, 3)
     if(verbose) cat(sprintf(", this took %.2f seconds.\n", remaximisation.time))
   }
@@ -223,7 +231,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   if(verbose) message('Starting EM algorithm.')
   while(diff > tol && iter < maxit){
     update <- EMupdate(Omega, X, Y, lY, Z, G, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
-                       sv, w, v, n, m, summax, debug, optimiser, Hessian)
+                       sv, w, v, n, m, summax, debug, optim.control)
     if(debug) DEBUG.update <<- update
     params.new <- c(vech(update$D), update$beta, update$delta, update$gamma, update$zeta)
     names(params.new) <- names(params)
@@ -262,7 +270,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
   }else{
     modelInfo$delta.init <- delta.init
   }
-  modelInfo$optimHess <- c(optimiser = optimiser, Hessian = Hessian)
+  modelInfo$optimHess <- c(optimiser = optim.control$optimiser, Hessian = optim.control$Hessian, epsilon = optim.control$eps)
   out$modelInfo <- modelInfo
   out$hazard <- cbind(ft = sv$ft, haz = l0, nev = sv$nev)
   out$stepmat <- cbind(iter = 1:iter, time = step.times)
@@ -272,7 +280,8 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = 100, pos
     start.time.p <- proc.time()[3]
     #' Calculating \b and \Sigma at MLEs
     b.update <- b.minimise(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta, 
-                           Omega, summax, method = optimiser, obj = 'joint_density', Hessian = Hessian)
+                           Omega, summax, method = optim.control$optimiser, obj = 'joint_density', 
+                           Hessian = optim.control$Hessian, optim.control$eps)
     b <- b.update$b.hat
     Sigma <- b.update$Sigma
   

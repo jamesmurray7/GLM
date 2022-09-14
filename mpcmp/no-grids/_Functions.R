@@ -273,8 +273,10 @@ log.lik <- function(coeffs, dmats, b, surv, sv, l0u, l0i, summax){
   out
 }
 
+
+# Wrapper for minimisation of f(Y|.) wrt b --------------------------------
 b.minimise <- function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta, 
-                       Omega, summax, method = 'optim', obj = 'joint_density', Hessian = 'grad'){
+                       Omega, summax, method = 'optim', obj = 'joint_density', Hessian = 'grad', Hessian.epsilon){
   if(!obj%in%c('joint_density', 'marginal')) 
     stop("'obj' must be either the 'joint_density' or the 'marginal' Y|~CMP(.).\n")
   if(!method%in%c('optim', 'bobyqa'))
@@ -295,7 +297,7 @@ b.minimise <- function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta,
       l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
     }else{
       b.hat <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
-        nloptr::newuoa(b, joint_density,
+        nloptr::bobyqa(b, joint_density,
                        X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
                        S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
                        gamma = gamma, zeta = zeta, summax = summax)$par
@@ -309,8 +311,9 @@ b.minimise <- function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta,
         out <- solve(H_joint_density(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
                               S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
                               gamma = gamma, zeta = zeta,
-                              summax = summax, eps = .Machine$double.eps^(1/4)))
-        if(det(out) <= 0){ # 1/4 __SHOULD__ work majoirty of time; fail-safe coded in case it doesn't.
+                              summax = summax, eps = Hessian.epsilon))
+        if(det(out) <= 0 && Hessian.epsilon != .Machine$double.eps^(1/3)){ 
+          # 1/4 __SHOULD__ work majoirty of time; fail-safe coded in case it doesn't.
           out <- solve(H_joint_density(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
                                        S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
                                        gamma = gamma, zeta = zeta,
@@ -323,7 +326,7 @@ b.minimise <- function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta,
       Sigma <- mapply(function(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta){
         solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, G = G, beta = beta, delta = delta, D = D,
                                 S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-                                gamma = gamma, zeta = zeta, summax = summax, eps = 1e-3))
+                                gamma = gamma, zeta = zeta, summax = summax, eps = Hessian.epsilon))
       }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, G = G, S = S, SS = SS, Fi = Fi, Fu = Fu,
       l0i = l0i, l0u = l0u, Delta = Delta, SIMPLIFY = F)
     }
