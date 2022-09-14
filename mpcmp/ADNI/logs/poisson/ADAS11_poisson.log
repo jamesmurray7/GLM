@@ -1,18 +1,18 @@
 Random effects variance-covariance matrix: 
       [,1]  [,2]
-[1,] 0.150 0.014
-[2,] 0.014 0.006
+[1,] 0.145 0.012
+[2,] 0.012 0.006
 
 ADAS11 (poisson): 
-                   Estimate    SE   2.5% 97.5% p-value
-ADAS11_(Intercept)    2.308 0.022  2.264 2.352   0.000
-ADAS11_time           0.089 0.007  0.076 0.101   0.000
-ADAS11_age_scaled     0.039 0.019  0.002 0.076   0.036
-ADAS11_APOE4          0.096 0.075 -0.051 0.244   0.200
+                   Estimate    SE  2.5% 97.5% p-value
+ADAS11_(Intercept)    2.234 0.028 2.179 2.289   0.000
+ADAS11_time           0.088 0.007 0.075 0.101   0.000
+ADAS11_age_scaled     0.041 0.019 0.005 0.078   0.027
+ADAS11_bin            0.167 0.042 0.084 0.249   0.000
 
 Event-time sub-model: 
-             Estimate    SE   2.5% 97.5% p-value
-zeta_APOE4      0.280 0.231 -0.174 0.733   0.227
-gamma_ADAS11    2.321 0.154  2.020 2.623   0.000
+             Estimate    SE  2.5% 97.5% p-value
+zeta_bin        0.671 0.123 0.429 0.913       0
+gamma_ADAS11    2.243 0.178 1.893 2.593       0
 
-Approximate EM algorithm took 4.06 seconds and total computation time was 5.84 seconds.
+Approximate EM algorithm took 5.21 seconds and total computation time was 7.09 seconds.

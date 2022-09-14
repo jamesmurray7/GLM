@@ -48,7 +48,7 @@ apply(tmbs, 2, which.min)
 
 # EM fits (Poisson) -------------------------------------------------------
 
-surv.formula <- Surv(survtime, status) ~ APOE4
+surv.formula <- Surv(survtime, status) ~ bin
 family <- list('poisson')
 
 f <- function(Y){
@@ -58,7 +58,7 @@ f <- function(Y){
   
   file.name <- paste0('../mpcmp/ADNI/logs/poisson/', gsub('\\.', '_', Y), '_poisson.log')
   
-  long.formula <- list(as.formula(paste0(Y, ' ~ time + age_scaled + APOE4 +', RE)))
+  long.formula <- list(as.formula(paste0(Y, ' ~ time + age_scaled + bin +', RE)))
   
   message('Starting fit for ', Y)
   fit <- suppressMessages(EM(long.formula, surv.formula, d, family))

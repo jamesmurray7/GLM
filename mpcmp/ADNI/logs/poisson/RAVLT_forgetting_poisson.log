@@ -1,17 +1,17 @@
 Random effects variance-covariance matrix: 
       [,1]
-[1,] 0.063
+[1,] 0.061
 
 RAVLT.forgetting (poisson): 
                              Estimate    SE   2.5% 97.5% p-value
-RAVLT.forgetting_(Intercept)    1.501 0.022  1.458 1.544   0.000
-RAVLT.forgetting_time           0.016 0.005  0.006 0.027   0.003
-RAVLT.forgetting_age_scaled    -0.005 0.017 -0.039 0.029   0.762
-RAVLT.forgetting_APOE4          0.113 0.062 -0.010 0.235   0.071
+RAVLT.forgetting_(Intercept)    1.454 0.027  1.401 1.508   0.000
+RAVLT.forgetting_time           0.016 0.005  0.005 0.027   0.003
+RAVLT.forgetting_age_scaled    -0.004 0.017 -0.037 0.029   0.812
+RAVLT.forgetting_bin            0.113 0.037  0.040 0.185   0.002
 
 Event-time sub-model: 
                        Estimate    SE  2.5% 97.5% p-value
-zeta_APOE4                0.538 0.215 0.116 0.960   0.012
-gamma_RAVLT.forgetting    1.189 0.439 0.330 2.049   0.007
+zeta_bin                  0.678 0.093 0.496 0.861   0.000
+gamma_RAVLT.forgetting    1.046 0.453 0.158 1.934   0.021
 
-Approximate EM algorithm took 1.79 seconds and total computation time was 3.23 seconds.
+Approximate EM algorithm took 2.16 seconds and total computation time was 3.62 seconds.
