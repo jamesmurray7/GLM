@@ -2,7 +2,8 @@
 #' Getting handles dispersions of ADNI variables.
 #' #########
 rm(list=ls())
-load('../../PBC-case-study/ADNI.RData') # Same across Linux/Mac(!)
+if(unname(Sys.info()['user']=='c0061461')) setwd('~/Documents/GLMM/Multi-test/') else setwd('~/Documents/PhD/GLM/Multi-test/')
+load('../PBC-case-study/ADNI.RData') # Same across Linux/Mac(!)
 source('EM.R')
 library(dplyr)
 # Define a function that 'resets' the data --------------------------------
@@ -24,132 +25,69 @@ newadni <- function(Y){
   rtn
 }
 
-# Checking for over/under-dispersion in count responses -------------------
-gen.summary <- function(response){
-  cat(response, '----\n\n')
-  d <- newadni(response)
-  
-  vars <- tapply(d[,response], d$id, var, na.rm = T)
-  means <- tapply(d[,response], d$id, mean, na.rm = T)
-  
-  lengths <- median(with(d, tapply(time, id, length)))
-  
-  nas <- unname(which(is.na(vars) | vars == 0))
-  vars <- vars[-nas]; means <- means[-nas]
-  
-  cat(sprintf('%d median profile length, mean/var summary:\n', lengths))
-  print(summary(means/vars))
-  
-  cat('Making plot...\n\n')
-  plot(vars~means,pch=20, main = response, ylab = 'Var[Y]', xlab = bquote(bar(X[i])))
-  abline(0, 1, col = 'red', lwd = 0.75)
-  
+TMBs <- function(Y){
+  d <- newadni(Y)
+  one <- glmmTMB(
+    as.formula(paste0(Y, ' ~ time + age_scaled + bin + (1 + time|id)')),
+    data = d, family = 'poisson'
+  )
+  two <- glmmTMB(
+    as.formula(paste0(Y, ' ~ time + age_scaled + bin + (1|id)')),
+    data = d, family = 'poisson'
+  )
+  c(intslope = AIC(one), int = AIC(two))
 }
 
-responses <- c('ADAS11', 'ADAS13', 'MMSE', 'RAVLT.immediate', 'RAVLT.learning', 'RAVLT.forgetting', 'FAQ')
-sink('../ADNI/disps.txt')
-invisible(sapply(responses, gen.summary))
-sink()
+adni$MMSE.reverse <- 30 - adni$MMSE
 
+responses <- c('ADAS11', 'ADAS13', 'MMSE', 'MMSE.reverse', 'RAVLT.immediate', 'RAVLT.learning', 'RAVLT.forgetting', 'FAQ')
 
-# Function to find delta... -----------------------------------------------
-disp.formula <- ~1
+tmbs <- sapply(responses, TMBs)
+apply(tmbs, 2, which.min)
+# ALL int-slope besides MMSE (which i don't think we can fit a model to!) and RAVLT.forgetting...
+
+# EM fits (Poisson) -------------------------------------------------------
+
 surv.formula <- Surv(survtime, status) ~ APOE4
-tempfn <- function(response, RE = '(1 + time|id)', interval = c(-2, 2)){
-  data <- newadni(response)
-  long.formula <- as.formula(paste0(response, ' ~ ', paste('time','age_scaled','APOE4', sep = '+'), ' + ', RE))
-  formulas <- parseFormula(long.formula)
-  surv <- parseCoxph(surv.formula, data)
-  n <- surv$n
+family <- list('poisson')
+
+f <- function(Y){
+  d <- newadni(Y)
+  if(Y == 'RAVLT.forgetting') RE <- '(1|id)' else RE <- '(1+time|id)'
   
-  #' Initial conditions ----
   
-  inits.long <- Longit.inits(long.formula, disp.formula, data)
-  inits.surv <- TimeVarCox(data, inits.long$b, surv$ph, formulas)
+  file.name <- paste0('../mpcmp/ADNI/logs/poisson/', gsub('\\.', '_', Y), '_poisson.log')
   
-  # Longitudinal parameters
-  beta <- inits.long$beta.init
-  D <- inits.long$D.init
-  b <- lapply(1:n, function(i) inits.long$b[i, ])
+  long.formula <- list(as.formula(paste0(Y, ' ~ time + age_scaled + APOE4 +', RE)))
   
-  # Survival parameters
-  zeta <- inits.surv$inits[match(colnames(surv$ph$x), names(inits.surv$inits))]
-  names(zeta) <- paste0('zeta_', names(zeta))
-  gamma <- inits.surv$inits[grepl('gamma', names(inits.surv$inits))]
+  message('Starting fit for ', Y)
+  fit <- suppressMessages(EM(long.formula, surv.formula, d, family))
   
-  #' Data objects ----
-  sv <- surv.mod(surv$ph, surv$survdata, formulas, inits.surv$l0.init)
-  dmats <- createDataMatrices(data, formulas, disp.formula)
-  # Truncation amount.
-  summax <- max(sapply(dmats$Y, max)) * 2
+  sink(file.name)
+  my.summary(fit, T)
+  sink()
   
-  message('Doing optim...')
-  optim.inits <- suppressMessages(get.delta.inits(dmats, beta, b, 'optim', summax, verbose = T, min.profile.length = 1,
-                                                  interval = interval, percentile = c(.4,.6)))
-  
-  optim.inits$summax <- summax
-  return(optim.inits)
+  message('Saved in ', file.name, '\n')
+  invisible(1+1)
 }
 
-# Command -----------------|  gen.summary | delta.optim |#   
-tempfn('ADAS11')          #|        1.500 |   0.34/0.42 |#
-tempfn('ADAS13')          #|        1.446 |   0.31/0.39 |#
-# MMSE requires intercept-only RE structure; done below...
-tempfn('RAVLT.immediate') #|        1.620 |   0.37/0.46 |#
-tempfn('RAVLT.learning')  #|        1.222 |   0.35/0.26 |#
-tempfn('RAVLT.forgetting')#|        2.111 |   0.88/0.64 |#
-tempfn('FAQ')             #|        0.663 |  -0.31/0.45 |#
-
-#' Candidate measures may then be ADAS(..), RAVLT for underdispersed and FAQ for overdispersed.
-tempfn('MMSE', '(1|id)')  # Heavily underdispersed ...
-                          # Might be worth expanding boundary conditions from [-2, 2] to [-6, 6] or something??
-tempfn('MMSE', RE = '(1|id)', interval = c(-5, 5))
-                          #|      11.742  |   2.43/2.50 |#
-
-
-# EM fits (hybrid first) --------------------------------------------------
-surv.formula <- Surv(survtime, status) ~ APOE4
-disp.formula <- ~ 1
 # ADAS11
-d <- newadni('ADAS11')
-long.formula <- ADAS11 ~ time + age_scaled + APOE4 + (1 + time|id)
-ADAS11.hybrid2 <- EM(long.formula, disp.formula, surv.formula,
-                     d, control = list(verbose = T), grid.summax = 'aaa')
-sink('../ADNI/ADAS11_hybrid2.log')
-my.summary(ADAS11.hybrid2, T)
-sink()
+f('ADAS11')
 
 # ADAS13
-d <- newadni('ADAS13')
-long.formula <- ADAS13 ~ time + age_scaled + APOE4 + (1|id)
-ADAS13.hybrid2 <- EM(long.formula, disp.formula, surv.formula, disp.control = list(interval = c(-5, 5)),
-                     data = d, control = list(verbose = T), grid.summax = 'a',
-                     optimiser = 'bobyqa')
-# Issue with betas...
-sink('../ADNI/ADAS13_hybrid2.log')
-my.summary(ADAS13.hybrid2, T)
-sink()
+f('ADAS13')
 
-# MMSE
-d <- newadni('MMSE') # Erroring... random effects are absolutely tiny.
-long.formula <- MMSE ~ time + age_scaled + APOE4 + (1|id)
-MMSE.hybrid2 <- EM(long.formula, disp.formula, surv.formula, d, 
-                   control = list(verbose = T), 
-                   disp.control = list(interval = c(-2, 2)), 
-                   grid.summax = 'same')
+# MMSE (reversed)
+f('MMSE.reverse')
 
 # RAVLT.immediate
-d <- newadni('RAVLT.immediate')
-long.formula <- RAVLT.immediate ~ time + age_scaled + APOE4 + (1|id)
-RAVLT.immediate.hybrid2 <- EM(
-  long.formula, disp.formula, surv.formula, d,
-  control = list(verbose = T), grid.summax = 'a', optimiser = 'bobyqa'
-)
+f('RAVLT.immediate')
 
-# EM fits (No-grids) ------------------------------------------------------
+# RAVLT.learning
+f('RAVLT.learning')
 
-# Poisson fits (a la Multi-test) ------------------------------------------
+# RAVLT.forgetting
+f('RAVLT.forgetting')
 
-
-
-
+# FAQ
+f('FAQ')
