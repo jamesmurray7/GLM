@@ -461,7 +461,7 @@ my.summary <- function(myfit, printD = F){
   #' Optimiser info
   cat('\n')
   a <- myfit$modelInfo$optim
-  cat(sprintf('Optimiser used: %s, Hessian appraised: %s with epsilon %s', a[1], a[2], a[3]))
+  cat(sprintf('Optimiser used: %s, Hessian appraised: %s with epsilon %s.\n', a[1], a[2], a[3]))
   invisible(1+1)
 }
 
