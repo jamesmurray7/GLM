@@ -222,6 +222,7 @@ vec lambda_appx(vec& mu, vec& nu, int summax){
   int m = mu.size();
   vec lambda = vec(m);
   vec inits = trunc_exp(nu % log(mu + (nu-1.0)/(2.0 * nu)));
+  inits.replace(datum::nan, 1.);
   for(int i = 0; i < m; i++){
     double lower = std::max(inits[i] - 10.0, 1e-6);
     double upper = inits[i] + 10.0;
@@ -288,10 +289,15 @@ double joint_density(vec& b, mat& X, vec& Y, vec& lY, mat& Z,             // Dat
   int mi = Y.size();
   vec mu = exp(X * beta + Z * b);
   vec nu = vec(mi, fill::value(exp(delta)));
+  Rcout << "b: " << b.t() << std::endl;
+  Rcout << "mu: " << mu.t() << std::endl;
+  Rcout << "nu: " << nu.t() << std::endl;
   // Calculate lambda and logZ
   vec lambda = lambda_appx(mu, nu, summax);
+  Rcout << "lam: " << lambda.t() << std::endl;
   vec loglambda = log(lambda);
   vec logZ = logZ_c(loglambda, nu, summax);
+  Rcout << "logZ" << logZ.t() << std::endl;
   // Calculate loglik CMP and then for other consituent distns.
   double ll = ll_cmp(loglambda, nu, logZ, Y, lY);
   int q = b.size();
