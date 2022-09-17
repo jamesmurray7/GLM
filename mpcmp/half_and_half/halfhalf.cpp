@@ -289,15 +289,15 @@ double joint_density(vec& b, mat& X, vec& Y, vec& lY, mat& Z,             // Dat
   int mi = Y.size();
   vec mu = exp(X * beta + Z * b);
   vec nu = vec(mi, fill::value(exp(delta)));
-  Rcout << "b: " << b.t() << std::endl;
-  Rcout << "mu: " << mu.t() << std::endl;
-  Rcout << "nu: " << nu.t() << std::endl;
+  // Rcout << "b: " << b.t() << std::endl;
+  // Rcout << "mu: " << mu.t() << std::endl;
+  // Rcout << "nu: " << nu.t() << std::endl;
   // Calculate lambda and logZ
   vec lambda = lambda_appx(mu, nu, summax);
-  Rcout << "lam: " << lambda.t() << std::endl;
+  // Rcout << "lam: " << lambda.t() << std::endl;
   vec loglambda = log(lambda);
   vec logZ = logZ_c(loglambda, nu, summax);
-  Rcout << "logZ" << logZ.t() << std::endl;
+  // Rcout << "logZ" << logZ.t() << std::endl;
   // Calculate loglik CMP and then for other consituent distns.
   double ll = ll_cmp(loglambda, nu, logZ, Y, lY);
   int q = b.size();

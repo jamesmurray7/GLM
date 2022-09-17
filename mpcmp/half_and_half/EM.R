@@ -44,19 +44,19 @@ EMupdate <- function(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delt
   
   mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b.hat, SIMPLIFY = F)
   nus <- mapply(function(delta, Y) rep(exp(delta), length(Y)), delta = delta, Y = Y, SIMPLIFY = F)
-  # tau <- mapply(function(Z, S) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), S = Sigma, Z = Z, SIMPLIFY = F)
+  tau <- mapply(function(Z, S) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), S = Sigma, Z = Z, SIMPLIFY = F)
   # tau2 <- mapply(function(Z,S){
   #   M <- tcrossprod(Z %*% S, Z)
   #   diag(mat_sqrt(M))
   # }, S = Sigma, Z = Z, SIMPLIFY = F)
-  tau3 <- mapply(function(Z,S){
-    M <- tcrossprod(Z %*% S, Z)
-    a <- Re(diag(mat_sqrt(M)))
-    if(any(is.nan(a)))
-      return(unname(sqrt(diag(M))))
-    else
-      return(a)
-  }, S = Sigma, Z = Z, SIMPLIFY = F)
+  # tau <- mapply(function(Z,S){
+  #   M <- tcrossprod(Z %*% S, Z)
+  #   a <- Re(diag(mat_sqrt(M)))
+  #   if(any(is.nan(a)))
+  #     return(unname(sqrt(diag(M))))
+  #   else
+  #     return(a)
+  # }, S = Sigma, Z = Z, SIMPLIFY = F)
 
   #' lambda, logZ and V lookups ----
   lambdas <- mapply(function(mu, nu){
@@ -81,7 +81,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delt
       return(Sbeta_cdiff(beta, b, X, Z, Y, lY, delta, tau, w, v, summax, .Machine$double.eps^(1/3)))
     }else
       return(a)
-  }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau3, 
+  }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, 
       mu = mus, nu = nus, lam = lambdas, V = Vs, SIMPLIFY = F)
   
   Hb <- mapply(function(b, X, Y, Z, lY, delta, tau, mu , nu, lam, V){
@@ -90,7 +90,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delt
       return(Hbeta(beta, b, X, Z, Y, lY, delta, tau, w, v, summax, .Machine$double.eps^(1/4)))
     else
       return(a)
-  }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau3, 
+  }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, 
   mu = mus, nu = nus, lam = lambdas, V = Vs, SIMPLIFY = F)
   
   # Sb <- mapply(Sbeta, X, Y, mus, nus, lambdas, Vs, SIMPLIFY = F)
@@ -99,11 +99,11 @@ EMupdate <- function(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delt
   #' \deltas
   Sd <- mapply(function(delta, b, X, Z, Y, lY, tau){
     Sdelta_cdiff(delta, b, X, Z, Y, lY, beta, tau, w, v, summax, eps = .Machine$double.eps^(1/3))
-  }, delta = delta, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau3, SIMPLIFY = F)
+  }, delta = delta, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
 
   Hd <- mapply(function(delta, b, X, Z, Y, lY, tau){
     Hdelta(delta, b, X, Z, Y, lY, beta, tau, w, v, summax, eps = .Machine$double.eps^(1/4))
-  }, delta = delta, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau3, SIMPLIFY = F)
+  }, delta = delta, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
   
   #' Survival parameters (\gamma, \zeta)
   Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
@@ -185,9 +185,9 @@ EM <- function(long.formula, surv.formula, data, summax = 100, post.process = T,
   #' Control arguments specific to dispersion estimates ----
   if(!is.null(disp.control$delta.method)) delta.method <- disp.control$delta.method else delta.method <- 'bobyqa'
   if(!delta.method %in% c('bobyqa', 'optim')) stop('delta.method must be either "optim" or "bobyqa".\n')
-  if(!is.null(disp.control$min.profile.length)) min.profile.length <- disp.control$min.profile.length else min.profile.length <- 2
+  if(!is.null(disp.control$min.profile.length)) min.profile.length <- disp.control$min.profile.length else min.profile.length <- 3
   if(!is.null(disp.control$re.maximise)) re.maximise <- disp.control$re.maximise else re.maximise <- T
-  if(!is.null(disp.control$max.val)) max.val <- disp.control$max.val else max.val <- 2
+  if(!is.null(disp.control$max.val)) max.val <- disp.control$max.val else max.val <- Inf
   if(!is.null(disp.control$truncated)) truncated <- disp.control$truncated else truncated <- T
   
   if(auto.summax){
