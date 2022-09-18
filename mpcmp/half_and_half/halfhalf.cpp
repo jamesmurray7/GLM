@@ -608,6 +608,33 @@ double Hdelta(double delta, vec& b, mat& X, mat& Z, vec& Y, vec& lY, vec& beta, 
       E_llcmp_delta(delta - eps, b, X, Z, Y, lY, beta, tau, w, v, summax))/pow(eps, 2.0);
 }
 
+
+// void test_num(IntegerVector inds){
+//   for(auto num = inds.begin(); num != inds.end(); num++){
+//     Rcout << "num is " << num << std::endl;
+//     int current = *num;
+//     Rcout << "Corresponds to ind: " << current << std::endl;
+//   }
+// }
+
+// [[Rcpp::export]]
+vec delta_update(List delta, List b, List X, List Z, List Y, List lY,
+                  vec& beta, List tau, vec& w, vec& v, int summax, IntegerVector inds){
+  vec new_deltas = vec(delta.size());
+  for(auto num = inds.begin(); num != inds.end(); num++){
+    int current = *num;
+    // Unpack neccesary items from provided lists.
+    vec b_i = b[current], tau_i = tau[current], Y_i = Y[current], lY_i = lY[current];
+    mat X_i = X[current], Z_i = Z[current];
+    double delta_i = delta[current];
+    // Calculate first and second derivs...
+    double Sd_i = Sdelta_cdiff(delta_i, b_i, X_i, Z_i, Y_i, lY_i, beta, tau_i, w, v, summax, 1e-4);//pow(datum::eps, 1./3.));
+    double Hd_i = Hdelta(delta_i, b_i, X_i, Z_i, Y_i, lY_i, beta, tau_i, w, v, summax, 1e-3);//pow(datum::eps, 1./4.));
+    new_deltas[current] = delta_i - (Sd_i/Hd_i);
+  }
+  return new_deltas;
+}
+
 // [[Rcpp::export]]
 cx_mat mat_sqrt(const mat & M){
   return sqrtmat(M);

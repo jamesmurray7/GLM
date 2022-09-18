@@ -211,3 +211,24 @@ check.disps <- function(S){ # S a half.and.half (S)imulated data list.
   print(lapply(calculated.disps, summary))
 }
 
+check.deltas.against.disps <- function(S, d){ # S a half.and.half (S)imulated data set
+  true.disps <- S$true.deltas                 # d subject estimates from get.delta.inits
+  ests <- d$subject.estimates
+  
+  inds <- which(ests != 0)
+  true.inds <- true.disps[inds]
+  ests.inds <- ests[inds]
+  
+  # Partition into two true deltas and plot visual
+  aaa <- unique(true.inds)
+  par(mfrow=c(1,2))
+  plot(ests.inds[true.inds == aaa[1]], main = bquote('True delta: ' ~ .(aaa[1])),
+       ylab = 'estimate', xaxt = 'n', xlab = '')
+  abline(h = aaa[1], col = 'red', lty = 5)
+  plot(ests.inds[true.inds = aaa[2]], main = bquote('True delta: ' ~ .(aaa[2])),
+       ylab = 'estimate', xaxt = 'n', xlab = '')
+  abline(h = aaa[2], col = 'red', lty = 5)
+  par(mfrow=c(1,1))
+  
+  return(true.inds - ests.inds)
+}

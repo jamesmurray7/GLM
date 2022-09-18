@@ -10,7 +10,7 @@ check.disps(test)
 
 control <- list(verbose=T)
 disp.control <- list(delta.method = 'bobyqa', min.profile.length = 3)
-optim.control <- list(optimiser = 'optim', Hessian = 'obj', eps = 1e-3)
+optim.control <- list(optimiser = 'optim', Hessian = 'grad', eps = 1e-3)
 summax=3
 
 long.formula <- Y~time+cont+bin+(1|id)

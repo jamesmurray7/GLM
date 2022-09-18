@@ -1,16 +1,14 @@
 
-vcov <- function(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax){
+vcov <- function(Omega, delta, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax){
   #' Unpack Omega ----
   D <- Omega$D
   beta <- c(Omega$beta)
-  delta <- c(Omega$delta)
   gamma <- c(Omega$gamma)
   zeta <- c(Omega$zeta)
   
   #' Extract data objects ----
   #' Longitudinal //
   Z <- dmats$Z
-  G <- dmats$G
   X <- dmats$X
   Y <- dmats$Y
   lY <- lapply(Y, lfactorial)
@@ -53,7 +51,7 @@ vcov <- function(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax){
   
   #' Calculate things we need for scores on \beta and \delta
   mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b, SIMPLIFY = F)
-  nus <- mapply(function(G) exp(G %*% delta), G = G, SIMPLIFY = F)
+  nus <- mapply(function(delta, Y) rep(exp(delta), length(Y)), delta = delta, Y = Y, SIMPLIFY = F)
   
   #' Grid lookups ----
   lambdas <- mapply(function(mu, nu){
@@ -68,18 +66,18 @@ vcov <- function(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax){
     calc_V_vec(mu, lambda, nu, logZ, summax)
   }, mu = mus, nu = nus, lambda = lambdas, logZ = logZs, SIMPLIFY = F)
   
-  
-  
   #' Score for the dispersion parameter(s), \delta 
   tau <- mapply(function(Z, S) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), S = Sigma, Z = Z, SIMPLIFY = F)
   #' Score for the fixed effects, \beta 
   # Sb <- mapply(Sbeta, X, Y, mus, nus, lambdas, Vs, SIMPLIFY = F)
-  Sb <- mapply(function(G, b, X, Z, Y, lY, tau){
-    Sbeta_cdiff(beta, G, b, X, Z, Y, lY, delta, tau, w, v, summax, eps = .Machine$double.eps^(1/3))
-  }, G = G, b = b, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
-  Sd <- mapply(function(G, b, X, Z, Y, lY, tau){
-    Sdelta_cdiff(delta, G, b, X, Z, Y, lY, beta, tau, w, v, summax, eps = .Machine$double.eps^(1/3))
-  }, G = G, b = b, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
+  Sb <- mapply(function(b, X, Y, Z, lY, delta, tau, mu , nu, lam, V){
+    a <- Sbeta(X, Y, mu, nu, lam, V)
+    if(any(a > 1e3) | any(is.nan(a))){
+      return(Sbeta_cdiff(beta, b, X, Z, Y, lY, delta, tau, w, v, summax, .Machine$double.eps^(1/3)))
+    }else
+      return(a)
+  }, b = b, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, 
+  mu = mus, nu = nus, lam = lambdas, V = Vs, SIMPLIFY = F)
 
   #' Survival parameters (\gamma, \zeta)
   Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
@@ -87,12 +85,20 @@ vcov <- function(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax){
   }, b = b, Sigma = Sigma, S = S, SS = SS, Fu = Fu, Fi = Fi, l0u = l0u, Delta = Delta, SIMPLIFY = F)
   
   # Collate and form information --------------------------------------------
-  S <- mapply(function(sD, Sb, Sd, Sgz){
-    c(sD, c(Sb), c(Sd), Sgz)
-  }, sD = sD, Sb = Sb, Sd = Sd, Sgz = Sgz)
+  S <- mapply(function(sD, Sb, Sgz){
+    c(sD, c(Sb), Sgz)
+  }, sD = sD, Sb = Sb, Sgz = Sgz)
 
   SS <- rowSums(S) # sum S
   I <- Reduce('+', lapply(1:n, function(i) tcrossprod(S[, i]))) - tcrossprod(SS)/n
   # ^ observed empirical information matrix (Mclachlan and Krishnan, 2008).
-  I
+  
+  # Variance on delta etimates
+  Sd <- mapply(function(delta, b, X, Z, Y, lY, tau){
+    Sdelta_cdiff(delta, b, X, Z, Y, lY, beta, tau, w, v, summax, eps = .Machine$double.eps^(1/3))
+  }, delta = delta, b = b, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = T)
+  
+  Hd <- mapply(function(delta, b, X, Z, Y, lY, tau){
+    Hdelta(delta, b, X, Z, Y, lY, beta, tau, w, v, summax, eps = 1e-3)
+  }, delta = delta, b = b, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
 }

@@ -17,7 +17,7 @@ source('inits.R')
 vech <- function(x) x[lower.tri(x, T)]
 
 EMupdate <- function(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
-                     sv, w, v, n, m, summax, debug, optimiser.arguments){
+                     sv, w, v, n, m, summax, debug, optimiser.arguments, inds.met){
   s <- proc.time()[3]
   #' Unpack Omega, the parameter vector
   D <- Omega$D; beta <- Omega$beta; gamma <- Omega$gamma; zeta <- Omega$zeta
@@ -97,13 +97,16 @@ EMupdate <- function(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delt
   # Hb <- mapply(getW1, X, mus, nus, lambdas, Vs, SIMPLIFY = F)
   
   #' \deltas
-  Sd <- mapply(function(delta, b, X, Z, Y, lY, tau){
-    Sdelta_cdiff(delta, b, X, Z, Y, lY, beta, tau, w, v, summax, eps = .Machine$double.eps^(1/3))
-  }, delta = delta, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
-
-  Hd <- mapply(function(delta, b, X, Z, Y, lY, tau){
-    Hdelta(delta, b, X, Z, Y, lY, beta, tau, w, v, summax, eps = .Machine$double.eps^(1/4))
-  }, delta = delta, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
+  #' Only carried out on those who _meet_ the min.profile.length criterion...
+  # Sd <- mapply(function(delta, b, X, Z, Y, lY, tau){
+  #   Sdelta_cdiff(delta, b, X, Z, Y, lY, beta, tau, w, v, summax, eps = .Machine$double.eps^(1/3))
+  # }, delta = delta, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
+  # 
+  # Hd <- mapply(function(delta, b, X, Z, Y, lY, tau){
+  #   Hdelta(delta, b, X, Z, Y, lY, beta, tau, w, v, summax, eps = .Machine$double.eps^(1/4))
+  # }, delta = delta, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
+  
+  delta.new <- delta_update(delta, b.hat, X, Z, Y, lY, beta, tau, w, v, summax, inds.met-1)
   
   #' Survival parameters (\gamma, \zeta)
   Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
@@ -123,7 +126,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delt
   
   # \beta and \delta
   (beta.new <- beta - solve(Reduce('+', Hb), Reduce('+', Sb)))
-  delta.new <- lapply(1:n, function(i) delta[[i]] - Sd[[i]]/Hd[[i]])
+  # delta.new <- lapply(1:n, function(i) delta[[i]] - Sd[[i]]/Hd[[i]])
 
   # Survival parameters (gamma, zeta)
   (gammazeta.new <- c(gamma, zeta) - solve(Reduce('+', Hgz), rowSums(Sgz)))
@@ -188,7 +191,7 @@ EM <- function(long.formula, surv.formula, data, summax = 100, post.process = T,
   if(!is.null(disp.control$min.profile.length)) min.profile.length <- disp.control$min.profile.length else min.profile.length <- 3
   if(!is.null(disp.control$re.maximise)) re.maximise <- disp.control$re.maximise else re.maximise <- T
   if(!is.null(disp.control$max.val)) max.val <- disp.control$max.val else max.val <- Inf
-  if(!is.null(disp.control$truncated)) truncated <- disp.control$truncated else truncated <- T
+  if(!is.null(disp.control$truncated)) truncated <- disp.control$truncated else truncated <- F
   
   if(auto.summax){
     summax.old <- summax
@@ -253,32 +256,29 @@ EM <- function(long.formula, surv.formula, data, summax = 100, post.process = T,
   if(verbose) message('Starting EM algorithm.')
   while(diff > tol && iter < maxit){
     update <- EMupdate(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
-                       sv, w, v, n, m, summax, debug, optim.control)
+                       sv, w, v, n, m, summax, debug, optim.control, inds.met)
     if(debug) DEBUG.update <<- update
     params.new <- c(vech(update$D), update$beta, update$gamma, update$zeta)
     names(params.new) <- names(params)
     
     # Set-up new and old delta lists
-    delta.old <- delta
+    delta.old <- unlist(delta)
     delta <- update$delta
-    # Re-set profiles which do not meet criterion to have delta = 0 (i.e. poisson).
-    for(i in inds.not) delta[[i]] <- 0
     # set any which are NaN back to their old values.
-    nan.inds.to.reset <- which(is.nan(unlist(delta)))
-    for(p in seq_along(nan.inds.to.reset)) delta[[nan.inds.to.reset[p]]] <- delta.old[[nan.inds.to.reset[p]]]
-    # Ensure max.val isn't exceeded, as this can procure numerical issues
-    delta <- lapply(delta, function(d){
-      if(d < -max.val){
-        x <- -max.val + 1e-3
-      }else if(d > max.val){
-        x <- max.val - 1e-3
-      }else{
-        x <- d
-      }
-      x
-    })
+    nan.inds.to.reset <- which(is.nan(delta))
+    if(length(nan.inds.to.reset) > 0) delta[nan.inds.to.reset] <- delta.old[nan.inds.to.reset]
+    # delta <- lapply(delta, function(d){
+    #   if(d < -max.val){
+    #     x <- -max.val + 1e-3
+    #   }else if(d > max.val){
+    #     x <- max.val - 1e-3
+    #   }else{
+    #     x <- d
+    #   }
+    #   x
+    # })
     # Work out relative difference
-    delta.diffs <- difference(unlist(delta.old), unlist(delta), 'relative')
+    delta.diffs <- difference(delta.old, delta, 'relative')
     
     # Convergence criteria + print (if wanted).
     diffs <- difference(params, params.new, conv)
@@ -292,7 +292,7 @@ EM <- function(long.formula, surv.formula, data, summax = 100, post.process = T,
       
     #' Set new estimates as current
     b <- update$b
-    D <- update$D; beta <- update$beta; # delta done above.
+    D <- update$D; beta <- update$beta; delta <- as.list(delta)
     gamma <- update$gamma; zeta <- update$zeta
     l0 <- update$l0; l0u <- update$l0u; l0i <- update$l0i
     iter <- iter + 1
@@ -310,11 +310,7 @@ EM <- function(long.formula, surv.formula, data, summax = 100, post.process = T,
     summax = summax
   )
   if(auto.summax) modelInfo$summax.type <- 'automatic' else modelInfo$summax.type <- 'manual'
-  if(is.null(delta.init)){
-    modelInfo$delta.init <- delta.inits.raw # Return ALL information.
-  }else{
-    modelInfo$delta.init <- delta.init
-  }
+  modelInfo$delta.init <- delta.inits.raw # Return ALL information.
   modelInfo$optimHess <- c(optimiser = optim.control$optimiser, Hessian = optim.control$Hessian, epsilon = optim.control$eps)
   out$modelInfo <- modelInfo
   out$hazard <- cbind(ft = sv$ft, haz = l0, nev = sv$nev)
@@ -324,7 +320,7 @@ EM <- function(long.formula, surv.formula, data, summax = 100, post.process = T,
     message('\nCalculating SEs...')
     start.time.p <- proc.time()[3]
     #' Calculating \b and \Sigma at MLEs
-    b.update <- b.minimise(b, X, Y, lY, Z, G, S, SS, Fi, Fu, l0i, l0u, Delta, 
+    b.update <- b.minimise(b, X, Y, lY, Z, delta, S, SS, Fi, Fu, l0i, l0u, Delta, 
                            Omega, summax, method = optim.control$optimiser, obj = 'joint_density', 
                            Hessian = optim.control$Hessian, optim.control$eps)
     b <- b.update$b.hat
