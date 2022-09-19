@@ -106,7 +106,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delt
   #   Hdelta(delta, b, X, Z, Y, lY, beta, tau, w, v, summax, eps = .Machine$double.eps^(1/4))
   # }, delta = delta, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
   
-  delta.new <- delta_update(delta, b.hat, X, Z, Y, lY, beta, tau, w, v, summax, inds.met-1)
+  delta.new <- delta_update(delta, b.hat, X, Z, Y, lY, beta, tau, w, v, summax, inds.met-1)$new
   
   #' Survival parameters (\gamma, \zeta)
   Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){

@@ -618,9 +618,9 @@ double Hdelta(double delta, vec& b, mat& X, mat& Z, vec& Y, vec& lY, vec& beta, 
 // }
 
 // [[Rcpp::export]]
-vec delta_update(List delta, List b, List X, List Z, List Y, List lY,
+List delta_update(List delta, List b, List X, List Z, List Y, List lY,
                   vec& beta, List tau, vec& w, vec& v, int summax, IntegerVector inds){
-  vec new_deltas = vec(delta.size());
+  vec new_deltas = vec(delta.size()), scores = vec(delta.size()), hess = vec(delta.size());
   for(auto num = inds.begin(); num != inds.end(); num++){
     int current = *num;
     // Unpack neccesary items from provided lists.
@@ -628,11 +628,14 @@ vec delta_update(List delta, List b, List X, List Z, List Y, List lY,
     mat X_i = X[current], Z_i = Z[current];
     double delta_i = delta[current];
     // Calculate first and second derivs...
-    double Sd_i = Sdelta_cdiff(delta_i, b_i, X_i, Z_i, Y_i, lY_i, beta, tau_i, w, v, summax, 1e-4);//pow(datum::eps, 1./3.));
-    double Hd_i = Hdelta(delta_i, b_i, X_i, Z_i, Y_i, lY_i, beta, tau_i, w, v, summax, 1e-3);//pow(datum::eps, 1./4.));
+    double Sd_i = Sdelta_cdiff(delta_i, b_i, X_i, Z_i, Y_i, lY_i, beta, tau_i, w, v, summax, pow(datum::eps, 1./3.));
+    double Hd_i = Hdelta(delta_i, b_i, X_i, Z_i, Y_i, lY_i, beta, tau_i, w, v, summax, 0.0005610352);// pow(datum::eps, 1./4.));
     new_deltas[current] = delta_i - (Sd_i/Hd_i);
+    scores[current] = Sd_i;
+    hess[current] = Hd_i;
   }
-  return new_deltas;
+  // return new_deltas;
+  return List::create(_["new"] = new_deltas, _["scores"] = scores, _["Hessian"] = hess);
 }
 
 // [[Rcpp::export]]
@@ -664,6 +667,106 @@ vec expected_variance(vec& mu, vec& nu, int summax){
   vec loglam = log(lam);
   vec logZ = logZ_c(loglam, nu, summax);
   return V_Y(loglam, logZ, nu, summax);
+}
+
+// MH Update Scheme for delta ---------------------------------------------
+double rexp_draw(double xx){
+  NumericVector a = Rcpp::rexp(1, xx);
+  return a[0];
+}
+
+//[[Rcpp::export]]
+vec delta_mh(vec& mu, double delta_current, vec& Y, vec& lY, int N, int summax){
+  int mi = mu.size();
+  vec res = vec(N);
+  // Dispersion (exponentiated; vector and double version...)
+  vec nu0 = vec(mi, fill::value(exp(delta_current))), nu1; 
+  double nu00 = nu0.at(0), nu11;       
+  
+  // Log-likelihood block ----
+  vec lam = lambda_appx(mu, nu0, summax);
+  vec loglam = log(lam);
+  vec logZ = logZ_c(loglam, nu0, summax);
+  
+  double ll0 = ll_cmp(loglam, nu0, logZ, Y, lY), ll1, logprob, loglikdiff, nurat, laccept;
+  bool accept;
+  
+  for(int n = 0; n < N; n++){
+    nu11 = rexp_draw(1./nu00);              // Generate random draw.
+    nu1 = vec(mi, fill::value(nu11));       // Vector version
+    nurat = nu11 / nu00;
+    // Work out competing log-likelihood ----
+    lam = lambda_appx(mu, nu1, summax);
+    loglam = log(lam);
+    logZ = logZ_c(loglam, nu1, summax);
+    ll1 = ll_cmp(loglam, nu1, logZ, Y, lY);
+    
+    // Generate random uniform draw and take difference in proposals
+    logprob = log(randu());
+    loglikdiff = ll1 - ll0 + log(nurat) + nurat - 1./nurat; 
+    laccept = std::min(0., ll1 - ll0);
+    accept = logprob < laccept;
+    if(accept){
+      nu00 = nu11;
+      ll0 = ll1;
+    }
+    
+    // if (n % 100 == 0) Rcout << n << std::endl;
+    
+    // Store accepted nu value
+    res[n] = nu00;
+    
+  }
+  
+  return res;
+}
+
+//[[Rcpp::export]]
+vec delta_mh2(vec& mu, double delta0, vec& Y, vec& lY, int N, int summax){
+  int mi = mu.size();
+  vec nu0 = vec(mi, fill::value(exp(delta0)));
+  double nu00 = exp(delta0);
+  
+  // LL0
+  vec lam0 = lambda_appx(mu, nu0, summax);
+  vec loglam0 = log(lam0);
+  vec logZ0 = logZ_c(loglam0, nu0, summax);
+  
+  double ll0 = ll_cmp(loglam0, nu0, logZ0, Y, lY), ll1;
+  
+  // Initialise all items in the loop
+  vec nu1, lam1, loglam1, logZ1;
+  double nu11, loglikdiff, nurat, logprob, denrat, laccept;
+  bool accept;
+  
+  // MCMC loop
+  vec out = vec(N);
+  for(int n = 0; n < N; n++){
+    nu11 = rexp_draw(nu00);
+    nu1 = vec(mi, fill::value(nu11));
+    nurat = nu11/nu00;
+    
+    // Log-likelihood at this candidate nu11...
+    vec lam1 = lambda_appx(mu, nu1, summax);
+    vec loglam1 = log(lam1);
+    vec logZ1 = logZ_c(loglam1, nu1, summax);
+    
+    ll1 = ll_cmp(loglam1, nu1, logZ1, Y, lY);
+    loglikdiff = ll1 - ll0;
+    
+    // Generate Uniform draw and accept / reject
+    logprob = log(randu());
+    denrat = loglikdiff + log(nurat) + nurat - 1./nurat + 
+                R::pexp(nu00, 1., true, true) - R::pexp(nu11, 1., true, true);
+    laccept = std::min(0., denrat);
+    accept = logprob < laccept;
+    if(accept){
+      nu00 = nu11;
+      ll0 = ll1;
+    }
+    out[n] = nu00;
+  }
+  return out;
 }
 
 /* *******

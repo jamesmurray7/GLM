@@ -80,7 +80,7 @@ delta.bobyqa <- function(Y, mu, summax){
 }
 
 find.deltas.bobyqa <- function(Ylist, mulist, summax, verbose = F, min.profile.length = 1){
-  out <- numeric(length(Y))
+  out <- numeric(length(Ylist))
   candidateY <- sapply(Ylist, function(y) length(unique(y))) > min.profile.length
   numY <- sum(candidateY); inds <- which(candidateY); p <- 1
   for(i in inds){
