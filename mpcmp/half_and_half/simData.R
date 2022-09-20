@@ -93,7 +93,7 @@ simData_joint <- function(n = 250, ntms = 10, summax = 100,  fup = 3,
       warn <- TRUE
     } else {
       y <- 0
-      dc <- cmp_pmf_scalar(0:(summax+1), lambda[i], nu[i], summax)
+      dc <- cmp_pmf_scalar(0:(summax), lambda[i], nu[i], summax)
       py <- dc[y + 1]
       while (py <= U[i]) {
         y <- y + 1
@@ -169,8 +169,9 @@ simData_joint2 <- function(n = 250, ntms = 10, summax = 100,  fup = 3,
   for(i in 1:n){
     ind <- which(df$id==i)
     nu <- rep(exp(deltas[i]), length(ind))
-    lam <- lambda_appx(mu[ind], nu[ind], summax)
-    Y[[i]] <- .rcomp(lam, nu[ind], summax)
+    lam <- lambda_appx(mu[ind], nu, summax)
+    Y[[i]] <- .rcomp(lam, nu, summax)
+    # Y[[1]] <- rcomp(n = length(ind), nu = nu, lambda = lam, summax = summax)
     utils::setTxtProgressBar(pb, i)
   }
   df$Y <- do.call(c, Y)

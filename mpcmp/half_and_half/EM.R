@@ -17,7 +17,7 @@ source('inits.R')
 vech <- function(x) x[lower.tri(x, T)]
 
 EMupdate <- function(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
-                     sv, w, v, n, m, summax, debug, optimiser.arguments, inds.met){
+                     sv, w, v, n, m, summax, debug, optimiser.arguments, inds.met, update.deltas){
   s <- proc.time()[3]
   #' Unpack Omega, the parameter vector
   D <- Omega$D; beta <- Omega$beta; gamma <- Omega$gamma; zeta <- Omega$zeta
@@ -106,8 +106,12 @@ EMupdate <- function(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delt
   #   Hdelta(delta, b, X, Z, Y, lY, beta, tau, w, v, summax, eps = .Machine$double.eps^(1/4))
   # }, delta = delta, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
   
-  delta.new <- delta_update(delta, b.hat, X, Z, Y, lY, beta, tau, w, v, summax, inds.met-1)$new
-  
+  if(update.deltas){
+    delta.new <- delta_update(delta, b.hat, X, Z, Y, lY, beta, tau, w, v, summax, inds.met-1)$new
+  }else{
+    delta.new <- unlist(delta)
+  }
+
   #' Survival parameters (\gamma, \zeta)
   Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
     Sgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, .Machine$double.eps^(1/3))
@@ -153,7 +157,8 @@ EMupdate <- function(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delt
 }
 
 EM <- function(long.formula, surv.formula, data, summax = 100, post.process = T, 
-               control = list(), disp.control = list(), optim.control = list()){
+               control = list(), disp.control = list(), optim.control = list(),
+               update.deltas = F){
   start.time <- proc.time()[3]
   
   #' Parsing formula objects ----
@@ -256,29 +261,33 @@ EM <- function(long.formula, surv.formula, data, summax = 100, post.process = T,
   if(verbose) message('Starting EM algorithm.')
   while(diff > tol && iter < maxit){
     update <- EMupdate(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
-                       sv, w, v, n, m, summax, debug, optim.control, inds.met)
+                       sv, w, v, n, m, summax, debug, optim.control, inds.met, update.deltas)
     if(debug) DEBUG.update <<- update
     params.new <- c(vech(update$D), update$beta, update$gamma, update$zeta)
     names(params.new) <- names(params)
     
     # Set-up new and old delta lists
-    delta.old <- unlist(delta)
-    delta <- update$delta
-    # set any which are NaN back to their old values.
-    nan.inds.to.reset <- which(is.nan(delta))
-    if(length(nan.inds.to.reset) > 0) delta[nan.inds.to.reset] <- delta.old[nan.inds.to.reset]
-    # delta <- lapply(delta, function(d){
-    #   if(d < -max.val){
-    #     x <- -max.val + 1e-3
-    #   }else if(d > max.val){
-    #     x <- max.val - 1e-3
-    #   }else{
-    #     x <- d
-    #   }
-    #   x
-    # })
-    # Work out relative difference
-    delta.diffs <- difference(delta.old, delta, 'relative')
+    if(update.deltas){
+      delta.old <- unlist(delta)
+      delta <- update$delta
+      # set any which are NaN back to their old values.
+      nan.inds.to.reset <- which(is.nan(delta))
+      if(length(nan.inds.to.reset) > 0) delta[nan.inds.to.reset] <- delta.old[nan.inds.to.reset]
+      delta <- lapply(delta, function(d){
+        if(d < -max.val){
+          x <- -max.val + 1e-3
+        }else if(d > max.val){
+          x <- max.val - 1e-3
+        }else{
+          x <- d
+        }
+        x
+      })
+      # Work out relative difference
+      delta.diffs <- difference(delta.old, delta, 'relative')
+    }else{
+      delta <- update$delta
+    }
     
     # Convergence criteria + print (if wanted).
     diffs <- difference(params, params.new, conv)
@@ -287,7 +296,8 @@ EM <- function(long.formula, surv.formula, data, summax = 100, post.process = T,
       print(sapply(params.new, round, 4))
       message("Iteration ", iter + 1, ' maximum ', conv, ' difference: ', round(diff, 4), ' for parameter ', names(params.new)[which.max(diffs)])
       message("Largest RE relative difference: ", round(max(difference(do.call(cbind, update$b), do.call(cbind, b), conv)), 4))
-      message("Largest relative difference for subject-specific dispersion: ", round(max(delta.diffs), 4))
+      if(update.deltas)
+         message("Largest relative difference for subject-specific dispersion: ", round(max(delta.diffs), 4))
     }
       
     #' Set new estimates as current
@@ -307,7 +317,9 @@ EM <- function(long.formula, surv.formula, data, summax = 100, post.process = T,
               iter = iter)
   modelInfo <- list(
     forms = formulas,
-    summax = summax
+    summax = summax,
+    n = n, mi = m,
+    inds.met = inds.met
   )
   if(auto.summax) modelInfo$summax.type <- 'automatic' else modelInfo$summax.type <- 'manual'
   modelInfo$delta.init <- delta.inits.raw # Return ALL information.
@@ -327,19 +339,28 @@ EM <- function(long.formula, surv.formula, data, summax = 100, post.process = T,
     Sigma <- b.update$Sigma
   
     # The Information matrix
-    I <- structure(vcov(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax),
-                   dimnames = list(names(params), names(params)))
+    vcv <- vcov(Omega, delta, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax, inds.met)
+    I <- structure(vcv$I, dimnames = list(names(params), names(params)))
     I.inv <- tryCatch(solve(I), error = function(e) e)
     if(inherits(I.inv, 'error')) I.inv <- structure(MASS::ginv(I),
                                                     dimnames = dimnames(I))
     out$SE <- sqrt(diag(I.inv))
     out$vcov <- I
     out$RE <- do.call(rbind, b)
+    delta.df <- data.frame(
+      id = inds.met,
+      delta = unlist(delta)[inds.met],
+      lb = unlist(delta)[inds.met] - 1.96 * sqrt(1/vcv$Id),
+      ub = unlist(delta)[inds.met] + 1.96 * sqrt(1/vcv$Id)
+    )
+    attr(delta.df, 'SE') <- sqrt(1/vcv$Id)
+    out$delta.df <- delta.df
     postprocess.time <- round(proc.time()[3]-start.time.p, 2)
+    
   }
   comp.time <- round(proc.time()[3]-start.time, 3)
   
-  out$elapsed.time <- c(`delta optimisation` = if(is.null(delta.init)) unname(delta.inits.raw$time) else NULL,
+  out$elapsed.time <- c(`delta optimisation` = unname(delta.inits.raw$time),
                         `re-maximisation` = if(re.maximise) unname(remaximisation.time) else NULL,
                         `startup time` = unname(startup.time),
                         `EM time` = unname(EMtime),

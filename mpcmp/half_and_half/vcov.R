@@ -1,5 +1,5 @@
 
-vcov <- function(Omega, delta, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax){
+vcov <- function(Omega, delta, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax, inds.met){
   #' Unpack Omega ----
   D <- Omega$D
   beta <- c(Omega$beta)
@@ -94,11 +94,14 @@ vcov <- function(Omega, delta, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax){
   # ^ observed empirical information matrix (Mclachlan and Krishnan, 2008).
   
   # Variance on delta etimates
-  Sd <- mapply(function(delta, b, X, Z, Y, lY, tau){
-    Sdelta_cdiff(delta, b, X, Z, Y, lY, beta, tau, w, v, summax, eps = .Machine$double.eps^(1/3))
-  }, delta = delta, b = b, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = T)
+  Sdelta <- delta_update(delta, b, X, Z, Y, lY, beta, tau, w, v, summax, inds.met - 1L)
+  Sd <- Sdelta$scores
+  SSd <- sum(Sd) / length(inds.met)
+  Id <- sum(sapply(1:n, function(i) tcrossprod(Sd[i,,drop=F]))) - SSd
   
-  Hd <- mapply(function(delta, b, X, Z, Y, lY, tau){
-    Hdelta(delta, b, X, Z, Y, lY, beta, tau, w, v, summax, eps = 1e-3)
-  }, delta = delta, b = b, X = X, Z = Z, Y = Y, lY = lY, tau = tau, SIMPLIFY = F)
+  list(
+    I = I,
+    Id = Id, 
+    Hd = sum(Sdelta$Hessian)
+  )
 }
