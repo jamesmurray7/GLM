@@ -71,14 +71,18 @@ vcov <- function(Omega, delta, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax, 
   
   #' Score for the fixed effects, \beta 
   # Sb <- mapply(Sbeta, X, Y, mus, nus, lambdas, Vs, SIMPLIFY = F)
-  Sb <- mapply(function(b, X, Y, Z, lY, delta, tau, mu , nu, lam, V, summax){
-    a <- Sbeta(X, Y, mu, nu, lam, V)
-    if(any(a > 1e3) | any(is.nan(a))){
-      return(Sbeta_cdiff(beta, b, X, Z, Y, lY, delta, tau, w, v, summax, .Machine$double.eps^(1/3)))
-    }else
-      return(a)
-  }, b = b, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, 
-  mu = mus, nu = nus, lam = lambdas, V = Vs, summax = summax, SIMPLIFY = F)
+  # Sb <- mapply(function(b, X, Y, Z, lY, delta, tau, mu , nu, lam, V, summax){
+  #   a <- Sbeta(X, Y, mu, nu, lam, V)
+  #   if(any(a > 1e3) | any(is.nan(a))){
+  #     return(Sbeta_cdiff(beta, b, X, Z, Y, lY, delta, tau, w, v, summax, .Machine$double.eps^(1/3)))
+  #   }else
+  #     return(a)
+  # }, b = b, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, 
+  # mu = mus, nu = nus, lam = lambdas, V = Vs, summax = summax, SIMPLIFY = F)
+  
+  Sb <- mapply(function(b, X, Z, Y, lY, delta, tau, summax){
+    Sbeta2(beta, b, X, Z, Y, lY, delta, tau, w, v, summax)
+  }, b = b, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, summax = summax, SIMPLIFY = F)
 
   #' Survival parameters (\gamma, \zeta)
   Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){

@@ -52,11 +52,11 @@ EMupdate <- function(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delt
   lambdas <- mapply(function(mu, nu, summax){
     lambda_appx(mu, nu, summax)
   }, mu = mus, nu = nus, summax = summax, SIMPLIFY = F)
-  
+
   logZs <- mapply(function(mu, nu, lambda, summax){
     logZ_c(log(lambda), nu, summax)
   }, mu = mus, nu = nus, lambda = lambdas, summax = summax, SIMPLIFY = F)
-  
+
   Vs <- mapply(function(mu, nu, lambda, logZ, summax){
     calc_V_vec(mu, lambda, nu, logZ, summax)
   }, mu = mus, nu = nus, lambda = lambdas, logZ = logZs, summax = summax, SIMPLIFY = F)
@@ -71,17 +71,25 @@ EMupdate <- function(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delt
       return(Sbeta_cdiff(beta, b, X, Z, Y, lY, delta, tau, w, v, summax, .Machine$double.eps^(1/3)))
     }else
       return(a)
-  }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, 
+  }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau,
       mu = mus, nu = nus, lam = lambdas, V = Vs, summax = summax, SIMPLIFY = F)
-  
+
   Hb <- mapply(function(b, X, Y, Z, lY, delta, tau, mu , nu, lam, V, summax){
     a <- getW1(X, mu, nu, lam, V)
     if(any(a > 1e3) | any(is.nan(a)))
       return(Hbeta(beta, b, X, Z, Y, lY, delta, tau, w, v, summax, .Machine$double.eps^(1/4)))
     else
       return(a)
-  }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, 
+  }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau,
   mu = mus, nu = nus, lam = lambdas, V = Vs, summax = summax, SIMPLIFY = F)
+  
+  # Sb2 <- mapply(function(b, X, Z, Y, lY, delta, tau, summax){
+  #   Sbeta2(beta, b, X, Z, Y, lY, delta, tau, w, v, summax)
+  # }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, summax = summax, SIMPLIFY = F)
+  # 
+  # Hb2 <- mapply(function(b, X, Z, Y, lY, delta, tau, summax){
+  #   Hbeta2(beta, b, X, Z, Y, lY, delta, tau, w, v, summax)
+  # }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, summax = summax, SIMPLIFY = F)
   
   #' \deltas
   #' Only carried out on those who _meet_ the min.profile.length criterion...
@@ -110,6 +118,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delt
   
   # \beta and \delta
   (beta.new <- beta - solve(Reduce('+', Hb), Reduce('+', Sb)))
+  # (beta.new <- beta - solve(Reduce('+', Hb2), Reduce('+', Sb2)))
   # delta.new <- lapply(1:n, function(i) delta[[i]] - Sd[[i]]/Hd[[i]])
 
   # Survival parameters (gamma, zeta)

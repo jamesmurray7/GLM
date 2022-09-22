@@ -18,10 +18,14 @@ long.formula <- Y~time+cont+bin+(1|id)
 surv.formula <- Surv(survtime, status) ~ bin
 update.deltas <- F
 
-fit <- EM(long.formula, surv.formula, data,
-          control = control, summax = 36,
+summax.fn <- function(y) max(y) + 10
+min.summax <- 20
+
+fit2 <- EM(long.formula, surv.formula, data,
+          control = control,
           disp.control = disp.control,
-          optim.control = optim.control)
+          optim.control = optim.control,
+          summax.fn = summax.fn, min.summax = min.summax)
 
 
 # Intercept + slope -------------------------------------------------------
@@ -36,18 +40,19 @@ data <- test$data
 long.formula <- Y~time+cont+bin+(1+time|id)
 surv.formula <- Surv(survtime, status) ~ bin
 disp.formula <- ~1
-
-control <- list(verbose=T, auto.summax = F)
-disp.control <- list(delta.method = 'bobyqa', min.profile.length = 3,
+control <- list(verbose=T)
+summax.fn <- function(y) max(y) + 10
+min.summax <- 20
+disp.control <- list(delta.method = 'bobyqa', min.profile.length = 4,
                      max.val = 10)
 optim.control <- list(optimiser = 'optim', Hessian = 'grad', eps = 1e-3)
-summax=3
 
 long.formula <- Y~time+cont+bin+(1 + time|id)
 surv.formula <- Surv(survtime, status) ~ bin
 update.deltas <- F
 
-fit <- EM(long.formula, surv.formula, data,
-          control = control, summax = max(data$Y) + 1,
-          disp.control = disp.control,
-          optim.control = optim.control)
+fit2 <- EM(long.formula, surv.formula, data,
+           control = control,
+           disp.control = disp.control,
+           optim.control = optim.control,
+           summax.fn = summax.fn, min.summax = min.summax)
