@@ -54,30 +54,33 @@ vcov <- function(Omega, delta, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax, 
   nus <- mapply(function(delta, Y) rep(exp(delta), length(Y)), delta = delta, Y = Y, SIMPLIFY = F)
   
   #' Grid lookups ----
-  lambdas <- mapply(function(mu, nu){
-    lambda_appx(mu, nu, summax)
-  }, mu = mus, nu = nus, SIMPLIFY = F)
-  
-  logZs <- mapply(function(mu, nu, lambda){
-    logZ_c(log(lambda), nu, summax)
-  }, mu = mus, nu = nus, lambda = lambdas, SIMPLIFY = F)
-  
-  Vs <- mapply(function(mu, nu, lambda, logZ){
-    calc_V_vec(mu, lambda, nu, logZ, summax)
-  }, mu = mus, nu = nus, lambda = lambdas, logZ = logZs, SIMPLIFY = F)
+  # lambdas <- mapply(function(mu, nu){
+  #   lambda_appx(mu, nu, summax)
+  # }, mu = mus, nu = nus, SIMPLIFY = F)
+  # 
+  # logZs <- mapply(function(mu, nu, lambda){
+  #   logZ_c(log(lambda), nu, summax)
+  # }, mu = mus, nu = nus, lambda = lambdas, SIMPLIFY = F)
+  # 
+  # Vs <- mapply(function(mu, nu, lambda, logZ){
+  #   calc_V_vec(mu, lambda, nu, logZ, summax)
+  # }, mu = mus, nu = nus, lambda = lambdas, logZ = logZs, SIMPLIFY = F)
   
   #' Score for the dispersion parameter(s), \delta 
   tau <- mapply(function(Z, S) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), S = Sigma, Z = Z, SIMPLIFY = F)
   #' Score for the fixed effects, \beta 
   # Sb <- mapply(Sbeta, X, Y, mus, nus, lambdas, Vs, SIMPLIFY = F)
-  Sb <- mapply(function(b, X, Y, Z, lY, delta, tau, mu , nu, lam, V){
-    a <- Sbeta(X, Y, mu, nu, lam, V)
-    if(any(a > 1e3) | any(is.nan(a))){
-      return(Sbeta_cdiff(beta, b, X, Z, Y, lY, delta, tau, w, v, summax, .Machine$double.eps^(1/3)))
-    }else
-      return(a)
-  }, b = b, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, 
-  mu = mus, nu = nus, lam = lambdas, V = Vs, SIMPLIFY = F)
+  Sb <- mapply(function(b, X, Y, Z, lY, delta, tau){
+    Sbeta2(beta, b, X, Z, Y, lY, delta, tau, w, v, summax)
+  }, b = b, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, SIMPLIFY = F)
+  # Sb <- mapply(function(b, X, Y, Z, lY, delta, tau, mu , nu, lam, V){
+  #   # a <- Sbeta(X, Y, mu, nu, lam, V)
+  #   # if(any(a > 1e3) | any(is.nan(a))){
+  #     return(Sbeta_cdiff(beta, b, X, Z, Y, lY, delta, tau, w, v, summax, .Machine$double.eps^(1/3)))
+  #   # }else
+  #     # return(a)
+  # }, b = b, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, 
+  # mu = mus, nu = nus, lam = lambdas, V = Vs, SIMPLIFY = F)
 
   #' Survival parameters (\gamma, \zeta)
   Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){

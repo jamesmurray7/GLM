@@ -8,7 +8,7 @@ data <- test$data
 
 check.disps(test)
 
-control <- list(verbose=T, auto.summax = F)
+control <- list(verbose=T, auto.summax = T)
 disp.control <- list(delta.method = 'bobyqa', min.profile.length = 3,
                      max.val = 10)
 optim.control <- list(optimiser = 'optim', Hessian = 'grad', eps = 1e-3)
@@ -37,7 +37,7 @@ long.formula <- Y~time+cont+bin+(1+time|id)
 surv.formula <- Surv(survtime, status) ~ bin
 disp.formula <- ~1
 
-control <- list(verbose=T, auto.summax = F)
+control <- list(verbose=T, auto.summax = T)
 disp.control <- list(delta.method = 'bobyqa', min.profile.length = 3,
                      max.val = 10)
 optim.control <- list(optimiser = 'optim', Hessian = 'grad', eps = 1e-3)
