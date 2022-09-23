@@ -141,7 +141,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delt
     l0 = l0.new, l0u = l0u.new, l0i = as.list(l0i.new),  # ---""---
     b = b.hat, mus = mus,                                #   REs.
     t = round(e-s,3)
-  ) 
+  ) # -> update
   
 }
 
@@ -276,6 +276,25 @@ EM <- function(long.formula, surv.formula, data, post.process = T,
     }else{
       delta <- update$delta
     }
+    
+    # CANDIDATE: RE-OPTIMISE at each iteration
+    #          (every <user-defined> number of iterations?)
+    delta.old <- unlist(delta)
+    delta.new <- numeric(n)
+    sapply(inds.met, function(i){
+      Yi <- Y[[i]];
+      mui <- update$mus[[i]] # mu at new b, beta.
+      xii <- summax[[i]]
+      if(delta.old[i] < 0){
+        lb <- min(delta.old[i], -10); ub <- 0
+      }else if(delta.old[i] > 0){
+        lb <- 0; ub <- max(delta.old[i], 10)
+      }
+      optim(delta.old[i], ff3, NULL,
+            Y = Yi, mu = mui, summax = xii,
+            method = 'Brent', lower = lb, upper = ub)$par
+    }) -> tt
+    # range(abs(tt-delta.old[inds.met]))
     
     # Convergence criteria + print (if wanted).
     diffs <- difference(params, params.new, conv)

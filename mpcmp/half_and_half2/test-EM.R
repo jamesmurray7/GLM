@@ -8,8 +8,8 @@ data <- test$data
 
 check.disps(test)
 
-control <- list(verbose=T, auto.summax = F)
-disp.control <- list(delta.method = 'bobyqa', min.profile.length = 3,
+control <- list(verbose=T)
+disp.control <- list(delta.method = 'optim', min.profile.length = 3,
                      max.val = 10)
 optim.control <- list(optimiser = 'optim', Hessian = 'grad', eps = 1e-3)
 summax=3
