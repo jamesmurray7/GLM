@@ -48,57 +48,57 @@ EMupdate <- function(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delt
   nus <- mapply(function(delta, Y) rep(exp(delta), length(Y)), delta = delta, Y = Y, SIMPLIFY = F)
   tau <- mapply(function(Z, S) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), S = Sigma, Z = Z, SIMPLIFY = F)
 
-  #' lambda, logZ and V lookups ----
-  lambdas <- mapply(function(mu, nu, summax){
-    lambda_appx(mu, nu, summax)
-  }, mu = mus, nu = nus, summax = summax, SIMPLIFY = F)
-
-  logZs <- mapply(function(mu, nu, lambda, summax){
-    logZ_c(log(lambda), nu, summax)
-  }, mu = mus, nu = nus, lambda = lambdas, summax = summax, SIMPLIFY = F)
-
-  Vs <- mapply(function(mu, nu, lambda, logZ, summax){
-    calc_V_vec(mu, lambda, nu, logZ, summax)
-  }, mu = mus, nu = nus, lambda = lambdas, logZ = logZs, summax = summax, SIMPLIFY = F)
+  #' #' lambda, logZ and V lookups ----
+  #' lambdas <- mapply(function(mu, nu, summax){
+  #'   lambda_appx(mu, nu, summax)
+  #' }, mu = mus, nu = nus, summax = summax, SIMPLIFY = F)
+  #' 
+  #' logZs <- mapply(function(mu, nu, lambda, summax){
+  #'   logZ_c(log(lambda), nu, summax)
+  #' }, mu = mus, nu = nus, lambda = lambdas, summax = summax, SIMPLIFY = F)
+  #' 
+  #' Vs <- mapply(function(mu, nu, lambda, logZ, summax){
+  #'   calc_V_vec(mu, lambda, nu, logZ, summax)
+  #' }, mu = mus, nu = nus, lambda = lambdas, logZ = logZs, summax = summax, SIMPLIFY = F)
   
   #' D
   D.update <- mapply(function(Sigma, b) Sigma + tcrossprod(b), Sigma = Sigma, b = b.hat, SIMPLIFY = F)
   
   #' \beta update...
-  Sb <- mapply(function(b, X, Y, Z, lY, delta, tau, mu , nu, lam, V, summax){
-    a <- Sbeta(X, Y, mu, nu, lam, V)
-    if(any(a > 1e3) | any(is.nan(a))){
-      return(Sbeta_cdiff(beta, b, X, Z, Y, lY, delta, tau, w, v, summax, .Machine$double.eps^(1/3)))
-    }else
-      return(a)
-  }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau,
-      mu = mus, nu = nus, lam = lambdas, V = Vs, summax = summax, SIMPLIFY = F)
-
-  Hb <- mapply(function(b, X, Y, Z, lY, delta, tau, mu , nu, lam, V, summax){
-    a <- getW1(X, mu, nu, lam, V)
-    if(any(a > 1e3) | any(is.nan(a)))
-      return(Hbeta(beta, b, X, Z, Y, lY, delta, tau, w, v, summax, .Machine$double.eps^(1/4)))
-    else
-      return(a)
-  }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau,
-  mu = mus, nu = nus, lam = lambdas, V = Vs, summax = summax, SIMPLIFY = F)
-  
-  # Sb2 <- mapply(function(b, X, Z, Y, lY, delta, tau, summax){
-  #   Sbeta2(beta, b, X, Z, Y, lY, delta, tau, w, v, summax)
-  # }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, summax = summax, SIMPLIFY = F)
+  # Sb <- mapply(function(b, X, Y, Z, lY, delta, tau, mu , nu, lam, V, summax){
+  #   a <- Sbeta(X, Y, mu, nu, lam, V)
+  #   if(any(a > 1e3) | any(is.nan(a))){
+  #     return(Sbeta_cdiff(beta, b, X, Z, Y, lY, delta, tau, w, v, summax, .Machine$double.eps^(1/3)))
+  #   }else
+  #     return(a)
+  # }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau,
+  #     mu = mus, nu = nus, lam = lambdas, V = Vs, summax = summax, SIMPLIFY = F)
   # 
-  # Hb2 <- mapply(function(b, X, Z, Y, lY, delta, tau, summax){
-  #   Hbeta2(beta, b, X, Z, Y, lY, delta, tau, w, v, summax)
-  # }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, summax = summax, SIMPLIFY = F)
+  # Hb <- mapply(function(b, X, Y, Z, lY, delta, tau, mu , nu, lam, V, summax){
+  #   a <- getW1(X, mu, nu, lam, V)
+  #   if(any(a > 1e3) | any(is.nan(a)))
+  #     return(Hbeta(beta, b, X, Z, Y, lY, delta, tau, w, v, summax, .Machine$double.eps^(1/4)))
+  #   else
+  #     return(a)
+  # }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau,
+  # mu = mus, nu = nus, lam = lambdas, V = Vs, summax = summax, SIMPLIFY = F)
+  
+  Sb <- mapply(function(b, X, Z, Y, lY, delta, tau, summax){
+    Sbeta2(beta, b, X, Z, Y, lY, delta, tau, w, v, summax)
+  }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, summax = summax, SIMPLIFY = F)
+
+  Hb <- mapply(function(b, X, Z, Y, lY, delta, tau, summax){
+    Hbeta2(beta, b, X, Z, Y, lY, delta, tau, w, v, summax)
+  }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, summax = summax, SIMPLIFY = F)
   
   #' \deltas
   #' Only carried out on those who _meet_ the min.profile.length criterion...
   
-  if(update.deltas){
-    delta.new <- delta_update(delta, b.hat, X, Z, Y, lY, beta, tau, w, v, summax, inds.met - 1)$new
-  }else{
+  # if(update.deltas){
+  #   delta.new <- delta_update(delta, b.hat, X, Z, Y, lY, beta, tau, w, v, summax, inds.met - 1)$new
+  # }else{
     delta.new <- unlist(delta)
-  }
+  # }
 
   #' Survival parameters (\gamma, \zeta)
   Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
@@ -147,7 +147,10 @@ EMupdate <- function(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delt
 
 EM <- function(long.formula, surv.formula, data, post.process = T, 
                control = list(), disp.control = list(), optim.control = list(),
-               update.deltas = F, summax.fn = NULL, min.summax = 20){
+               update.deltas = F, delta.update.interval = 1L, summax.fn = NULL, min.summax = 20){
+  #' Defaults: 
+  #'   _not_ updating \delta, and doing so every iteration in in instances where it `update.deltas` is `TRUE`.
+  #'   Truncation amount `summax` is taken as max(2 * max(Y_i), 20).
   start.time <- proc.time()[3]
   
   #' Parsing formula objects ----
@@ -255,46 +258,48 @@ EM <- function(long.formula, surv.formula, data, post.process = T,
     
     # Update to delta (if wanted).
     if(update.deltas){
-      delta.old <- unlist(delta)
-      delta <- update$delta
-      # set any which are NaN back to their old values.
-      nan.inds.to.reset <- which(is.nan(delta))
-      if(length(nan.inds.to.reset) > 0) delta[nan.inds.to.reset] <- delta.old[nan.inds.to.reset]
-      if(truncated)
-        delta <- lapply(delta, function(d){
-        if(d < -max.val){
-          x <- -max.val + 1e-3
-        }else if(d > max.val){
-          x <- max.val - 1e-3
-        }else{
-          x <- d
-        }
-        x
-      })
-      # Work out relative difference
-      delta.diffs <- difference(delta.old, delta, 'relative')
+      # CANDIDATE: RE-OPTIMISE at each iteration
+      #          (every <user-defined> number of iterations?)
+      if((iter + 1) > 0 & (iter + 1) %% delta.update.interval == 0){
+        if(verbose) cat(sprintf("\nIteration %d, updating delta...\n", iter + 1))
+        delta.old <- unlist(delta)
+        delta.new <- numeric(n)
+        re.optimised <- sapply(inds.met, function(i){
+          Yi <- Y[[i]];
+          mui <- update$mus[[i]] # mu at new b, beta.
+          xii <- summax[[i]]
+          if(delta.old[i] < 0){
+            lb <- min(delta.old[i], -10); ub <- 0
+          }else if(delta.old[i] > 0){
+            lb <- 0; ub <- max(delta.old[i], 10)
+          }
+          optim(delta.old[i], ff3, NULL,
+                Y = Yi, mu = mui, summax = xii,
+                method = 'Brent', lower = lb, upper = ub)$par
+        })
+        # delta <- update$delta
+        delta.new[inds.met] <- re.optimised
+        delta <- delta.new
+        # set any which are NaN back to their old values.
+        nan.inds.to.reset <- which(is.nan(delta) | is.na(delta))
+        if(length(nan.inds.to.reset) > 0) delta[nan.inds.to.reset] <- delta.old[nan.inds.to.reset]
+        if(truncated)
+          delta <- lapply(delta, function(d){
+          if(d < -max.val){
+            x <- -max.val + 1e-3
+          }else if(d > max.val){
+            x <- max.val - 1e-3
+          }else{
+            x <- d
+          }
+          x
+        })
+        # Work out relative difference
+        delta.diffs <- difference(delta.old, delta, 'relative')
+      }
     }else{
       delta <- update$delta
     }
-    
-    # CANDIDATE: RE-OPTIMISE at each iteration
-    #          (every <user-defined> number of iterations?)
-    delta.old <- unlist(delta)
-    delta.new <- numeric(n)
-    sapply(inds.met, function(i){
-      Yi <- Y[[i]];
-      mui <- update$mus[[i]] # mu at new b, beta.
-      xii <- summax[[i]]
-      if(delta.old[i] < 0){
-        lb <- min(delta.old[i], -10); ub <- 0
-      }else if(delta.old[i] > 0){
-        lb <- 0; ub <- max(delta.old[i], 10)
-      }
-      optim(delta.old[i], ff3, NULL,
-            Y = Yi, mu = mui, summax = xii,
-            method = 'Brent', lower = lb, upper = ub)$par
-    }) -> tt
-    # range(abs(tt-delta.old[inds.met]))
     
     # Convergence criteria + print (if wanted).
     diffs <- difference(params, params.new, conv)

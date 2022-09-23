@@ -20,12 +20,15 @@ update.deltas <- F
 
 summax.fn <- function(y) max(y) + 10
 min.summax <- 20
+delta.update.interval <- 1L
+update.deltas <- T
 
-fit2 <- EM(long.formula, surv.formula, data,
+fit <- EM(long.formula, surv.formula, data,
           control = control,
           disp.control = disp.control,
           optim.control = optim.control,
-          summax.fn = summax.fn, min.summax = min.summax)
+          summax.fn = summax.fn, min.summax = min.summax,
+          update.deltas = update.deltas, delta.update.interval = delta.update.interval)
 
 
 # Intercept + slope -------------------------------------------------------
