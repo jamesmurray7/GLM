@@ -708,6 +708,7 @@ vec E_Y(vec& loglam, vec& logZ, vec& nu, int summax){
   return out;
 }
 
+// [[Rcpp::export]]
 vec V_Y(vec& loglam, vec& logZ, vec& nu, int summax){
   vec out = vec(loglam.size());
   vec EY = E_Y(loglam, logZ, nu, summax);
@@ -725,6 +726,111 @@ vec expected_variance(vec& mu, vec& nu, int summax){
   return V_Y(loglam, logZ, nu, summax);
 }
 
+// [[Rcpp::export]]
+double marginal_delta_ll(double delta, vec& mu, vec& Y, vec& lY, int xi){
+	int mi = Y.size();
+	vec nu = vec(mi, fill::value(exp(delta)));
+	vec lam = lambda_appx(mu, nu, xi);
+	vec loglam = log(lam);
+	vec logZ = logZ_c(loglam, nu, xi);
+	return -1. * ll_cmp(loglam, nu, logZ, Y, lY);
+}
+
+// [[Rcpp::export]]
+double to_minimise(double delta, vec& mu, vec& Y, vec& lY, int xi){
+  int mi = Y.size();
+  double marg = marginal_delta_ll(delta, mu, Y, lY, xi);
+  vec nu = vec(mi, fill::value(exp(delta)));
+  vec VY = expected_variance(mu, nu, xi);
+  double v = var(Y);
+  return marg + (std::fabs(sum(v-VY)));
+}
+
+// Expectation of log(Y!)
+// [[Rcpp::export]]
+vec E_lY(vec& loglam, vec& logZ, vec& nu, int summax){
+  int mi = nu.size();
+  vec out = vec(mi);
+  double j = 1.;
+  while(j <= summax){
+    out += lgamma(j) * exp((j - 1.) * loglam - nu * lgamma(j) - logZ);
+    j++;
+  }
+  return out;
+}
+
+// Expectation of Ylog(Y!)
+// [[Rcpp::export]]
+vec E_YlY(vec& loglam, vec& logZ, vec& nu, int summax){
+  int mi = nu.size();
+  vec out = vec(mi);
+  double j = 1.;
+  while(j <= summax){
+    out += exp(log(j - 1.) + log(lgamma(j)) + (j - 1.) * loglam - nu * lgamma(j) - logZ);
+    j++;
+  }
+  return out;
+}
+
+// Variance of log(Y!)
+// [[Rcpp::export]]
+vec V_lY(vec& loglam, vec& logZ, vec& nu, vec& ElY, int summax){
+  int mi = nu.size();
+  vec out = vec(mi);
+  double j = 1.;
+  while(j <= summax){
+    out += pow(lgamma(j), 2.) * exp((j - 1.) * loglam - nu * lgamma(j) - logZ);
+    j++;
+  }
+  return out - pow(ElY, 2.);
+}
+
+// [[Rcpp::export]]
+List new_delta_update(double delta, mat& X, mat& Z, vec& Y, 
+                      vec& b, vec& beta, int summax, vec& w, vec& v, vec& tau, bool quad){
+  int mi = Y.size();
+  vec eta = X * beta + Z * b, nu = vec(mi, fill::value(exp(delta)));
+  double S, H, delta_new;
+  if(quad){ // WITH quadrature
+    int gh = w.size();
+    for(int l = 0; l < gh; l++){
+      vec eta_l = eta + tau * v[l];
+      vec mu = exp(eta_l);
+      vec lam = lambda_appx(mu, nu, summax);
+      vec loglam = log(lam);
+      vec logZ = logZ_c(loglam, nu, summax);
+      // Calculate expected means and variances at quadrature node(s)
+      vec YlY = E_YlY(loglam, logZ, nu, summax);
+      vec lY = E_lY(loglam, logZ, nu, summax);
+      vec VY = V_Y(loglam, logZ, nu, summax);
+      vec VlY = V_lY(loglam, logZ, nu, lY, summax);
+      // And calculate A term --> Score and Hessian
+      vec A  = YlY - (mu % lY);
+      S += w[l] * sum((A % (Y - mu)/VY - lgamma(Y + 1.) + lY) % nu);
+      H += w[l] * -sum((-pow(A, 2.) / VY + VlY) % pow(nu, 2.));
+    }
+    delta_new = delta - S/H;
+  }else{  // WITHOUT
+    vec mu = exp(eta);
+    vec lam = lambda_appx(mu, nu, summax);
+    vec loglam = log(lam);
+    vec logZ = logZ_c(loglam, nu, summax);
+    // Calculate expected means and variances at quadrature node(s)
+    vec YlY = E_YlY(loglam, logZ, nu, summax);
+    vec lY = E_lY(loglam, logZ, nu, summax);
+    vec VY = V_Y(loglam, logZ, nu, summax);
+    vec VlY = V_lY(loglam, logZ, nu, lY, summax);
+    // And calculate A term --> Score and Hessian
+    vec A  = YlY - (mu % lY);
+    S = sum((A % (Y - mu)/VY - lgamma(Y + 1.) + lY) % nu);
+    H = -1. * sum((-pow(A, 2.) / VY + VlY) % pow(nu, 2.));
+    delta_new = delta - S/H;
+  }
+  return List::create(_["new"] = delta_new, _["Score"] = S, _["Hessian"] = H);
+}
+
+  
+  
 /* *******
  * END ***
  * *******/

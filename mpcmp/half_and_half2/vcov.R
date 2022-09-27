@@ -1,5 +1,5 @@
 
-vcov <- function(Omega, delta, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax, inds.met){
+vcov <- function(Omega, delta, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax, inds.met, delta.update.quad){
   #' Unpack Omega ----
   D <- Omega$D
   beta <- c(Omega$beta)
@@ -99,15 +99,20 @@ vcov <- function(Omega, delta, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax, 
   # ^ observed empirical information matrix (Mclachlan and Krishnan, 2008).
   
   # Variance on delta etimates
-  Sdelta <- delta_update(delta, b, X, Z, Y, lY, beta, tau, w, v, summax, inds.met - 1L)
-  Sd <- Sdelta$scores
-  SSd <- sum(Sd) / length(inds.met)
-  Id <- sum(sapply(1:n, function(i) tcrossprod(Sd[i,,drop=F]))) - SSd
+  Idelta <- unlist(lapply(inds.met, function(i){
+    -new_delta_update(delta[[i]], X[[i]], Z[[i]], Y[[i]], b[[i]], beta,
+                     summax[[i]], w, v, tau[[i]], F)$H
+  })  )
+  Ideltaq <- unlist(lapply(inds.met, function(i){
+    -new_delta_update(delta[[i]], X[[i]], Z[[i]], Y[[i]], b[[i]], beta,
+                      summax[[i]], w, v, tau[[i]], T)$H
+  })  )
+  
   
   list(
     I = I,
-    Id = Id, 
-    Hd = sum(Sdelta$Hessian),
-    raw.delta = Sdelta
+    Idelta = Idelta,
+    Ideltaq = Ideltaq
   )
 }
+

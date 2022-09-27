@@ -465,7 +465,7 @@ my.summary <- function(myfit, printD = F){
 
 # Compare fitted delta with true ------------------------------------------
 # (obviously only used in sim. studies!)
-fitted.disps <- function(myfit, S, return.df = F, plot = T){
+fitted.disps <- function(myfit, S, return.df = F, plot = T, quad.se = F){
   # S: simdata_joint(2) object list
   Sdf <- data.frame(id = as.numeric(names(S$true.deltas)), true = S$true.deltas)
   # myfit: EM object
@@ -476,9 +476,18 @@ fitted.disps <- function(myfit, S, return.df = F, plot = T){
   # 1) Check that the SIGN matches.
   df2$same.sign <- with(df2, sign(delta) == sign(true))
   # 2) Check coverage of true value by lower/upper bounds.
+  qz <- qnorm(.975)
+  if(quad.se){
+    df2$lb <- df2$delta - qz * df2$SEq
+    df2$ub <- df2$delta + qz * df2$SEq
+  }else{
+    df2$lb <- df2$delta - qz * df2$SE
+    df2$ub <- df2$delta + qz * df2$SE
+  }
+  
   df2$coverage <- with(df2, lb <= true & ub >= true)
   
-  cat(sprintf("Sign matches %.2f%%, 95%% coverage %.2f.\n",
+  cat(sprintf("Sign matches in %.2f%% of instances, 95%% CI probs: %.2f.\n",
               sum(df2$same.sign)/nrow(df2) * 100,
               sum(df2$coverage)/nrow(df2)))
   

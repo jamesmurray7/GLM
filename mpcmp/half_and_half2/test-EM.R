@@ -20,15 +20,19 @@ update.deltas <- F
 
 summax.fn <- function(y) max(y) + 10
 min.summax <- 20
-delta.update.interval <- 1L
-update.deltas <- T
+delta.update.quad <- T
 
 fit <- EM(long.formula, surv.formula, data,
           control = control,
           disp.control = disp.control,
           optim.control = optim.control,
-          summax.fn = summax.fn, min.summax = min.summax,
-          update.deltas = update.deltas, delta.update.interval = delta.update.interval)
+          summax.fn = summax.fn, min.summax = min.summax)
+
+fit.noquad <- EM(long.formula, surv.formula, data,              #((FAILS))
+                 control = control,
+                 disp.control = disp.control,
+                 optim.control = optim.control,
+                 summax.fn = summax.fn, min.summax = min.summax, delta.update.quad = F)
 
 
 # Intercept + slope -------------------------------------------------------

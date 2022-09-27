@@ -1,8 +1,9 @@
 #' #######
-#' EM.R
+#' EM.R                     half_and_half2/
 #' ----
 #' Doesn't use a grid for quicker lookups for \lambda(\mu,\nu); logZ(\mu,\nu) and V(\mu, \nu) values.
 #' Treats dispersion as a **subject specific scalar**.
+#' Treats truncation amounts sub-specific, too.
 #' ######
 
 library(survival)
@@ -17,7 +18,7 @@ source('inits.R')
 vech <- function(x) x[lower.tri(x, T)]
 
 EMupdate <- function(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
-                     sv, w, v, n, m, summax, debug, optimiser.arguments, inds.met, update.deltas){
+                     sv, w, v, n, m, summax, debug, optimiser.arguments, inds.met, delta.update.quad){
   s <- proc.time()[3]
   #' Unpack Omega, the parameter vector
   D <- Omega$D; beta <- Omega$beta; gamma <- Omega$gamma; zeta <- Omega$zeta
@@ -91,15 +92,14 @@ EMupdate <- function(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delt
     Hbeta2(beta, b, X, Z, Y, lY, delta, tau, w, v, summax)
   }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, summax = summax, SIMPLIFY = F)
   
-  #' \deltas
-  #' Only carried out on those who _meet_ the min.profile.length criterion...
+  delta.new <- lapply(1:n, function(i){
+    if(i %in% inds.met)
+      return(new_delta_update(delta[[i]], X[[i]], Z[[i]], Y[[i]],
+                       b.hat[[i]], beta, summax[[i]], w, v, tau[[i]], delta.update.quad)$new)
+    else 
+      return(0)
+  })
   
-  # if(update.deltas){
-  #   delta.new <- delta_update(delta, b.hat, X, Z, Y, lY, beta, tau, w, v, summax, inds.met - 1)$new
-  # }else{
-    delta.new <- unlist(delta)
-  # }
-
   #' Survival parameters (\gamma, \zeta)
   Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
     Sgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, .Machine$double.eps^(1/3))
@@ -147,7 +147,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delt
 
 EM <- function(long.formula, surv.formula, data, post.process = T, 
                control = list(), disp.control = list(), optim.control = list(),
-               update.deltas = F, delta.update.interval = 1L, summax.fn = NULL, min.summax = 20){
+               delta.update.quad = T, summax.fn = NULL, min.summax = 20){
   #' Defaults: 
   #'   _not_ updating \delta, and doing so every iteration in in instances where it `update.deltas` is `TRUE`.
   #'   Truncation amount `summax` is taken as max(2 * max(Y_i), 20).
@@ -250,57 +250,68 @@ EM <- function(long.formula, surv.formula, data, post.process = T,
   step.times <- c()
   if(verbose) message('Starting EM algorithm.')
   while(diff > tol && iter < maxit){
+    s.em.i <- proc.time()[3]
     update <- EMupdate(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
-                       sv, w, v, n, m, summax, debug, optim.control, inds.met, update.deltas)
+                       sv, w, v, n, m, summax, debug, optim.control, inds.met, delta.update.quad)
     if(debug) DEBUG.update <<- update
     params.new <- c(vech(update$D), update$beta, update$gamma, update$zeta)
     names(params.new) <- names(params)
     
     # Update to delta (if wanted).
-    if(update.deltas){
-      # CANDIDATE: RE-OPTIMISE at each iteration
-      #          (every <user-defined> number of iterations?)
-      if((iter + 1) > 0 & (iter + 1) %% delta.update.interval == 0){
-        if(verbose) cat(sprintf("\nIteration %d, updating delta...\n", iter + 1))
-        delta.old <- unlist(delta)
-        delta.new <- numeric(n)
-        re.optimised <- sapply(inds.met, function(i){
-          Yi <- Y[[i]];
-          mui <- update$mus[[i]] # mu at new b, beta.
-          xii <- summax[[i]]
-          if(delta.old[i] < 0){
-            lb <- min(delta.old[i], -10); ub <- 0
-          }else if(delta.old[i] > 0){
-            lb <- 0; ub <- max(delta.old[i], 10)
-          }
-          optim(delta.old[i], ff3, NULL,
-                Y = Yi, mu = mui, summax = xii,
-                method = 'Brent', lower = lb, upper = ub)$par
-        })
-        # delta <- update$delta
-        delta.new[inds.met] <- re.optimised
-        delta <- delta.new
-        # set any which are NaN back to their old values.
-        nan.inds.to.reset <- which(is.nan(delta) | is.na(delta))
-        if(length(nan.inds.to.reset) > 0) delta[nan.inds.to.reset] <- delta.old[nan.inds.to.reset]
-        if(truncated)
-          delta <- lapply(delta, function(d){
-          if(d < -max.val){
-            x <- -max.val + 1e-3
-          }else if(d > max.val){
-            x <- max.val - 1e-3
-          }else{
-            x <- d
-          }
-          x
-        })
-        # Work out relative difference
-        delta.diffs <- difference(delta.old, delta, 'relative')
-      }
-    }else{
-      delta <- update$delta
-    }
+    # if(update.deltas){
+    #   # CANDIDATE: RE-OPTIMISE at each iteration
+    #   #          (every <user-defined> number of iterations?)
+    #   if((iter + 1) > 0 & (iter + 1) %% delta.update.interval == 0){
+    #     if(verbose) cat(sprintf("\nIteration %d, updating delta...\n", iter + 1))
+    #     delta.old <- unlist(delta)
+    #     delta.new <- numeric(n)
+    #     re.optimised <- sapply(inds.met, function(i){
+    #       Yi <- Y[[i]]
+    #       mui <- exp(X[[i]] %*% update$beta + Z[[i]] %*% update$b[[i]])  # mu at new b, beta.
+    #       xii <- summax[[i]]
+    #       if(delta.old[i] < 0){
+    #         lb <- min(delta.old[i], -10); ub <- 0
+    #       }else if(delta.old[i] > 0){
+    #         lb <- 0; ub <- max(delta.old[i], 10)
+    #       }
+    #       optim(delta[i], marginal_delta_ll, NULL,
+    #             mu = mui, Y = Y[[i]], lY = lY[[i]], xi = xii,
+    #             method = 'BFGS')$par
+    #       # optim(delta[i], ff3, NULL,
+    #       #       Y = Yi, mu = mui, summax = xii,
+    #       #       method = 'Brent', lower = lb, upper = ub)$par
+    #     })
+    #     # delta <- update$delta
+    #     delta.new[inds.met] <- re.optimised
+    #     delta <- delta.new
+    #     # set any which are NaN back to their old values.
+    #     nan.inds.to.reset <- which(is.nan(delta) | is.na(delta))
+    #     if(length(nan.inds.to.reset) > 0) delta[nan.inds.to.reset] <- delta.old[nan.inds.to.reset]
+    #     if(truncated)
+    #       delta <- lapply(delta, function(d){
+    #       if(d < -max.val){
+    #         x <- -max.val + 1e-3
+    #       }else if(d > max.val){
+    #         x <- max.val - 1e-3
+    #       }else{
+    #         x <- d
+    #       }
+    #       x
+    #     })
+    #     # Work out relative difference
+    #     delta.diffs <- difference(delta.old, delta, 'relative')
+    #   }
+    # }else{
+    #   delta <- update$delta
+    # }
     
+    delta.old <- unlist(delta)
+    delta <- unlist(update$delta)
+    delta.diffs <- difference(delta.old, delta, 'relative')
+    
+    if(truncated) sapply(delta, function(d) if(abs(d) > max.val) return(sign(d) * max.val))
+    
+    if(debug){plot(delta.old, delta.new, xlab = 'old', ylab = 'new', pch = 20, main = bquote('Iteration'~.(iter+1))); abline(0, 1)}
     # Convergence criteria + print (if wanted).
     diffs <- difference(params, params.new, conv)
     diff <- max(diffs)
@@ -308,8 +319,7 @@ EM <- function(long.formula, surv.formula, data, post.process = T,
       print(sapply(params.new, round, 4))
       message("Iteration ", iter + 1, ' maximum ', conv, ' difference: ', round(diff, 4), ' for parameter ', names(params.new)[which.max(diffs)])
       message("Largest RE relative difference: ", round(max(difference(do.call(cbind, update$b), do.call(cbind, b), conv)), 4))
-      if(update.deltas)
-         message("Largest relative difference for subject-specific dispersion: ", round(max(delta.diffs), 4))
+      message("Largest relative difference for subject-specific dispersion: ", round(max(delta.diffs), 4))
     }
       
     #' Set new estimates as current
@@ -320,7 +330,7 @@ EM <- function(long.formula, surv.formula, data, post.process = T,
     iter <- iter + 1
     Omega <- list(D=D, beta = beta, gamma = gamma, zeta = zeta)
     params <- params.new
-    step.times[iter] <- update$t # Store timings, as this could be interesting(?)
+    step.times[iter] <- proc.time()[3] - s.em.i # Store timings, as this could be interesting?
   }
   if(debug) DEBUG.Omega <<- Omega
   EMend <- proc.time()[3]
@@ -331,7 +341,10 @@ EM <- function(long.formula, surv.formula, data, post.process = T,
     forms = formulas,
     summax = unlist(summax),
     n = n, mi = m,
-    inds.met = inds.met
+    inds.met = inds.met,
+    delta.update.quad = delta.update.quad,
+    summax.fn = summax.fn,
+    min.summax = min.summax
   )
   modelInfo$delta.init <- delta.inits.raw # Return ALL information.
   modelInfo$optimHess <- c(optimiser = optim.control$optimiser, Hessian = optim.control$Hessian, epsilon = optim.control$eps)
@@ -350,7 +363,7 @@ EM <- function(long.formula, surv.formula, data, post.process = T,
     Sigma <- b.update$Sigma
   
     # The Information matrix
-    vcv <- vcov(Omega, delta, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax, inds.met)
+    vcv <- vcov(Omega, delta, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax, inds.met, delta.update.quad)
     I <- structure(vcv$I, dimnames = list(names(params), names(params)))
     I.inv <- tryCatch(solve(I), error = function(e) e)
     if(inherits(I.inv, 'error')) I.inv <- structure(MASS::ginv(I),
@@ -361,10 +374,9 @@ EM <- function(long.formula, surv.formula, data, post.process = T,
     delta.df <- data.frame(
       id = inds.met,
       delta = unlist(delta)[inds.met],
-      lb = unlist(delta)[inds.met] - 1.96 * sqrt(1/vcv$Id),
-      ub = unlist(delta)[inds.met] + 1.96 * sqrt(1/vcv$Id)
+      SEq = sqrt(1/vcv$Ideltaq),
+      SE  = sqrt(1/vcv$Idelta)
     )
-    attr(delta.df, 'SE') <- sqrt(1/vcv$Id)
     out$delta.df <- delta.df
     postprocess.time <- round(proc.time()[3]-start.time.p, 2)
     
