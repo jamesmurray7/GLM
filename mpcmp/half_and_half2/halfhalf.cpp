@@ -10,6 +10,12 @@ arma::vec SEQ_Z(long double summax){ // Shorthand for Z_(lambda_i, nu_i)
   return arma::linspace(0, summax, summax + 1.0);
 }
 
+// [[Rcpp::export]]
+void testlgamma(vec& Y){
+	Rcout << "lgamma(Y)" << lgamma(Y) << std::endl;
+	Rcout << "lgamma(Y+1)" << lgamma(Y + 1.) << std::endl;
+}
+
 
 // Normalising constants, Z -----------------------------------------------
 // [[Rcpp::export]]
@@ -160,7 +166,7 @@ int Maxit)				        /* Max # of iterations */
   if( fabs(prev_step) >= tol_act	/* If prev_step was large enough*/
   && fabs(fa) > fabs(fb) ) {	/* and was in true direction,
    * Interpolation may be tried	*/
-  register double t1,cb,t2;
+  double t1,cb,t2;
     cb = c-b;
     if( a==c ) {		/* If we have only two distinct	*/
   /* points linear interpolation	*/
@@ -791,6 +797,7 @@ List new_delta_update(double delta, mat& X, mat& Z, vec& Y,
   int mi = Y.size();
   vec eta = X * beta + Z * b, nu = vec(mi, fill::value(exp(delta)));
   double S, H, delta_new;
+  Rcout << "S/H/d" << S << H << delta_new << std::endl;
   if(quad){ // WITH quadrature
     int gh = w.size();
     for(int l = 0; l < gh; l++){
@@ -807,9 +814,12 @@ List new_delta_update(double delta, mat& X, mat& Z, vec& Y,
       // And calculate A term --> Score and Hessian
       vec A  = YlY - (mu % lY);
       S += w[l] * sum((A % (Y - mu)/VY - lgamma(Y + 1.) + lY) % nu);
+      Rcout << "S: " << S << std::endl;
       H += w[l] * -sum((-pow(A, 2.) / VY + VlY) % pow(nu, 2.));
+      Rcout << "H: " << H << std::endl;
     }
     delta_new = delta - S/H;
+    return List::create(_["new"] = delta_new, _["Score"] = S, _["Hessian"] = H);
   }else{  // WITHOUT
     vec mu = exp(eta);
     vec lam = lambda_appx(mu, nu, summax);
@@ -825,8 +835,8 @@ List new_delta_update(double delta, mat& X, mat& Z, vec& Y,
     S = sum((A % (Y - mu)/VY - lgamma(Y + 1.) + lY) % nu);
     H = -1. * sum((-pow(A, 2.) / VY + VlY) % pow(nu, 2.));
     delta_new = delta - S/H;
+    return List::create(_["new"] = delta_new, _["Score"] = S, _["Hessian"] = H);
   }
-  return List::create(_["new"] = delta_new, _["Score"] = S, _["Hessian"] = H);
 }
 
   

@@ -8,10 +8,10 @@ data <- test$data
 
 check.disps(test)
 
-control <- list(verbose=T)
+control <- list(verbose=T, debug = T)
 disp.control <- list(delta.method = 'optim', min.profile.length = 3,
-                     max.val = 10)
-optim.control <- list(optimiser = 'optim', Hessian = 'grad', eps = 1e-3)
+                     truncated = T, max.val = 2.5)
+optimiser.arguments <- optim.control <- list(optimiser = 'optim', Hessian = 'grad', eps = 1e-3)
 summax=3
 
 long.formula <- Y~time+cont+bin+(1|id)
@@ -21,6 +21,7 @@ update.deltas <- F
 summax.fn <- function(y) max(y) + 10
 min.summax <- 20
 delta.update.quad <- T
+
 
 fit <- EM(long.formula, surv.formula, data,
           control = control,
@@ -32,7 +33,7 @@ fit.noquad <- EM(long.formula, surv.formula, data,              #((FAILS))
                  control = control,
                  disp.control = disp.control,
                  optim.control = optim.control,
-                 summax.fn = summax.fn, min.summax = min.summax, delta.update.quad = F)
+                 summax.fn = summax.fn, min.summax = min.summax, initialise.delta = F)
 
 
 # Intercept + slope -------------------------------------------------------

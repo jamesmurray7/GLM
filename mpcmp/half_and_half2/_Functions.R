@@ -353,6 +353,54 @@ b.minimise <- function(b, X, Y, lY, Z, delta, S, SS, Fi, Fu, l0i, l0u, Delta,
 }
 
 
+# delta update ------------------------------------------------------------
+
+delta.update <- function(delta, X, Z, Y, b, beta, summax, w, v, tau, quad){
+  eta <- X %*% beta + Z %*% b
+  nu <- rep(exp(delta), length(Y))
+  xi <- summax
+  if(quad){
+    S <- H <- 0
+    for(l in 1:length(w)){
+      eta.l <- eta + tau * v[l]
+      mu <- exp(eta.l)
+      loglam <- log(lambda_appx(mu, nu, xi))
+      logZ <- logZ_c(loglam, nu, xi)
+      # Expected value and variances.
+      YlY <- E_YlY(loglam, logZ, nu, xi)
+      lY <- E_lY(loglam, logZ, nu, xi)
+      VY <- V_Y(loglam, logZ, nu, xi)
+      VlY <- V_lY(loglam, logZ, nu, lY, xi)
+      A <- YlY - mu * lY
+      S <- S + w[l] * sum((A * (Y - mu) / VY - lgamma(Y + 1) + lY) * nu)
+      H <- H + w[l] * -sum(((-(A)^2 / VY + VlY) * nu^2))
+    }
+    delta.new <- delta - S/H
+  }else{
+    mu <- exp(eta)
+    loglam <- log(lambda_appx(mu, nu, xi))
+    logZ <- logZ_c(loglam, nu, xi)
+    # Expected value and variances.
+    YlY <- E_YlY(loglam, logZ, nu, xi)
+    lY <- E_lY(loglam, logZ, nu, xi)
+    VY <- V_Y(loglam, logZ, nu, xi)
+    VlY <- V_lY(loglam, logZ, nu, lY, xi)
+    A <- YlY - mu * lY
+    S <- sum((A * (Y - mu) / VY - lgamma(Y+1) + lY) * nu)
+    H <- -sum(((-(A)^2 / VY + VlY) * nu^2))
+    delta.new <- delta - S/H
+  }
+  
+  list(
+    new = delta.new,
+    Score = S,
+    Hessian = H
+  )
+  
+}
+
+
+
 #' ########################################################################
 # Misc functions ----------------------------------------------------------
 #' ########################################################################
@@ -465,7 +513,7 @@ my.summary <- function(myfit, printD = F){
 
 # Compare fitted delta with true ------------------------------------------
 # (obviously only used in sim. studies!)
-fitted.disps <- function(myfit, S, return.df = F, plot = T, quad.se = F){
+fitted.disps <- function(myfit, S, return.df = F, plot = T){
   # S: simdata_joint(2) object list
   Sdf <- data.frame(id = as.numeric(names(S$true.deltas)), true = S$true.deltas)
   # myfit: EM object
@@ -477,13 +525,8 @@ fitted.disps <- function(myfit, S, return.df = F, plot = T, quad.se = F){
   df2$same.sign <- with(df2, sign(delta) == sign(true))
   # 2) Check coverage of true value by lower/upper bounds.
   qz <- qnorm(.975)
-  if(quad.se){
-    df2$lb <- df2$delta - qz * df2$SEq
-    df2$ub <- df2$delta + qz * df2$SEq
-  }else{
-    df2$lb <- df2$delta - qz * df2$SE
-    df2$ub <- df2$delta + qz * df2$SE
-  }
+  df2$lb <- df2$delta - qz * df2$SE
+  df2$ub <- df2$delta + qz * df2$SE
   
   df2$coverage <- with(df2, lb <= true & ub >= true)
   

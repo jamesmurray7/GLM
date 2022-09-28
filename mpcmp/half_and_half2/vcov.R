@@ -98,21 +98,22 @@ vcov <- function(Omega, delta, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax, 
   I <- Reduce('+', lapply(1:n, function(i) tcrossprod(S[, i]))) - tcrossprod(SS)/n
   # ^ observed empirical information matrix (Mclachlan and Krishnan, 2008).
   
-  # Variance on delta etimates
-  Idelta <- unlist(lapply(inds.met, function(i){
-    -new_delta_update(delta[[i]], X[[i]], Z[[i]], Y[[i]], b[[i]], beta,
-                     summax[[i]], w, v, tau[[i]], F)$H
-  })  )
-  Ideltaq <- unlist(lapply(inds.met, function(i){
-    -new_delta_update(delta[[i]], X[[i]], Z[[i]], Y[[i]], b[[i]], beta,
-                      summax[[i]], w, v, tau[[i]], T)$H
-  })  )
   
+  # Variances of subject-specific delta with/out quadrature (NB: THIS)
+  Idelta <- lapply(1:n, function(i){
+    if(i %in% inds.met){
+      a <- delta.update(delta[[i]], X[[i]], Z[[i]], Y[[i]], b[[i]], beta, 
+                        summax[[i]], w, v, tau[[i]], delta.update.quad)
+      out <- -1 * a$Hessian
+    }else{
+      out <- 0
+    }
+    out
+  })
   
   list(
     I = I,
-    Idelta = Idelta,
-    Ideltaq = Ideltaq
+    Idelta = unlist(Idelta)
   )
 }
 

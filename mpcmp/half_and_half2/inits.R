@@ -53,7 +53,7 @@ get.delta.inits <- function(dmats, beta, b, method, summax = NULL, verbose = F, 
   if(method == 'bobyqa'){
     raw <- find.deltas.bobyqa(Y,mus, summax, verbose, min.profile.length)
   }else{
-    raw <- find.deltas.optim(Y, mus, summax, verbose, min.profile.length)  
+    raw <- find.deltas.optim(Y, mus, summax, verbose, min.profile.length, max.val)  
   }
   b <- proc.time()[3]
   
