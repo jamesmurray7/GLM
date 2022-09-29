@@ -18,7 +18,7 @@ source('inits.R')
 vech <- function(x) x[lower.tri(x, T)]
 
 EMupdate <- function(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
-                     sv, w, v, n, m, summax, debug, optimiser.arguments, inds.met, delta.update.quad){
+                     sv, w, v, n, m, summax, debug, optimiser.arguments, inds.met, delta.update.quad, beta.update.quad){
   s <- proc.time()[3]
   #' Unpack Omega, the parameter vector
   D <- Omega$D; beta <- Omega$beta; gamma <- Omega$gamma; zeta <- Omega$zeta
@@ -47,37 +47,30 @@ EMupdate <- function(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delt
   
   mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b.hat, SIMPLIFY = F)
   nus <- mapply(function(delta, Y) rep(exp(delta), length(Y)), delta = delta, Y = Y, SIMPLIFY = F)
-  tau <- mapply(function(Z, S) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), S = Sigma, Z = Z, SIMPLIFY = F)
+  if (beta.update.quad || delta.update.quad)
+    tau <- mapply(function(Z, S) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), S = Sigma, Z = Z, SIMPLIFY = F)
 
   #' D
   D.update <- mapply(function(Sigma, b) Sigma + tcrossprod(b), Sigma = Sigma, b = b.hat, SIMPLIFY = F)
   
   #' \beta update...
-  # Sb <- mapply(function(b, X, Y, Z, lY, delta, tau, mu , nu, lam, V, summax){
-  #   a <- Sbeta(X, Y, mu, nu, lam, V)
-  #   if(any(a > 1e3) | any(is.nan(a))){
-  #     return(Sbeta_cdiff(beta, b, X, Z, Y, lY, delta, tau, w, v, summax, .Machine$double.eps^(1/3)))
-  #   }else
-  #     return(a)
-  # }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau,
-  #     mu = mus, nu = nus, lam = lambdas, V = Vs, summax = summax, SIMPLIFY = F)
-  # 
-  # Hb <- mapply(function(b, X, Y, Z, lY, delta, tau, mu , nu, lam, V, summax){
-  #   a <- getW1(X, mu, nu, lam, V)
-  #   if(any(a > 1e3) | any(is.nan(a)))
-  #     return(Hbeta(beta, b, X, Z, Y, lY, delta, tau, w, v, summax, .Machine$double.eps^(1/4)))
-  #   else
-  #     return(a)
-  # }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau,
-  # mu = mus, nu = nus, lam = lambdas, V = Vs, summax = summax, SIMPLIFY = F)
-  
-  Sb <- mapply(function(b, X, Z, Y, lY, delta, tau, summax){
-    Sbeta2(beta, b, X, Z, Y, lY, delta, tau, w, v, summax)
-  }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, summax = summax, SIMPLIFY = F)
-
-  Hb <- mapply(function(b, X, Z, Y, lY, delta, tau, summax){
-    Hbeta2(beta, b, X, Z, Y, lY, delta, tau, w, v, summax)
-  }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, summax = summax, SIMPLIFY = F)
+  if(beta.update.quad){ #' Taken **with** quadrature
+    Sb <- mapply(function(b, X, Z, Y, lY, delta, tau, summax){
+      Sbeta2(beta, b, X, Z, Y, lY, delta, tau, w, v, summax)
+    }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, summax = summax, SIMPLIFY = F)
+    
+    Hb <- mapply(function(b, X, Z, Y, lY, delta, tau, summax){
+      Hbeta2(beta, b, X, Z, Y, lY, delta, tau, w, v, summax)
+    }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, summax = summax, SIMPLIFY = F)
+  }else{                #' Taken **without** quadrature
+    Sb <- mapply(function(b, X, Z, Y, lY, delta, summax){
+      Sbeta_noquad(beta, b, X, Z, Y, lY, delta, summax)
+    }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, summax = summax, SIMPLIFY = F)
+    
+    Hb <- mapply(function(b, X, Z, Y, lY, delta, summax){
+      Hbeta_noquad(beta, b, X, Z, Y, lY, delta, summax)
+    }, b = b.hat, X = X, Z = Z, Y = Y, lY = lY, delta = delta, summax = summax, SIMPLIFY = F)
+  }
   
   #' Survival parameters (\gamma, \zeta)
   Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
@@ -132,7 +125,8 @@ EMupdate <- function(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delt
 
 EM <- function(long.formula, surv.formula, data, post.process = T, 
                control = list(), disp.control = list(), optim.control = list(),
-               delta.update.quad = T, summax.fn = NULL, min.summax = 20, initialise.delta = T){
+               delta.update.quad = T, beta.update.quad = T,
+               summax.fn = NULL, min.summax = 20, initialise.delta = T){
   #' Defaults: 
   #'   _not_ updating \delta, and doing so every iteration in in instances where it `update.deltas` is `TRUE`.
   #'   Truncation amount `summax` is taken as max(2 * max(Y_i), 20).
@@ -244,7 +238,7 @@ EM <- function(long.formula, surv.formula, data, post.process = T,
   while(diff > tol && iter < maxit){
     s.em.i <- proc.time()[3]
     update <- EMupdate(Omega, X, Y, lY, Z, delta, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
-                       sv, w, v, n, m, summax, debug, optim.control, inds.met, delta.update.quad)
+                       sv, w, v, n, m, summax, debug, optim.control, inds.met, delta.update.quad, beta.update.quad)
     if(debug) DEBUG.update <<- update
     params.new <- c(vech(update$D), update$beta, update$gamma, update$zeta)
     names(params.new) <- names(params)
@@ -291,7 +285,9 @@ EM <- function(long.formula, surv.formula, data, post.process = T,
     summax = unlist(summax),
     n = n, mi = m,
     inds.met = inds.met,
+    max.val = max.val,
     delta.update.quad = delta.update.quad,
+    beta.update.quad = beta.update.quad,
     summax.fn = summax.fn,
     min.summax = min.summax
   )
@@ -312,7 +308,8 @@ EM <- function(long.formula, surv.formula, data, post.process = T,
     Sigma <- b.update$Sigma
   
     # The Information matrix
-    vcv <- vcov(Omega, delta, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax, inds.met, delta.update.quad)
+    vcv <- vcov(Omega, delta, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax, inds.met, delta.update.quad,
+                beta.update.quad)
     I <- structure(vcv$I, dimnames = list(names(params), names(params)))
     I.inv <- tryCatch(solve(I), error = function(e) e)
     if(inherits(I.inv, 'error')) I.inv <- structure(MASS::ginv(I),

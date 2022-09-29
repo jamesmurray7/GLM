@@ -10,13 +10,6 @@ arma::vec SEQ_Z(long double summax){ // Shorthand for Z_(lambda_i, nu_i)
   return arma::linspace(0, summax, summax + 1.0);
 }
 
-// [[Rcpp::export]]
-void testlgamma(vec& Y){
-	Rcout << "lgamma(Y)" << lgamma(Y) << std::endl;
-	Rcout << "lgamma(Y+1)" << lgamma(Y + 1.) << std::endl;
-}
-
-
 // Normalising constants, Z -----------------------------------------------
 // [[Rcpp::export]]
 vec logZ_c(vec& log_lambda, vec& nu, int summax) {
@@ -166,7 +159,7 @@ int Maxit)				        /* Max # of iterations */
   if( fabs(prev_step) >= tol_act	/* If prev_step was large enough*/
   && fabs(fa) > fabs(fb) ) {	/* and was in true direction,
    * Interpolation may be tried	*/
-  double t1,cb,t2;
+  register double t1,cb,t2;
     cb = c-b;
     if( a==c ) {		/* If we have only two distinct	*/
   /* points linear interpolation	*/
@@ -557,6 +550,43 @@ mat Hbeta2(vec& beta, vec& b, mat& X, mat& Z, vec& Y, vec& lY,
   return Hess;
 }
 
+// The "raw" gradient taken **without** quadrature
+// [[Rcpp::export]]
+vec Sbeta_noquad(vec& beta, vec& b, mat& X, mat& Z, vec& Y, vec& lY,
+	double delta, int summax){
+	int mi = Y.size();
+	vec eta = X * beta + Z * b, nu = vec(mi, fill::value(exp(delta)));
+	vec mu = exp(eta);
+
+  // lambda, logZ, V
+  vec lam = lambda_appx(mu, nu, summax);
+  vec loglam = log(lam);
+  vec logZ = logZ_c(loglam, nu, summax);
+  vec V = calc_V_vec(mu, lam, nu, logZ, summax);
+
+  mat lhs = diagmat(mu) * X;
+  vec rhs = (Y-mu)/V;
+
+  return lhs.t() * rhs;
+}
+
+// [[Rcpp::export]]
+mat Hbeta_noquad(vec& beta, vec& b, mat& X, mat& Z, vec& Y, vec& lY,
+                 double delta, int summax){
+  int mi = Y.size();
+  vec eta = X * beta + Z * b, nu = vec(mi, fill::value(exp(delta)));
+  vec mu = exp(eta);
+  
+  // lambda, logZ, V
+  vec lam = lambda_appx(mu, nu, summax);
+  vec loglam = log(lam);
+  vec logZ = logZ_c(loglam, nu, summax);
+  vec V = calc_V_vec(mu, lam, nu, logZ, summax);
+  
+  mat lhs = X.t() * diagmat(square(mu)/V);
+  
+  return -1. * lhs * X;
+}
 
 
 // Updates for the survival pair (gamma, zeta) ----------------------------

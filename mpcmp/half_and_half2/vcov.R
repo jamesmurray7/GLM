@@ -1,5 +1,15 @@
+#' #################################################################
+#' vcov.R
+#' -------
+#' Calculate the observed empirical information matrix for 
+#' the psuedo-MLEs of a joint-model fit by approximate EM method.
+#' This also calculates the variance of subject-specific \delta_i
+#'           by (approximation of) the Hessian matrix.
+#' #################################################################
 
-vcov <- function(Omega, delta, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax, inds.met, delta.update.quad){
+
+vcov <- function(Omega, delta, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax, inds.met, 
+                 delta.update.quad, beta.update.quad){
   #' Unpack Omega ----
   D <- Omega$D
   beta <- c(Omega$beta)
@@ -52,37 +62,19 @@ vcov <- function(Omega, delta, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax, 
   #' Calculate things we need for scores on \beta and \delta
   mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b, SIMPLIFY = F)
   nus <- mapply(function(delta, Y) rep(exp(delta), length(Y)), delta = delta, Y = Y, SIMPLIFY = F)
-  
-  #' lambda, logZ and V calculations ----
-  lambdas <- mapply(function(mu, nu, summax){
-    lambda_appx(mu, nu, summax)
-  }, mu = mus, nu = nus, summax = summax, SIMPLIFY = F)
-  
-  logZs <- mapply(function(mu, nu, lambda, summax){
-    logZ_c(log(lambda), nu, summax)
-  }, mu = mus, nu = nus, lambda = lambdas, summax = summax, SIMPLIFY = F)
-  
-  Vs <- mapply(function(mu, nu, lambda, logZ, summax){
-    calc_V_vec(mu, lambda, nu, logZ, summax)
-  }, mu = mus, nu = nus, lambda = lambdas, logZ = logZs, summax = summax, SIMPLIFY = F)
-  
-  #' Score for the dispersion parameter(s), \delta 
   tau <- mapply(function(Z, S) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), S = Sigma, Z = Z, SIMPLIFY = F)
   
-  #' Score for the fixed effects, \beta 
-  # Sb <- mapply(Sbeta, X, Y, mus, nus, lambdas, Vs, SIMPLIFY = F)
-  # Sb <- mapply(function(b, X, Y, Z, lY, delta, tau, mu , nu, lam, V, summax){
-  #   a <- Sbeta(X, Y, mu, nu, lam, V)
-  #   if(any(a > 1e3) | any(is.nan(a))){
-  #     return(Sbeta_cdiff(beta, b, X, Z, Y, lY, delta, tau, w, v, summax, .Machine$double.eps^(1/3)))
-  #   }else
-  #     return(a)
-  # }, b = b, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, 
-  # mu = mus, nu = nus, lam = lambdas, V = Vs, summax = summax, SIMPLIFY = F)
+  # Score for fixed effects (beta)
+  if(beta.update.quad){
+    Sb <- mapply(function(b, X, Z, Y, lY, delta, tau, summax){
+      Sbeta2(beta, b, X, Z, Y, lY, delta, tau, w, v, summax)
+    }, b = b, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, summax = summax, SIMPLIFY = F)
+  }else{
+    Sb <- mapply(function(b, X, Z, Y, lY, delta, summax){
+      Sbeta_noquad(beta, b, X, Z, Y, lY, delta, summax)
+    }, b = b, X = X, Z = Z, Y = Y, lY = lY, delta = delta, summax = summax, SIMPLIFY = F)
+  }
   
-  Sb <- mapply(function(b, X, Z, Y, lY, delta, tau, summax){
-    Sbeta2(beta, b, X, Z, Y, lY, delta, tau, w, v, summax)
-  }, b = b, X = X, Z = Z, Y = Y, lY = lY, delta = delta, tau = tau, summax = summax, SIMPLIFY = F)
 
   #' Survival parameters (\gamma, \zeta)
   Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
@@ -96,10 +88,10 @@ vcov <- function(Omega, delta, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax, 
 
   SS <- rowSums(S) # sum S
   I <- Reduce('+', lapply(1:n, function(i) tcrossprod(S[, i]))) - tcrossprod(SS)/n
-  # ^ observed empirical information matrix (Mclachlan and Krishnan, 2008).
+  # ^ Observed empirical information matrix (Mclachlan and Krishnan, 2008).
   
   
-  # Variances of subject-specific delta with/out quadrature (NB: THIS)
+  # Information of subject-specific dispersion parameter
   Idelta <- lapply(1:n, function(i){
     if(i %in% inds.met){
       a <- delta.update(delta[[i]], X[[i]], Z[[i]], Y[[i]], b[[i]], beta, 

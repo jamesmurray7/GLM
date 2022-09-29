@@ -445,7 +445,7 @@ plot.delta.inits <- function(fit, show.medians = F, show.means = F){
 
 # Tabulate summary --------------------------------------------------------
 
-my.summary <- function(myfit, printD = F){
+my.summary <- function(myfit, printD = F, extra.info = T){
   if(is.null(myfit$SE)) stop('Need to run EM with post.process = T')
   qz <- qnorm(.975)
   .to3dp <- function(x) round(x, 3)
@@ -462,9 +462,11 @@ my.summary <- function(myfit, printD = F){
   delta <- myfit$co$delta
   zetas <- myfit$co$zeta
   
+  cat(paste0(responses, ' (', families, ')\n'))
+  
   #' Random effects matrix
   if(printD){
-    cat(paste0('Random effects variance-covariance matrix: \n'))
+    cat(paste0('\nRandom effects variance-covariance matrix: \n'))
     print(.to3dp(D))
     cat('\n')
   }
@@ -477,7 +479,7 @@ my.summary <- function(myfit, printD = F){
   z <- my/rSE
   p <- 2 * (pnorm(abs(z), lower.tail = F))
   
-  cat(paste0(responses, ' (', families, ')\n'))
+  cat('Fixed effects:\n')
   this.out <- setNames(data.frame(.to3dp(my), .to3dp(rSE), .to3dp(lb), .to3dp(ub), round(p, 3)),
                        c('Estimate', 'SE', '2.5%', '97.5%', 'p-value'))
   print(this.out)
@@ -499,6 +501,37 @@ my.summary <- function(myfit, printD = F){
                        c('Estimate', 'SE', '2.5%', '97.5%', 'p-value'))
   print(surv.out)
   
+  #' Dispersion summary
+  if(extra.info){
+    cat('\n')
+    cat('Subject-specific dispersion: \n')
+    deltas <- myfit$delta.df; disps <- deltas$delta
+    mv <- myfit$modelInfo$max.val
+    
+    ud <- c(round(quantile(disps[disps > 0 & disps < mv]), 4), length(disps[disps > 0 & disps < mv]))
+    od <- c(round(quantile(disps[disps < 0 & disps > -mv]), 4), length(disps[disps < 0 & disps > -mv]))
+    
+    print(structure(rbind(ud, od), dimnames = list(c('Under-dispersed', 'Over-dispersed'),
+                                                   c('min.', '25%', '50%', '75%', 'max.', 'n'))))
+    
+    # Extra printing stuff
+    cat(sprintf('Inclusion criterion met for %d (%.1f%%) subjects.\n',
+                length(myfit$modelInfo$inds.met), 100 * length(myfit$modelInfo$inds.met) / myfit$modelInfo$n))
+    cat(sprintf("%d dispersion estimates were truncated at max value (%.2f).\n", sum(deltas$truncated == '*'), mv))
+  }
+  
+  #' Summax summary
+  if(extra.info){
+    cat('\n')
+    cat('Subject-specific truncation amounts: \n')
+    xi <- myfit$modelInfo$summax; mv <- myfit$modelInfo$min.summax; fxi <- myfit$modelInfo$summax.fn
+    tabx <- table(xi); ptabx <- prop.table(tabx) * 100; ntabx <- names(tabx)
+    print(c(tabx));cat('\n')
+    
+    cat(sprintf("Truncation amount given by %s with minimal value %d\n",
+                deparse(fxi)[2], myfit$modelInfo$min.summax))
+  }
+  
   #' Elapsed times
   cat(sprintf('\nElapsed times as follows (%d iterations):\n', myfit$iter))
   print(.to3dp(myfit$elapsed.time))
@@ -506,7 +539,10 @@ my.summary <- function(myfit, printD = F){
   #' Optimiser info
   cat('\n')
   a <- myfit$modelInfo$optim
-  cat(sprintf('Optimiser used: %s, Hessian appraised: %s with epsilon %s.\n', a[1], a[2], a[3]))
+  if(extra.info)
+    cat(sprintf('Optimiser used: %s, Hessian appraised: %s with epsilon %s.\n', a[1], a[2], a[3]))
+  
+  
   invisible(1+1)
 }
 
