@@ -1,0 +1,107 @@
+
+---
+Initial conditions on delta, quadrature on both beta and delta.
+
+Y (mean parameterised Conway-Maxwell Poisson)
+Fixed effects:
+                 Estimate    SE   2.5%  97.5% p-value
+beta_(Intercept)    2.033 0.047  1.941  2.125   0.000
+beta_time          -0.097 0.007 -0.111 -0.084   0.000
+beta_cont           0.093 0.030  0.035  0.152   0.002
+beta_bin           -0.247 0.068 -0.380 -0.114   0.000
+
+Event-time sub-model: 
+         Estimate    SE   2.5% 97.5% p-value
+zeta_bin   -0.249 0.164 -0.570 0.072   0.129
+gamma       0.298 0.269 -0.228 0.825   0.267
+
+Subject-specific dispersion: 
+                   min.     25%     50%     75%    max.   n
+Under-dispersed  0.0594  0.7123  0.9688  1.3063  2.2104 114
+Over-dispersed  -2.4225 -1.3461 -0.8367 -0.5763 -0.0606  92
+Inclusion criterion met for 213 (85.2%) subjects.
+7 dispersion estimates were truncated at max value (2.50).
+
+Subject-specific truncation amounts: 
+ 20  21  22  23  24  25  26  27  28  29  30  31  32  37  38  39  40  41  44 
+126  24  17  11  13   9  12  11   5   3   1   6   3   1   2   1   2   2   1 
+
+Truncation amount given by max(y) + 10 with minimal value 20
+
+Elapsed times as follows (4 iterations):
+    delta optimisation        re-maximisation           startup time                EM time        post processing 
+                 5.998                  5.812                 18.423                 28.631                 11.470 
+Total computation time 
+                58.526 
+
+Optimiser used: optim, Hessian appraised: grad with epsilon 0.001.
+
+---
+No initial conditions on delta, quadrature on neither beta nor delta.
+
+Y (mean parameterised Conway-Maxwell Poisson)
+Fixed effects:
+                 Estimate    SE   2.5%  97.5% p-value
+beta_(Intercept)    2.036 0.047  1.945  2.128   0.000
+beta_time          -0.100 0.007 -0.113 -0.087   0.000
+beta_cont           0.093 0.030  0.035  0.151   0.002
+beta_bin           -0.246 0.068 -0.379 -0.114   0.000
+
+Event-time sub-model: 
+         Estimate    SE   2.5% 97.5% p-value
+zeta_bin   -0.250 0.164 -0.571 0.071   0.127
+gamma       0.286 0.268 -0.239 0.811   0.285
+
+Subject-specific dispersion: 
+                   min.     25%     50%     75%    max.   n
+Under-dispersed  0.0189  0.7550  1.0016  1.3454  1.7923 115
+Over-dispersed  -2.2991 -1.2206 -0.7394 -0.4957 -0.0155  92
+Inclusion criterion met for 213 (85.2%) subjects.
+6 dispersion estimates were truncated at max value (2.50).
+
+Subject-specific truncation amounts: 
+ 20  21  22  23  24  25  26  27  28  29  30  31  32  37  38  39  40  41  44 
+126  24  17  11  13   9  12  11   5   3   1   6   3   1   2   1   2   2   1 
+
+Truncation amount given by max(y) + 10 with minimal value 20
+
+Elapsed times as follows (4 iterations):
+          startup time                EM time        post processing Total computation time 
+                 1.780                 25.063                  5.710                 32.551 
+
+Optimiser used: optim, Hessian appraised: grad with epsilon 0.001.
+
+---
+No initial conditions on delta, quadrature on delta only.
+
+Y (mean parameterised Conway-Maxwell Poisson)
+Fixed effects:
+                 Estimate    SE   2.5%  97.5% p-value
+beta_(Intercept)    2.036 0.047  1.944  2.128   0.000
+beta_time          -0.100 0.007 -0.114 -0.086   0.000
+beta_cont           0.093 0.030  0.035  0.152   0.002
+beta_bin           -0.246 0.068 -0.379 -0.113   0.000
+
+Event-time sub-model: 
+         Estimate    SE   2.5% 97.5% p-value
+zeta_bin   -0.250 0.164 -0.571 0.071   0.127
+gamma       0.289 0.269 -0.239 0.817   0.283
+
+Subject-specific dispersion: 
+                   min.     25%     50%     75%    max.   n
+Under-dispersed  0.0581  0.6561  0.9116  1.2564  1.7872 114
+Over-dispersed  -2.4934 -1.3602 -0.8391 -0.5677 -0.0347  92
+Inclusion criterion met for 213 (85.2%) subjects.
+7 dispersion estimates were truncated at max value (2.50).
+
+Subject-specific truncation amounts: 
+ 20  21  22  23  24  25  26  27  28  29  30  31  32  37  38  39  40  41  44 
+126  24  17  11  13   9  12  11   5   3   1   6   3   1   2   1   2   2   1 
+
+Truncation amount given by max(y) + 10 with minimal value 20
+
+Elapsed times as follows (4 iterations):
+          startup time                EM time        post processing Total computation time 
+                 1.158                 26.281                  6.110                 33.554 
+
+Optimiser used: optim, Hessian appraised: grad with epsilon 0.001.

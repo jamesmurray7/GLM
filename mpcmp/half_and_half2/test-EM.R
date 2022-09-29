@@ -35,8 +35,39 @@ fit <- EM(long.formula, surv.formula, data,
 
 my.summary(fit)
 
+# Play around with different arguments...
+fit2 <- EM(long.formula, surv.formula, data,
+           control = control,
+           disp.control = disp.control,
+           optim.control = optim.control,
+           summax.fn = summax.fn, min.summax = min.summax,
+           delta.update.quad = F,
+           beta.update.quad = F,
+           initialise.delta = F)
 
-# Intercept + slope -------------------------------------------------------
+my.summary(fit2)
+
+fit3 <- EM(long.formula, surv.formula, data,
+           control = control,
+           disp.control = disp.control,
+           optim.control = optim.control,
+           summax.fn = summax.fn, min.summax = min.summax,
+           delta.update.quad = T,
+           beta.update.quad = F,
+           initialise.delta = F)
+
+# Sink + compare
+sink('./three-competing-intonly.txt')
+cat('\n---\nInitial conditions on delta, quadrature on both beta and delta.\n\n')
+my.summary(fit)
+cat('\n---\nNo initial conditions on delta, quadrature on neither beta nor delta.\n\n')
+my.summary(fit2)
+cat('\n---\nNo initial conditions on delta, quadrature on delta only.\n\n')
+my.summary(fit3)
+sink()
+
+
+# Repeat same on intercept-and-slope --------------------------------------
 rm(list=ls())
 source('EM.R')
 test <- simData_joint2(n = 250, delta = c(-1,1), 
@@ -45,22 +76,62 @@ test <- simData_joint2(n = 250, delta = c(-1,1),
                        D = matrix(c(0.25, 0, 0, 0.05), 2, 2))
 data <- test$data
 
-long.formula <- Y~time+cont+bin+(1+time|id)
-surv.formula <- Surv(survtime, status) ~ bin
-disp.formula <- ~1
-control <- list(verbose=T)
-summax.fn <- function(y) max(y) + 10
-min.summax <- 20
-disp.control <- list(delta.method = 'bobyqa', min.profile.length = 4,
-                     max.val = 10)
-optim.control <- list(optimiser = 'optim', Hessian = 'grad', eps = 1e-3)
+check.disps(test)
 
-long.formula <- Y~time+cont+bin+(1 + time|id)
+control <- list(verbose=T, debug = T)
+disp.control <- list(delta.method = 'optim', min.profile.length = 3,
+                     truncated = T, max.val = 2.5)
+optimiser.arguments <- optim.control <- list(optimiser = 'optim', Hessian = 'grad', eps = 1e-3)
+summax=3
+
+long.formula <- Y~time+cont+bin+(1+time|id)
 surv.formula <- Surv(survtime, status) ~ bin
 update.deltas <- F
 
+summax.fn <- function(y) max(y) + 10
+min.summax <- 20
+delta.update.quad <- T
+beta.update.quad <- F
+initialise.delta <- T
+
+fit <- EM(long.formula, surv.formula, data,
+          control = control,
+          disp.control = disp.control,
+          optim.control = optim.control,
+          summax.fn = summax.fn, min.summax = min.summax,
+          delta.update.quad = delta.update.quad,
+          beta.update.quad = beta.update.quad,
+          initialise.delta = initialise.delta)
+
+my.summary(fit)
+
+# Play around with different arguments...
 fit2 <- EM(long.formula, surv.formula, data,
            control = control,
            disp.control = disp.control,
            optim.control = optim.control,
-           summax.fn = summax.fn, min.summax = min.summax)
+           summax.fn = summax.fn, min.summax = min.summax,
+           delta.update.quad = F,
+           beta.update.quad = F,
+           initialise.delta = F)
+
+my.summary(fit2)
+
+fit3 <- EM(long.formula, surv.formula, data,
+           control = control,
+           disp.control = disp.control,
+           optim.control = optim.control,
+           summax.fn = summax.fn, min.summax = min.summax,
+           delta.update.quad = T,
+           beta.update.quad = F,
+           initialise.delta = F)
+
+# Sink + compare
+sink('./three-competing-intslope.txt')
+cat('\n---\nInitial conditions on delta, quadrature on both beta and delta.\n\n')
+my.summary(fit)
+cat('\n---\nNo initial conditions on delta, quadrature on neither beta nor delta.\n\n')
+my.summary(fit2)
+cat('\n---\nNo initial conditions on delta, quadrature on delta only.\n\n')
+my.summary(fit3)
+sink()

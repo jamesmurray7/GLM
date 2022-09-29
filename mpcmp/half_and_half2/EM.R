@@ -291,7 +291,7 @@ EM <- function(long.formula, surv.formula, data, post.process = T,
     summax.fn = summax.fn,
     min.summax = min.summax
   )
-  modelInfo$delta.init <- delta.inits.raw # Return ALL information.
+  if(initialise.delta) modelInfo$delta.init <- delta.inits.raw # Return ALL information.
   modelInfo$optimHess <- c(optimiser = optim.control$optimiser, Hessian = optim.control$Hessian, epsilon = optim.control$eps)
   out$modelInfo <- modelInfo
   out$hazard <- cbind(ft = sv$ft, haz = l0, nev = sv$nev)
@@ -329,8 +329,8 @@ EM <- function(long.formula, surv.formula, data, post.process = T,
   }
   comp.time <- round(proc.time()[3]-start.time, 3)
   
-  out$elapsed.time <- c(`delta optimisation` = unname(delta.inits.raw$time),
-                        `re-maximisation` = if(re.maximise) unname(remaximisation.time) else NULL,
+  out$elapsed.time <- c(`delta optimisation` = if(initialise.delta) unname(delta.inits.raw$time) else NULL,
+                        `re-maximisation` = if(re.maximise & initialise.delta) unname(remaximisation.time) else NULL,
                         `startup time` = unname(startup.time),
                         `EM time` = unname(EMtime),
                         `post processing` = if(post.process) unname(postprocess.time) else NULL,
