@@ -1,0 +1,18 @@
+Random effects variance-covariance matrix: 
+      [,1]  [,2]
+[1,] 0.071 0.002
+[2,] 0.002 0.001
+
+RAVLT.immediate (poisson): 
+                            Estimate    SE   2.5%  97.5% p-value
+RAVLT.immediate_(Intercept)    3.426 0.020  3.388  3.465   0.000
+RAVLT.immediate_time          -0.040 0.005 -0.050 -0.030   0.000
+RAVLT.immediate_age_scaled    -0.032 0.013 -0.058 -0.006   0.016
+RAVLT.immediate_bin           -0.099 0.029 -0.156 -0.041   0.001
+
+Event-time sub-model: 
+                      Estimate    SE   2.5%  97.5% p-value
+zeta_bin                 0.704 0.109  0.491  0.918       0
+gamma_RAVLT.immediate   -2.541 0.235 -3.002 -2.080       0
+
+Approximate EM algorithm took 4.4 seconds and total computation time was 7.32 seconds.

@@ -1,0 +1,18 @@
+Random effects variance-covariance matrix: 
+      [,1]  [,2]
+[1,] 0.139 0.010
+[2,] 0.010 0.005
+
+ADAS13 (poisson): 
+                   Estimate    SE   2.5% 97.5% p-value
+ADAS13_(Intercept)    2.729 0.026  2.679 2.779   0.000
+ADAS13_time           0.078 0.006  0.067 0.089   0.000
+ADAS13_age_scaled     0.031 0.017 -0.002 0.063   0.063
+ADAS13_bin            0.168 0.039  0.092 0.244   0.000
+
+Event-time sub-model: 
+             Estimate    SE  2.5% 97.5% p-value
+zeta_bin        0.728 0.136 0.462 0.994       0
+gamma_ADAS13    2.786 0.204 2.387 3.186       0
+
+Approximate EM algorithm took 7.38 seconds and total computation time was 10.54 seconds.

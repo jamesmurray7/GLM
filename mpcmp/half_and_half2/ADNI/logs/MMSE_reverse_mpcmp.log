@@ -1,0 +1,39 @@
+MMSE.reverse (mean parameterised Conway-Maxwell Poisson)
+
+Random effects variance-covariance matrix: 
+      [,1]  [,2]
+[1,] 0.348 0.030
+[2,] 0.030 0.016
+
+Fixed effects:
+                 Estimate    SE   2.5% 97.5% p-value
+beta_(Intercept)    0.797 0.046  0.707 0.888   0.000
+beta_time           0.152 0.012  0.129 0.175   0.000
+beta_age_scaled     0.057 0.030 -0.003 0.117   0.061
+beta_bin            0.229 0.072  0.087 0.371   0.002
+
+Event-time sub-model: 
+         Estimate    SE  2.5% 97.5% p-value
+zeta_bin    0.568 0.141 0.292 0.844       0
+gamma       1.539 0.126 1.292 1.786       0
+
+Subject-specific dispersion: 
+                   min.     25%     50%     75%    max.  n
+Under-dispersed  0.0004  0.3059  0.6115  1.0712  1.9011 94
+Over-dispersed  -1.7284 -0.7407 -0.3871 -0.2229 -0.0133 55
+Inclusion criterion met for 153 (39.8%) subjects.
+4 dispersion estimates were truncated at max value (2.50).
+
+Subject-specific truncation amounts: 
+ 20  21  22  23  24  27  31  32  33 
+358   8   8   5   1   1   1   1   1 
+
+Truncation amount given by max(y) + 10 with minimal value 20
+
+Elapsed times as follows (17 iterations):
+          startup time                EM time        post processing 
+                 2.055                 54.158                  3.320 
+Total computation time 
+                59.537 
+
+Optimiser used: optim, Hessian appraised: grad with epsilon 0.001.
