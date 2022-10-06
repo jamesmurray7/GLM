@@ -220,7 +220,7 @@ log.lik <- function(Omega, dmats, b, delta, surv, sv, l0u, l0i, summax){
   beta <- Omega$beta; D <- Omega$D; zeta <- Omega$zeta; gamma <- Omega$gamma
   S <- sv$S; SS <- sv$SS; Delta <- surv$Delta
   Fu <- sv$Fu; Fi <- sv$Fi; 
-  q <- dmats$q; w <- dmats$w; P <- dmats$p
+  q <- dmats$q; w <- dmats$w; P <- dmats$p; n <- surv$n
   
   #' f(Y|...; Omega)
   ll.cmp <- mapply(function(Y, lY, X, Z, W, b, delta, summax){
@@ -234,20 +234,22 @@ log.lik <- function(Omega, dmats, b, delta, surv, sv, l0u, l0i, summax){
   #' f(T, Delta|...; Omega)
   ll.ft <- mapply(function(S, SS, Fi, Fu, b, Delta, l0i, l0u){
     temp <- if(Delta == 1) log(l0i) else 0.0
-    temp + Delta * (S %*% zeta + Fi %*% (gamma * b)) - 
-      crossprod(l0u, exp(SS %*% zeta + Fu %*% (gamma * b)))
+    # temp + Delta * (S %*% zeta + Fi %*% (gamma * b)) - 
+      # crossprod(l0u, exp(SS %*% zeta + Fu %*% (gamma * b)))
+    temp + Delta * S %*% zeta - crossprod(l0u, exp(SS %*% zeta))
   }, S = S, SS = SS, Fi = Fi, Fu = Fu, b = b, Delta = Delta, 
   l0i = l0i, l0u = l0u)
   
   #' log likelihood.
-  ll <- sum(ll.cmp + ll.ft)
+  ll.b <- mapply(function(b) mvtnorm::dmvnorm(b, sigma = D, log = T), b = b)
+  ll <- sum(ll.cmp + ll.ft + ll.b)
   
   # Number of observations
   N <- sum(sapply(Y, length))
   # Number of estimated parameters (n = # dispersion params)
   Ps <- length(gamma) + length(surv$ph$coefficients)
   df <- P + Ps + sum(rowSums(do.call(rbind, delta) != 0) == 2) * w     #' All __estimated__ parameters
-  df.residual <- N - df - n * q      #      + all random effects
+  df.residual <- N - (df + n * q)                                      #      + all random effects
   
   # AIC and BIC
   aic <- -2 * ll + 2 * df
