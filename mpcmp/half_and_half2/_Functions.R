@@ -264,7 +264,9 @@ log.lik <- function(Omega, dmats, b, delta, surv, sv, l0u, l0i, summax){
       l0i = l0i, l0u = l0u)
   
   #' log likelihood.
-  ll <- sum(ll.cmp + ll.ft)
+  ll.b <- mapply(function(b) mvtnorm::dmvnorm(b, sigma = D, log = T), b = b)
+  ll <- sum(ll.cmp + ll.ft + ll.b)
+  
   
   # Number of observations
   N <- sum(sapply(Y, length))
