@@ -1,16 +1,22 @@
 rm(list=ls())
 source('EM.R')
+set.seed(8)
 test <- simData_joint2(n = 250, delta.int = c(0.3, -0.3),
                        ntms = 15, theta = c(-2, .1), fup = 3,
                        beta = c(2, -0.1, 0.1, -0.2), gamma = 0.6, zeta= c(0.0, -0.2),
                        D = matrix(c(0.25, 0, 0, 0), 2, 2))
-data <- test$data
+set.seed(8)
+stest <- simData_joint2_safe(n = 250, delta.int = c(1.0, -1.0), delta.time = c(0.25, 0.25),
+                       ntms = 15, theta = c(-2, .1), fup = 3,
+                       beta = c(2, -0.1, 0.1, -0.2), gamma = 0.6, zeta= c(0.0, -0.2),
+                       D = matrix(c(0.25, 0, 0, 0), 2, 2), diff.tol = 5)
+data <- stest$data
 
 # check.disps(test) # NYI
 
 control <- list(verbose=T, debug = T)
 disp.control <- list(delta.method = 'optim', min.profile.length = 3,
-                     truncated = T, max.val = 2.5)
+                     truncated = T, max.val = 2.25)
 optimiser.arguments <- optim.control <- list(optimiser = 'optim', Hessian = 'grad', eps = 1e-3)
 summax=3
 
@@ -22,10 +28,10 @@ update.deltas <- F
 summax.fn <- NULL
 min.summax <- 20
 delta.update.quad <- T
-beta.update.quad <- F
+beta.update.quad <- T
 initialise.delta <- F
 
-fit <- EM(long.formula, surv.formula, data,
+fit <- EM(long.formula, surv.formula, disp.formula, data,
           control = control,
           disp.control = disp.control,
           optim.control = optim.control,
