@@ -212,37 +212,54 @@ difference <- function(params.old, params.new, type){
 
 
 # Calculating the log-likelihood ------------------------------------------
-# NYI!!!!!!!!!!!!
-log.lik <- function(coeffs, dmats, b, surv, sv, l0u, l0i, summax){
+log.lik <- function(Omega, dmats, b, delta, surv, sv, l0u, l0i, summax){
   # joint density - REs; Marginal ll of Y(s) added to f(T_i,\Delta_i|...).
-  Y <- dmats$Y; X <- dmats$X; Z <- dmats$Z; G <- dmats$G; lY <- lapply(Y, lfactorial)
-  beta <- coeffs$beta; D <- coeffs$D; delta <- coeffs$delta; zeta <- coeffs$zeta; gamma <- coeffs$gamma
+  Y <- dmats$Y; X <- dmats$X; Z <- dmats$Z; lY <- lapply(Y, lfactorial); 
+  W <- dmats$W
+  
+  beta <- Omega$beta; D <- Omega$D; zeta <- Omega$zeta; gamma <- Omega$gamma
   S <- sv$S; SS <- sv$SS; Delta <- surv$Delta
   Fu <- sv$Fu; Fi <- sv$Fi; 
-  q <- ncol(Z[[1]]); K <- 1; n <- length(Z)
+  q <- dmats$q; w <- dmats$w; P <- dmats$p
   
-  #' "Full" joint density ----
-  ll1 <- numeric(n)
-  for(i in 1:n){ # For some reason mapply() not liking this as it was in Multi-test(?)
-    ll1[i] <- -joint_density(b[[i]],X[[i]],Y[[i]],lY[[i]],Z[[i]],G[[i]],beta, delta,D,S[[i]],SS[[i]],Fi[[i]], Fu[[i]],l0i[[i]],l0u[[i]],Delta[[i]],gamma,zeta,100)
-  }
+  #' f(Y|...; Omega)
+  ll.cmp <- mapply(function(Y, lY, X, Z, W, b, delta, summax){
+    mu <- exp(X %*% beta + Z %*% b)
+    nu <- exp(W %*% delta)
+    loglam <- log(lambda_appx(mu, nu, summax))
+    logZ <- logZ_c(loglam, nu, summax)
+    ll_cmp(loglam, nu, logZ, Y, lY)
+  }, Y = Y, lY = lY, X = X, Z = Z, W =W, b = b, delta = delta, summax = summax)
   
-  #' Only the joint density associated with REs ----
-  ll2 <- mapply(function(b) mvtnorm::dmvnorm(b, rep(0, q), D, log = T), b = b)
-  #' Calculate the marginal ll of the Yks and the survival density.
-  out <- sum(ll1 - ll2)
+  #' f(T, Delta|...; Omega)
+  ll.ft <- mapply(function(S, SS, Fi, Fu, b, Delta, l0i, l0u){
+    temp <- if(Delta == 1) log(l0i) else 0.0
+    temp + Delta * (S %*% zeta + Fi %*% (gamma * b)) - 
+      crossprod(l0u, exp(SS %*% zeta + Fu %*% (gamma * b)))
+  }, S = S, SS = SS, Fi = Fi, Fu = Fu, b = b, Delta = Delta, 
+  l0i = l0i, l0u = l0u)
   
-  #' Calculate AIC and BIC
+  #' log likelihood.
+  ll <- sum(ll.cmp + ll.ft)
+  
+  # Number of observations
   N <- sum(sapply(Y, length))
-  P <- ncol(X[[1]]-1)
-  Ps <- ncol(S[[1]])
-  df <- P + Ps + 2 * K + (q * (q + 1)/2)
+  # Number of estimated parameters (n = # dispersion params)
+  Ps <- length(gamma) + length(surv$ph$coefficients)
+  df <- P + Ps + sum(rowSums(do.call(rbind, delta) != 0) == 2) * w     #' All __estimated__ parameters
+  df.residual <- N - df - n * q      #      + all random effects
   
-  attr(out, 'df') <- df; attr(out, 'N') <- N
-  attr(out, 'AIC') <- -2 * c(out) + 2 * df
-  attr(out, 'BIC') <- -2 * c(out) + log(N) * df
-  out
+  # AIC and BIC
+  aic <- -2 * ll + 2 * df
+  bic <- -2 * ll + log(N) * df
+  
+  # Output
+  structure(ll,
+            nobs = N, n = n, 
+            AIC = aic, BIC = bic, 
+            df = df, df.residual = df.residual)
 }
+
 
 
 # Wrapper for minimisation of f(Y|.) wrt b --------------------------------
