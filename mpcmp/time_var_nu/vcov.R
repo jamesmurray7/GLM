@@ -105,7 +105,7 @@ vcov <- function(Omega, delta, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax, 
   
   list(
     I = I,
-    Idelta = unlist(Idelta)
+    Idelta = Idelta
   )
 }
 

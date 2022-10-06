@@ -83,7 +83,7 @@ EMupdate <- function(Omega, X, Y, lY, Z, W, delta, b, S, SS, Fi, Fu, l0i, l0u, D
   
   #' #########
   #' M-step ##
-  #' #########
+  #' ######### 
   
   # D
   (D.new <- Reduce('+', D.update)/n)
@@ -99,17 +99,6 @@ EMupdate <- function(Omega, X, Y, lY, Z, W, delta, b, S, SS, Fi, Fu, l0i, l0u, D
     else 
       return(delta[[i]]) # Return pre-assigned rep(0, w). 
   })
-  # Plot w-paned plot of old vs new
-  if(debug){
-    par(mfrow = c(1, ncol(W[[1]])))
-    .d <- do.call(rbind, delta)
-    .dn <- do.call(rbind, delta.new)
-    for(p in 1:ncol(W[[1]])){
-      plot(.d[,p], .dn[,p], pch = 20, cex = .75)
-      abline(0,1,col='red')
-    }
-    par(mfrow=c(1,1))
-  }
 
   # Survival parameters (gamma, zeta)
   (gammazeta.new <- c(gamma, zeta) - solve(Reduce('+', Hgz), rowSums(Sgz)))
@@ -338,13 +327,19 @@ EM <- function(long.formula, surv.formula, disp.formula,
     out$SE <- sqrt(diag(I.inv))
     out$vcov <- I
     out$RE <- do.call(rbind, b)
-    delta.df <- data.frame(
-      id = inds.met,
-      delta = unlist(delta)[inds.met],
-      SE  = sqrt(1/vcv$Idelta)[inds.met],
-      truncated = ifelse(abs(unlist(delta)[inds.met]) == max.val, '*', '')
-    )
-    out$delta.df <- delta.df
+    delta.SEs <- as.data.frame(structure(do.call(rbind, invisible(lapply(inds.met, function(i){
+      Idel <- vcv$Idelta[[i]]
+      c(delta[[i]], suppressWarnings(sqrt(diag(solve(Idel)))))
+    }))), dimnames = list(as.character(inds.met), c(dmats$nw, paste0('SE_', dmats$nw)))))
+    
+    delta.dfs <- setNames(lapply(1:dmats$w, function(w){
+      estimate <- delta.SEs[,w]
+      SE <- delta.SEs[,(dmats$w + w)] # We know structure of delta.SEs: (delta), (SE delta)
+      lb <- estimate - qnorm(.975) * SE; ub <- estimate + qnorm(.975) * SE
+      data.frame(id = inds.met, 'estimate' = estimate, 'SE' = SE, 'lb' = lb, 'ub' = ub)
+    }), dmats$nw)
+    
+    out$delta.df <- delta.dfs
     postprocess.time <- round(proc.time()[3]-start.time.p, 2)
     
   }

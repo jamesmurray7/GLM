@@ -350,19 +350,12 @@ delta.update <- function(delta, X, Z, W, Y, b, beta, summax, w, v, tau, quad){
       VlY <- V_lY(loglam, logZ, nu, lY, xi)
       A <- YlY - mu * lY
       Snu <- A * (Y - mu) / VY - lgamma(Y + 1) + lY
+      S <- S + w[l] * crossprod(Snu, diagnu %*% W) 
+      ## Old code - slightly slower to use apply rather than loop over mis.
       # Hnu <- -(A)^2 / VY + VlY
-      # for(mi in 1:length(Y)){
-      #   Ami <- A[mi]
-      #   VYmi <- VY[mi]
-      #   VlYmi <- VlY[mi]
-      #   thisH <- thisH + ((-(Ami)^2 / VYmi + VlYmi) * nu[mi]^2) * W[mi, ] %*% t(W[mi,])
-      # }
-      S <- S + w[l] * crossprod(Snu, diagnu %*% W)
       # H <- H + w[l] * crossprod(W, apply(W, 2, function(i) i * Hnu * nu^2))
+      ## Cpp implementation.
       H <- H + w[l] * getW2(A, VY, VlY, W, nu)
-      # print(S)
-      # cat('\n')
-      # print(H)
     }
     delta.new <- delta + solve(H, c(S)) # H is actually the information, oops.
   }else{
@@ -388,8 +381,6 @@ delta.update <- function(delta, X, Z, W, Y, b, beta, summax, w, v, tau, quad){
   )
   
 }
-
-
 
 #' ########################################################################
 # Misc functions ----------------------------------------------------------
