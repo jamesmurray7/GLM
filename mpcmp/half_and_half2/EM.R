@@ -326,6 +326,8 @@ EM <- function(long.formula, surv.formula, data, post.process = T,
     out$delta.df <- delta.df
     postprocess.time <- round(proc.time()[3]-start.time.p, 2)
     
+    out$log.lik <- log.lik(Omega, dmats, b, delta, surv, sv, l0u, l0i, summax)
+    
   }
   comp.time <- round(proc.time()[3]-start.time, 3)
   

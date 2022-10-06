@@ -258,8 +258,9 @@ log.lik <- function(Omega, dmats, b, delta, surv, sv, l0u, l0i, summax){
   #' f(T, Delta|...; Omega)
   ll.ft <- mapply(function(S, SS, Fi, Fu, b, Delta, l0i, l0u){
     temp <- if(Delta == 1) log(l0i) else 0.0
-    temp + Delta * (S %*% zeta + Fi %*% (gamma * b)) - 
-        crossprod(l0u, exp(SS %*% zeta + Fu %*% (gamma * b)))
+    # temp + Delta * (S %*% zeta + Fi %*% (gamma * b)) - 
+    #     crossprod(l0u, exp(SS %*% zeta + Fu %*% (gamma * b)))
+    temp + Delta * S %*% zeta - crossprod(l0u, exp(SS %*% zeta))
   }, S = S, SS = SS, Fi = Fi, Fu = Fu, b = b, Delta = Delta, 
       l0i = l0i, l0u = l0u)
   
@@ -267,14 +268,13 @@ log.lik <- function(Omega, dmats, b, delta, surv, sv, l0u, l0i, summax){
   ll.b <- mapply(function(b) mvtnorm::dmvnorm(b, sigma = D, log = T), b = b)
   ll <- sum(ll.cmp + ll.ft + ll.b)
   
-  
   # Number of observations
   N <- sum(sapply(Y, length))
   # Number of estimated parameters (n = # dispersion params)
   P <- ncol(X[[1]])
-  Ps <- ncol(S[[1]])
-  df <- P + Ps + n
-  df.residual <- N - df - 2 * n
+  Ps <- length(gamma) + length(zeta)
+  df <- P + Ps + sum(unlist(delta)!=0)
+  df.residual <- N - (df + q * n)
   
   # AIC and BIC
   aic <- -2 * ll + 2 * df
