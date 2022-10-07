@@ -292,6 +292,7 @@ EM <- function(long.formula, surv.formula, disp.formula,
               iter = iter)
   modelInfo <- list(
     forms = c(formulas, disp.formula = disp.formula),
+    names = list(disp = dmats$nw, beta = dmats$np, rand = dmats$nq),
     summax = unlist(summax),
     n = n, mi = m,
     inds.met = inds.met,
@@ -335,6 +336,7 @@ EM <- function(long.formula, surv.formula, disp.formula,
     delta.dfs <- setNames(lapply(1:dmats$w, function(w){
       estimate <- delta.SEs[,w]
       SE <- delta.SEs[,(dmats$w + w)] # We know structure of delta.SEs: (delta), (SE delta)
+      SE <- ifelse(abs(estimate) == max.val | is.nan(SE), 0, SE)
       lb <- estimate - qnorm(.975) * SE; ub <- estimate + qnorm(.975) * SE
       data.frame(id = inds.met, 'estimate' = estimate, 'SE' = SE, 'lb' = lb, 'ub' = ub)
     }), dmats$nw)

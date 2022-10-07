@@ -504,20 +504,28 @@ my.summary <- function(myfit, printD = F, extra.info = T){
   #' Dispersion summary
   if(extra.info){
     cat('\n')
-    cat('Subject-specific dispersion: \n')
-    deltas <- myfit$delta.df; disps <- deltas$delta
+    deltas <- myfit$delta.df
     mv <- myfit$modelInfo$max.val
-    
-    ud <- c(round(quantile(disps[disps > 0 & disps < mv]), 4), length(disps[disps > 0 & disps < mv]))
-    od <- c(round(quantile(disps[disps < 0 & disps > -mv]), 4), length(disps[disps < 0 & disps > -mv]))
-    
-    print(structure(rbind(ud, od), dimnames = list(c('Under-dispersed', 'Over-dispersed'),
-                                                   c('min.', '25%', '50%', '75%', 'max.', 'n'))))
-    
+    tab.disp <- lapply(myfit$modelInfo$names$disp, function(n){
+      cat(sprintf("Dispersion estimates (%s):\n", gsub('\\(', '', gsub('\\)', '', n))))
+      this.delta <- deltas[[n]]
+      this.disps <- this.delta$estimate
+      # Remove values at truncation
+      notruncs <- this.disps[abs(this.disps) < mv]
+      # under/over dispersed
+      uds <- notruncs[notruncs > 0]; ods <- notruncs[notruncs < 0]
+      ud <- c(round(quantile(uds), 4), length(uds))
+      od <- c(round(quantile(ods), 4), length(ods))
+      
+      print(structure(rbind(ud, od), dimnames = list(c('Under-dispersed', 'Over-dispersed'),
+                                                     c('min.', '25%', '50%', '75%', 'max.', 'n'))))
+      
+      cat('\n')
+    })
     # Extra printing stuff
     cat(sprintf('Inclusion criterion met for %d (%.1f%%) subjects.\n',
                 length(myfit$modelInfo$inds.met), 100 * length(myfit$modelInfo$inds.met) / myfit$modelInfo$n))
-    cat(sprintf("%d dispersion estimates were truncated at max value (%.2f).\n", sum(deltas$truncated == '*'), mv))
+    # cat(sprintf("%d dispersion estimates were truncated at max value (%.2f).\n", sum(abs(deltas$truncated) == mv), mv))
   }
   
   #' Summax summary
@@ -551,40 +559,41 @@ my.summary <- function(myfit, printD = F, extra.info = T){
 # (obviously only used in sim. studies!)
 fitted.disps <- function(myfit, S, return.df = F, plot = T){
   # S: simdata_joint(2) object list
-  Sdf <- data.frame(id = as.numeric(names(S$true.deltas)), true = S$true.deltas)
-  # myfit: EM object
-  df <- myfit$delta.df
-  # merge
-  df2 <- merge(df, Sdf, 'id')
-  
-  # 1) Check that the SIGN matches.
-  df2$same.sign <- with(df2, sign(delta) == sign(true))
-  # 2) Check coverage of true value by lower/upper bounds.
+  Sdeltalist <- S$true.deltas
   qz <- qnorm(.975)
-  df2$lb <- df2$delta - qz * df2$SE
-  df2$ub <- df2$delta + qz * df2$SE
-  
-  df2$coverage <- with(df2, lb <= true & ub >= true)
-  
-  cat(sprintf("Sign matches in %.2f%% of instances, 95%% CI probs: %.2f.\n",
-              sum(df2$same.sign)/nrow(df2) * 100,
-              sum(df2$coverage)/nrow(df2)))
-  
-  if(plot){
-    par(mfrow = c(1,2))
-    uq.deltas <- unique(Sdf$true)
-    for(i in seq_along(uq.deltas)){
-      dfi <- df2[df2$true == uq.deltas[i],]
-      plot(dfi$delta, pch = 20,
-           xaxt = 'n', xlab = '', ylab = 'Estimate', 
-           main = bquote('True delta:' ~ .(uq.deltas[i])))
-      abline(h = 0, col = 'lightgrey', lty = 5)
-      abline(h = uq.deltas[i], col = 'red', lty = 5)
+  lapply(1:length(Sdeltalist), function(s){
+    sdf <- data.frame(id = as.numeric(names(Sdeltalist[[s]])), true = Sdeltalist[[s]])
+    my <- myfit$delta.df[[s]]
+    my <- merge(my, sdf, 'id')
+    
+    my$same.sign <- with(my, sign(estimate) == sign(true))
+    my$coverage <- with(my, lb <= true & ub >= true)
+    
+    cat(sprintf("delta_%s:\nSign matches in %.2f%% of instances, 95%% CI probs: %.2f.\n",
+                myfit$modelInfo$names$disp[s],
+                sum(my$same.sign)/nrow(my) * 100,
+                sum(my$coverage)/nrow(my)))
+    if(plot){
+      uq.deltas <- unique(Sdeltalist[[s]])
+      if(length(uq.deltas) == 1){
+        par(mfrow = c(1,1))
+      }else{
+        par(mfrow = c(1,2))
+      }
+      for(i in seq_along(uq.deltas)){
+        dfi <- my[my$true == uq.deltas[i],]
+        plot(dfi$estimate, pch = 20,
+             xaxt = 'n', main = paste0('delta_', myfit$modelInfo$names$disp[s]), 
+             ylab = 'Estimate', 
+             xlab = bquote('True delta:' ~ .(uq.deltas[i])))
+        abline(h = 0, col = 'lightgrey', lty = 5)
+        abline(h = uq.deltas[i], col = 'red', lty = 5)
+      }
     }
     par(mfrow = c(1,1))
-  }
- 
-  if(return.df) return(df2) else return(invisible(1+1))
+    if(return.df) return(my) else return(NULL)
+  })
+  
 }
 
 
