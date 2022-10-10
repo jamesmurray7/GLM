@@ -28,7 +28,7 @@ logZ <- function(log_lambda, nu, summax = 100) {
   df <- CBIND(log_lambda = log_lambda, nu = nu)
   log_lambda <- df[, 1]
   nu <- df[, 2]
-  return(logZ_c(log_lambda, nu, summax = summax))
+  return(logZ_c_mpcmpcopy(log_lambda, nu, summax = summax))
 }
 
 CBIND <- function(..., deparse.level = 1) {
