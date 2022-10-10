@@ -247,8 +247,8 @@ log.lik <- function(Omega, dmats, b, delta, surv, sv, l0u, l0i, summax){
   # Number of observations
   N <- sum(sapply(Y, length))
   # Number of estimated parameters (n = # dispersion params)
-  Ps <- length(gamma) + length(surv$ph$coefficients)
-  df <- P + Ps + sum(rowSums(do.call(rbind, delta) != 0) == 2) * w     #' All __estimated__ parameters
+  Ps <- length(gamma) + length(surv$ph$coefficients) + length(vech(D))
+  df <- P + Ps + sum(rowSums(do.call(rbind, delta) != 0) == w) * w     #' All __estimated__ parameters
   df.residual <- N - (df + n * q)                                      #      + all random effects
   
   # AIC and BIC
