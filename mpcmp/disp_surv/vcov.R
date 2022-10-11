@@ -13,7 +13,8 @@ vcov <- function(Omega, delta, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax, 
   #' Unpack Omega ----
   D <- Omega$D
   beta <- c(Omega$beta)
-  gamma <- c(Omega$gamma)
+  gamma <- c(Omega$gamma.surv)
+  gamma.disp <- c(Omega$gamma.disp)
   zeta <- c(Omega$zeta)
   
   #' Extract data objects ----
@@ -30,7 +31,7 @@ vcov <- function(Omega, delta, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax, 
   SS <- sv$SS
   Fi <- sv$Fi
   Fu <- sv$Fu
-  Delta <- surv$Delta
+  Delta <- sv$Delta
   
   # Scores ------------------------------------------------------------------
   #' The RE covariance matrix, D
@@ -75,17 +76,30 @@ vcov <- function(Omega, delta, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax, 
       Sbeta_noquad(beta, b, X, Z, W, Y, lY, delta, summax)
     }, b = b, X = X, Z = Z, W = W, Y = Y, lY = lY, delta = delta, summax = summax, SIMPLIFY = F)
   }
-  
 
   #' Survival parameters (\gamma, \zeta)
-  Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta){
-    Sgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, w, v, .Machine$double.eps^(1/3))
-  }, b = b, Sigma = Sigma, S = S, SS = SS, Fu = Fu, Fi = Fi, l0u = l0u, Delta = Delta, SIMPLIFY = F)
+  inds.to.remove <- which(apply(do.call(rbind, delta), 1, function(i) any(abs(i) == max.val)))
+  
+  Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta, WFu, WFi, delta){
+    Sgammazeta(c(gamma, gamma.disp, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, 
+               WFu, WFi, delta, w, v, .Machine$double.eps^(1/3))
+  }, b = b, Sigma = Sigma, S = sv$S, SS = sv$SS, Fu = sv$Fu, Fi = sv$Fi, l0u = sv$l0u, Delta = sv$Delta,
+  WFu = sv$WFu, WFi = sv$WFi, delta = delta, SIMPLIFY = F)
+  
+  Sgz2 <- lapply(1:n, function(i){
+    if(i %in% inds.to.remove){
+      S <- Sgz[[i]]
+      S[2] <- 0           # Second element is gamma.disp
+      return(S)
+    }else{
+      return(Sgz[[i]])
+    }
+  })
   
   # Collate and form information --------------------------------------------
   S <- mapply(function(sD, Sb, Sgz){
-    c(sD, c(Sb), Sgz)
-  }, sD = sD, Sb = Sb, Sgz = Sgz)
+    c(sD, c(Sb), c(Sgz))
+  }, sD = sD, Sb = Sb, Sgz = Sgz2)
 
   SS <- rowSums(S) # sum S
   I <- Reduce('+', lapply(1:n, function(i) tcrossprod(S[, i]))) - tcrossprod(SS)/n
@@ -94,13 +108,17 @@ vcov <- function(Omega, delta, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax, 
   # Information of subject-specific dispersion parameter
   Idelta <- lapply(1:n, function(i){
     if(i %in% inds.met){
-      a <- delta.update(delta[[i]], X[[i]], Z[[i]], W[[i]], Y[[i]], b[[i]], beta, 
-                        summax[[i]], w, v, tau[[i]], delta.update.quad)
-      out <- a$Hessian
+      # Appraise the CMP part (which dominates in practice...)
+      lls <- delta.update(delta[[i]], dmats$X[[i]], dmats$Z[[i]], dmats$W[[i]], dmats$Y[[i]],
+                          b[[i]], beta, summax[[i]], w, v, tau[[i]], delta.update.quad)$Hessian
+      # Contribution of presence of delta in survival log-likelihood...
+      svs <- delta_update(delta[[i]], sv$WFu[[i]], sv$WFi[[i]], sv$Delta[[i]],
+                          sv$SS[[i]], sv$Fu[[i]], b[[i]], gamma, gamma.disp, zeta,
+                          sv$l0u[[i]], Sigma[[i]], w, v)$Hessian
+      return(solve(-1*(-lls + svs)))
     }else{
-      out <- 0
+      return(matrix(0, nr = dmats$w, nc = dmats$w))
     }
-    out
   })
   
   list(

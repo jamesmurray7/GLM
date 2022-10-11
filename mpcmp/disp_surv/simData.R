@@ -61,7 +61,7 @@ simData_joint <- function(n = 250, ntms = 10, summax = 100,  fup = 3,
   b0 <- b[, 1, drop = F]; b1 <- b[, 2, drop = F]
   d0 <- matrix(deltas.int, nr = n, nc = 1); d1 <- matrix(deltas.time, nr = n, nc = 1)
   # Generate survival times (Austin et al 2012)
-  denom <- theta1 + b1 %*% gamma  
+  denom <- theta1 + b1 %*% gamma + d1 %*% gamma.disp 
   rhs <- (theta1 + b1 %*% gamma + d1 %*% gamma.disp) * log(U)/(exp(theta0 + Keta + b0 %*% gamma + d0 %*% gamma.disp))
   t <- c(suppressWarnings(log(1-rhs)/denom))
   t[is.nan(t)] <- tau
@@ -93,6 +93,7 @@ simData_joint <- function(n = 250, ntms = 10, summax = 100,  fup = 3,
 
 
 # Quicker version ---------------------------------------------------------
+# Also includes safety net
 .rcomp <- function(lambda, nu, summax){
   x <- vector('numeric', length(lambda))
   U <- runif(length(lambda))
@@ -157,15 +158,17 @@ simData_joint2 <- function(n = 250, ntms = 10, summax = 100,  fup = 3,
     ind <- which(df$id==i)
     nu <- exp(deltas.int[i] + deltas.time[i] * df$time[ind])
     lam <- lambda_appx(mu[ind], nu, summax)
-    biggest.abs.diff <- 100
-    while(biggest.abs.diff > diff.tol){
+    biggest.abs.diff <- 100; zero.rat <- 1
+    while(biggest.abs.diff > diff.tol && zero.rat >= .33){
       yy <- .rcomp(lam, nu, summax)
+      if(length(yy) > 1 && any(yy == 0)) zero.rat <- prop.table(table(yy))['0'] else zero.rat <- 0
       if(length(yy) > 1) biggest.abs.diff <- max(abs(diff(yy))) else biggest.abs.diff <- 0
     }
     Y[[i]] <- yy
     # Y[[1]] <- rcomp(n = length(ind), nu = nu, lambda = lam, summax = summax)
     utils::setTxtProgressBar(pb, i)
   }
+  cat('\n')
   df$Y <- do.call(c, Y)
   
   #' Survival ----
@@ -175,7 +178,7 @@ simData_joint2 <- function(n = 250, ntms = 10, summax = 100,  fup = 3,
   b0 <- b[, 1, drop = F]; b1 <- b[, 2, drop = F]
   d0 <- matrix(deltas.int, nr = n, nc = 1); d1 <- matrix(deltas.time, nr = n, nc = 1)
   # Generate survival times (Austin et al 2012)
-  denom <- theta1 + b1 %*% gamma  
+  denom <- theta1 + b1 %*% gamma + d1 %*% gamma.disp  
   rhs <- (theta1 + b1 %*% gamma + d1 %*% gamma.disp) * log(U)/(exp(theta0 + Keta + b0 %*% gamma + d0 %*% gamma.disp))
   t <- c(suppressWarnings(log(1-rhs)/denom))
   t[is.nan(t)] <- tau
@@ -196,8 +199,7 @@ simData_joint2 <- function(n = 250, ntms = 10, summax = 100,  fup = 3,
   df <- merge(df, surv.data, by = 'id')
   df <- df[df$time < df$survtime, ]
   message(round(100 * sum(surv.data$status)/n), '% failure rate')
-  
-  cat('\n')
+
   list(data = df, 
        surv.data = df[!duplicated(df[,'id']), c('id', 'cont', 'bin', 'survtime', 'status')],
        true.deltas = list(ints = setNames(deltas.int, 1:n),

@@ -253,6 +253,42 @@ double logfti(vec& b, vec& delta, rowvec& S, mat& SS, rowvec& Fi, mat& Fu,
   );
 }
 
+// Just CMP
+// [[Rcpp::export]]
+double ll_cmp_b(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& W,     
+                vec& beta, vec& delta, mat& D, int summax){
+  // Define mu, nu
+  vec mu = exp(X * beta + Z * b);
+  vec nu = exp(W * delta);
+  
+  // Calculate lambda and logZ
+  vec lambda = lambda_appx(mu, nu, summax);
+  vec loglambda = log(lambda);
+  vec logZ = logZ_c(loglambda, nu, summax);
+  // Calculate loglik CMP and other constituent distns.
+  double ll = ll_cmp(loglambda, nu, logZ, Y, lY);
+  return -ll;
+}
+
+// [[Rcpp::export]]
+vec ll_cmp_b_db(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& W,     
+                   vec& beta, vec& delta, mat& D, int summax){
+  vec mu = exp(X * beta + Z * b);
+  vec nu = exp(W * delta); 
+  
+  // Calculate lambda, logZ and V
+  vec lambda = lambda_appx(mu, nu, summax);
+  vec loglambda = log(lambda);
+  vec logZ = logZ_c(loglambda, nu, summax);
+  vec V = calc_V_vec(mu, lambda, nu, logZ, summax);
+  
+  // Score of CMP and other constituent distns.
+  mat lhs_mat = diagmat(mu) * Z;          
+  vec Score = lhs_mat.t() * ((Y-mu) / V); 
+  
+  return -Score;
+}
+
 // The full joint density f(b,Y,T,...) and its gradient wrt. b
 // [[Rcpp::export]]
 double joint_density(vec& b, mat& X, vec& Y, vec& lY, mat& Z, mat& W,     
@@ -490,20 +526,18 @@ mat Hbeta_noquad(vec& beta, vec& b, mat& X, mat& Z, mat& W, vec& Y, vec& lY,
 // Define the conditional expectation
 double Egammazeta(vec& gammazeta, vec& b, mat& Sigma,
                   rowvec& S, mat& SS, mat& Fu, rowvec& Fi, vec& haz, int Delta, 
-                  mat& WFu, rowvec& WFi, vec& delta,
+                  mat& WFu, rowvec& WFi, vec& delta, double g2,
                   vec& w, vec& v){
   double g1 = as_scalar(gammazeta.at(0));              // g1 will always be scalar and the first element
-  double g2 = as_scalar(gammazeta.at(1));   
-  vec z = gammazeta.subvec(2, gammazeta.size() - 1);
-  Rcout << "g1" << g1 << std::endl;
-  Rcout << "g2" << g2 << std::endl;
-  Rcout << "z"  << z.t() << std::endl;
+  vec z = gammazeta.subvec(1, gammazeta.size() - 1);
+
   // determine tau
   vec tau = pow(g1, 2.0) * diagvec(Fu * Sigma * Fu.t());
+  vec A   = SS * z + Fu * (g1 * b) + WFu * (g2 * delta);
   double rhs = 0.0;
   for(int l = 0; l < w.size(); l++){
     rhs += w[l] * as_scalar(
-      haz.t() * exp(SS * z + Fu * (g1 * b) + v[l] * pow(tau, 0.5) + WFu * (g2 * delta))
+      haz.t() * exp(A + v[l] * pow(tau, 0.5))
     );
   }
   return as_scalar(Delta * (S * z + Fi * (g1 * b) + WFi * (g2 * delta)) - rhs);
@@ -513,16 +547,16 @@ double Egammazeta(vec& gammazeta, vec& b, mat& Sigma,
 // [[Rcpp::export]]
 vec Sgammazeta(vec& gammazeta, vec& b, mat& Sigma,
                rowvec& S, mat& SS, mat& Fu, rowvec& Fi, vec& haz, int Delta, 
-               mat& WFu, rowvec& WFi, vec& delta,
+               mat& WFu, rowvec& WFi, vec& delta, double g2,
                vec& w, vec& v, long double eps){
   int q = gammazeta.size();
   vec out = vec(q);
-  double f0 = Egammazeta(gammazeta, b, Sigma, S, SS, Fu, Fi, haz, Delta, WFu, WFi, delta, w, v);
+  double f0 = Egammazeta(gammazeta, b, Sigma, S, SS, Fu, Fi, haz, Delta, WFu, WFi, delta, g2, w, v);
   for(int i = 0; i < q; i++){
     vec ge = gammazeta;
     double xi = std::max(ge[i], 1.0);
     ge[i] = gammazeta[i] + xi * eps;
-    double fdiff = Egammazeta(ge, b, Sigma, S, SS, Fu, Fi, haz, Delta, WFu, WFi, delta, w, v) - f0;
+    double fdiff = Egammazeta(ge, b, Sigma, S, SS, Fu, Fi, haz, Delta, WFu, WFi, delta, g2, w, v) - f0;
     out[i] = fdiff/(ge[i]-gammazeta[i]);
   }
   return out;
@@ -530,24 +564,46 @@ vec Sgammazeta(vec& gammazeta, vec& b, mat& Sigma,
 // [[Rcpp::export]]
 mat Hgammazeta(vec& gammazeta, vec& b, mat& Sigma,
                 rowvec& S, mat& SS, mat& Fu, rowvec& Fi, vec& haz, int Delta, 
-                mat& WFu, rowvec& WFi, vec& delta,
+                mat& WFu, rowvec& WFi, vec& delta, double g2,
                 vec& w, vec& v, long double eps){
   int q = gammazeta.size();
   mat out = zeros<mat>(q, q);
-  vec f0 = Sgammazeta(gammazeta, b, Sigma, S, SS, Fu, Fi, haz, Delta, WFu, WFi, delta, w, v, eps);
+  vec f0 = Sgammazeta(gammazeta, b, Sigma, S, SS, Fu, Fi, haz, Delta, WFu, WFi, delta, g2, w, v, eps);
   for(int i = 0; i < q; i++){
     vec ge = gammazeta;
     double xi = std::max(ge[i], 1.0);
     ge[i] = gammazeta[i] + xi * eps;
-    vec fdiff = Sgammazeta(ge, b, Sigma, S, SS, Fu, Fi, haz, Delta, WFu, WFi, delta, w, v, eps) - f0;
+    vec fdiff = Sgammazeta(ge, b, Sigma, S, SS, Fu, Fi, haz, Delta, WFu, WFi, delta, g2, w, v, eps) - f0;
     out.col(i) = fdiff/(ge[i]-gammazeta[i]);
   }
   return 0.5 * (out + out.t());
 }
 
+// [[Rcpp::export]]
+List disp_gamma_update(vec& delta, vec& b, mat& Sigma,
+                       rowvec& S, mat& SS, mat& Fu, rowvec& Fi, vec& haz, int Delta, 
+                       mat& WFu, rowvec& WFi, double g1, double g2, vec& zeta,
+                       vec& w, vec& v){
+  int gh = w.size();
+  double Score_rhs = 0., Hess = 0.;
+  vec tau = pow(g1, 2.0) * diagvec(Fu * Sigma * Fu.t());
+  vec A   = SS * zeta + Fu * (g1 * b) + WFu * (g2 * delta);
+  double Score_lhs = Delta * as_scalar(WFi * delta);
+  for(int l = 0; l < gh; l++){
+    Score_rhs += w[l] * as_scalar((haz % exp(v[l] * pow(tau, 0.5) + A)).t() * (WFu * delta));
+    Hess += w[l] * as_scalar(
+      delta.t() * WFu.t() * (haz % exp(v[l] * pow(tau, 0.5) + A) % (WFu * delta))
+    );                              
+  }
+  double Score = Score_lhs - Score_rhs;
+  return List::create(_["Score"] = Score, _["Hessian"] = -Hess);
+}
+
 // Defining update to the baseline hazard lambda_0 ------------------------
 // [[Rcpp::export]]
-mat lambdaUpdate(List survtimes, mat& ft, double gamma, vec& zeta,
+mat lambdaUpdate(List survtimes, mat& ft, 
+                 List delta, List WFu,
+                 double gamma_surv, double gamma_disp, vec& zeta,
                  List S, List Sigma, List b, vec& w, vec& v){
   int gh = w.size(), id = b.size();
   mat store = zeros<mat>(ft.n_rows, id);
@@ -555,12 +611,14 @@ mat lambdaUpdate(List survtimes, mat& ft, double gamma, vec& zeta,
     vec survtimes_i = survtimes[i];
     mat Sigma_i = Sigma[i];
     vec b_i = b[i];
+    vec d_i = delta[i];
     rowvec S_i = S[i];
+    mat WFu_i = WFu[i];
     for(int j = 0; j < survtimes_i.size(); j++){
-      rowvec Fst = ft.row(j);
-      double tau = as_scalar(pow(gamma, 2.0) * Fst * Sigma_i * Fst.t());
-      vec rhs = gamma * b_i; //vec(b_i.size());
-      double mu = as_scalar(exp(S_i * zeta + Fst * rhs));
+      rowvec Fst = ft.row(j), WFst = WFu_i.row(j);
+      double tau = as_scalar(pow(gamma_surv, 2.0) * Fst * Sigma_i * Fst.t());
+      vec rhs_sre = gamma_surv * b_i, rhs_disp = gamma_disp * d_i;
+      double mu = as_scalar(exp(S_i * zeta + Fst * rhs_sre + WFst * rhs_disp));
       for(int l = 0; l < gh; l++){
         store(j, i) += as_scalar(w[l] * mu * exp(v[l] * sqrt(tau)));
       }
@@ -581,19 +639,15 @@ List delta_update(vec& delta, mat& WFu, vec& WFi, int Delta,
   vec tau = pow(g1, 2.) * diagvec(Fu * S * Fu.t());
   vec A = SS * zeta + Fu * (g1 * b) + WFu * (g2 * delta);
   // Loop over quadrature nodes...
-  Rcout << "score_lhs" << Score_lhs << std::endl;
-  Rcout << "score_rhs" << Score_rhs << std::endl;
   for(int l = 0; l < gh; l++){
     // Score
     Score_rhs += -w[l] * g2 * WFu.t() * (
       haz % exp(A + v[l] * pow(tau, 0.5))
     );
-    Rcout << "l: " << l <<  "score_rhs" << Score_rhs.t() << std::endl;
     // Hessian
     Hessian += -w[l] * pow(g2, 2.) * (
       diagmat(haz % exp(A + v[l] * pow(tau, 0.5))) * WFu
     ).t() * WFu;
-    Rcout << "l: " << l <<  "Hessian" << Hessian << std::endl;
   }
   // Collect
   vec Score = Score_lhs + Score_rhs;

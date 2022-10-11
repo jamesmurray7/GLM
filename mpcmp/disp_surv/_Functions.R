@@ -101,12 +101,23 @@ parseCoxph <- function(surv.formula, data, disp.formula){
   #' Return ----
   list(
     survdata = survdata.ph, ph = ph, n = n, Delta = Delta, 
-    WSurv = model.matrix(disp.formula, survdata)
+    WSurv = model.matrix(disp.formula, survdata),
+    WSurvdata = survdata
   )
 }
 
 #' Creation of survival objects -------------------------------------------
-surv.mod <- function(ph, survdata, formulas, disp.formula, w, l0.init){
+.rename <- function(data, o, n){
+  names(data)[which(grepl(o, names(data)))] <- n
+  data
+}
+
+.remove <- function(data, o){
+  data[,which(names(data) == o)] <- NULL
+  data
+}
+
+surv.mod <- function(ph, survdata, formulas, disp.formula, surv, l0.init, w){
   uids <- unique(survdata$id); n <- length(uids)
   l0 <- l0.init; splines <- F
   
@@ -148,7 +159,10 @@ surv.mod <- function(ph, survdata, formulas, disp.formula, w, l0.init){
     ftmat <- .getFu(ft, q)
   } 
 
-  WFi <- lapply(survdata$survtime, function(t) model.matrix(disp.formula, data.frame(time = t)))
+  # "Dispersion versions" of the above objects.
+  WS <- .rename(.remove(surv$WSurvdata, 'time'), 'survtime', 'time')
+  WFi <- model.matrix(disp.formula, WS)
+  WFi <- lapply(1:n, function(i) WFi[i, ])
   
   # initialise empty stores
   l0i <- vector('numeric', n)
@@ -165,7 +179,9 @@ surv.mod <- function(ph, survdata, formulas, disp.formula, w, l0.init){
     st <- ft[which(ft <= survtime)] # survived times
     if(length(st) > 0){
       Fu[[i]] <- .getFu(st, q)
-      WFu[[i]] <- model.matrix(disp.formula, data.frame(time = st))
+      WFu[[i]] <- model.matrix(disp.formula, 
+                               as.data.frame(merge(.remove(WS, 'time'),
+                                                   cbind(id = i, time = st))))
       l0u[[i]] <- l0[which(ft <= survtime)]
     }else{ # Those who are censored before first failure time
       l0u[[i]] <- 0
@@ -280,20 +296,31 @@ b.minimise <- function(b, dmats, sv, delta, Omega, summax,
   if(!Hessian%in%c('grad', 'obj'))
     stop("'Hessian' must be either 'grad' (forward differencing on gradient function) or 'obj' (forward differencing on objective function).")
   
-  beta <- Omega$beta; D <- Omega$D; gamma <- Omega$gamma; zeta <- Omega$zeta; gamma.disp <- Omega$gamma.disp 
+  beta <- Omega$beta; D <- Omega$D; gamma <- Omega$gamma.surv; zeta <- Omega$zeta; gamma.disp <- Omega$gamma.disp 
   
   if(obj == 'joint_density'){
     b.hat <- mapply(function(b, X, Y, lY, Z, W, delta, S, SS, Fi, Fu, l0i, l0u, WFi, WFu,
                              Delta, summax){
-      optim(b, joint_density, joint_density_ddb,
-            X = X, Y = Y, lY = lY, Z = Z, W = W, beta = beta, delta = delta, D = D,
-            S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, WFi = WFi,
-            WFu = WFu, Delta = Delta, gamma = gamma, gamma_disp = gamma.disp, 
-            zeta = zeta, summax = summax, method = 'BFGS', hessian = F)$par
+      hat <- tryCatch(optim(b, joint_density, joint_density_ddb,
+                      X = X, Y = Y, lY = lY, Z = Z, W = W, beta = beta, delta = delta, D = D,
+                      S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, WFi = WFi,
+                      WFu = WFu, Delta = Delta, gamma = gamma, gamma_disp = gamma.disp, 
+                      zeta = zeta, summax = summax, method = 'BFGS', hessian = F)$par,
+                      error = function(e) e)
+      if(inherits(hat, 'error')){
+        # Error can occur when optim chooses non-sensible value of b under BFGS.
+        qdmv <- mvtnorm::qmvnorm(.975, sigma = D)$quantile
+        hat <- optim(b, joint_density, joint_density_ddb,
+                     X = X, Y = Y, lY = lY, Z = Z, W = W, beta = beta, delta = delta, D = D,
+                     S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, WFi = WFi,
+                     WFu = WFu, Delta = Delta, gamma = gamma, gamma_disp = gamma.disp, 
+                     zeta = zeta, summax = summax, method = 'L-BFGS-B', hessian = F,
+                     lower = b - qdmv, upper = b + qdmv)$par
+      }
+      hat
     }, b = b, X = dmats$X, Y = dmats$Y, lY = dmats$lY, Z = dmats$Z, W = dmats$W, delta = delta, 
     S = sv$S, SS = sv$SS, Fi = sv$Fi, Fu = sv$Fu,
     l0i = sv$l0i, l0u = sv$l0u, WFi = sv$WFi, WFu = sv$WFu, Delta = sv$Delta, summax = summax, SIMPLIFY = F)
-    print('bhats')
     #' Calculate the inverse of the second derivative of the negative log-likelihood ----
     if(Hessian == 'obj'){
       Sigma <- mapply(function(b, X, Y, lY, Z, W, delta, S, SS, Fi, Fu, l0i, l0u, WFi, WFu,
@@ -316,7 +343,6 @@ b.minimise <- function(b, dmats, sv, delta, Omega, summax,
       S = sv$S, SS = sv$SS, Fi = sv$Fi, Fu = sv$Fu,
       l0i = sv$l0i, l0u = sv$l0u, WFi = sv$WFi, WFu = sv$WFu, Delta = sv$Delta, summax = summax,  SIMPLIFY = F)
     }else{
-      print('here 1 ')
       Sigma <- mapply(function(b, X, Y, lY, Z, W, delta, S, SS, Fi, Fu, l0i, l0u, WFi, WFu,
                                Delta, summax){
         solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, W = W, beta = beta, delta = delta, D = D,
@@ -327,6 +353,14 @@ b.minimise <- function(b, dmats, sv, delta, Omega, summax,
       S = sv$S, SS = sv$SS, Fi = sv$Fi, Fu = sv$Fu,
       l0i = sv$l0i, l0u = sv$l0u, WFi = sv$WFi, WFu = sv$WFu, Delta = sv$Delta, summax = summax, SIMPLIFY = F)
     }
+  }
+  
+  if(obj == 'marginal'){
+    b.hat <- mapply(function(b, X, Y, lY, Z, W, delta, summax){
+      optim(b, ll_cmp_b, ll_cmp_b_db, X, Y, lY, Z, W, beta, delta, D, summax,
+            method = 'BFGS')$par
+    }, b = b, X = dmats$X, Y = dmats$Y, lY = dmats$lY, Z = dmats$Z, W = dmats$W, delta = delta, summax = summax,
+    SIMPLIFY = F)
   }
   
   list(

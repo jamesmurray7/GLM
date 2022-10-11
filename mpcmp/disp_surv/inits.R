@@ -102,9 +102,19 @@ get.delta.inits <- function(dmats, beta, b, method, summax = NULL, verbose = F, 
   }
   as.data.frame(out)
 }
+
+.ToDispForm <- function(time, data, disp.formula){
+  time <- as.data.frame(time)
+  names(time)[2] <- 'time'
+  df <- merge(time, 
+              data[,names(data)!='time'], 
+              'id')
+  df <- df[!duplicated(df[,c('id', 'time')]),]
+  model.matrix(disp.formula, df)
+}
  
 # Using this StartStop and getting timevarying coxph...
-TimeVarCox <- function(data, b, ph, formulas){
+TimeVarCox <- function(data, b, ph, formulas, disp.formula, deltas, max.val){
   # Prepare data
   ss <- .ToStartStop(data); q <- ncol(b) # send to Start-Stop (ss) format
   REs <- as.data.frame(b); REs$id <- 1:nrow(b)
@@ -112,21 +122,24 @@ TimeVarCox <- function(data, b, ph, formulas){
   ss3 <- merge(ss2, data[, c('id', colnames(ph$x), 'survtime', 'status')], 'id')
   ss3 <- ss3[!duplicated.matrix(ss3), ]
   
-  # Create gamma variable
+  # Create gamma variable for SRE part...
   lhs <- .ToRanefForm(ss3[,'time1'], formulas$random, q) #sapply(1:q, function(i) ss3[, 'time1']^(i-1))
-  gamma <- unname(rowSums(lhs * b[ss3$id,]))
-  # gamma2 <- lhs * ss3[,(4:(3+q))]
-  # gamma <- unname(rowSums(lhs * rhs))
-
+  gamma1 <- unname(rowSums(lhs * b[ss3$id,]))
+  # Create gamma variable for dispersion part...
+  lhs <- .ToDispForm(ss3[,c('id', 'time1')], data, disp.formula)
+  print(head(lhs))
+  dd <- do.call(rbind, deltas)
+  dd <- apply(dd, 2, function(d) ifelse(abs(d) >= max.val, 0, d)) # If beyond truncation amount then don't contribute.
+  gamma2 <- unname(rowSums(lhs * dd[ss3$id,]))
+  
   # And join on ...
-  ss3 <- cbind(ss3, gamma)
-  # Update this to deal with ties too?
+  ss3 <- cbind(ss3, gamma1, gamma2)
   ss3$status2 <- ifelse(ss3$survtime == ss3$time2, ss3$status, 0)
   
   # Time Varying coxph
   # Formula
   timevar.formula <- as.formula(
-    paste0('Surv(time1, time2, status2) ~ ', paste0(colnames(ph$x), collapse = ' + '), ' + gamma')
+    paste0('Surv(time1, time2, status2) ~ ', paste0(colnames(ph$x), collapse = ' + '), ' + gamma1 + gamma2')
   )
   ph <- coxph(timevar.formula, data = ss3)
   

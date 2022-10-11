@@ -18,10 +18,10 @@ source('inits.R')
 vech <- function(x) x[lower.tri(x, T)]
 
 EMupdate <- function(Omega, dmats, delta, b, sv, w, v, n, m, summax, debug, 
-                     optimiser.arguments, inds.met, delta.update.quad, beta.update.quad){
+                     optimiser.arguments, inds.met, delta.update.quad, beta.update.quad, max.val, iter){
   s <- proc.time()[3]
   #' Unpack Omega, the parameter vector
-  D <- Omega$D; beta <- Omega$beta; gamma <- Omega$gamma; zeta <- Omega$zeta;
+  D <- Omega$D; beta <- Omega$beta; gamma <- Omega$gamma.surv; zeta <- Omega$zeta;
   gamma.disp <- Omega$gamma.disp
   
   #' Find b.hat and Sigma
@@ -80,14 +80,14 @@ EMupdate <- function(Omega, dmats, delta, b, sv, w, v, n, m, summax, debug,
   
   #' Survival parameters (\gamma, \zeta)
   Sgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta, WFu, WFi, delta){
-    Sgammazeta(c(gamma, gamma.disp, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, 
-               WFu, WFi, delta, w, v, .Machine$double.eps^(1/3))
+    Sgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, 
+               WFu, WFi, delta, gamma.disp, w, v, .Machine$double.eps^(1/3))
   }, b = b.hat, Sigma = Sigma, S = sv$S, SS = sv$SS, Fu = sv$Fu, Fi = sv$Fi, l0u = sv$l0u, Delta = sv$Delta,
      WFu = sv$WFu, WFi = sv$WFi, delta = delta)
   
   Hgz <- mapply(function(b, Sigma, S, SS, Fu, Fi, l0u, Delta, WFu, WFi, delta){
-    Hgammazeta(c(gamma, gamma.disp, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, 
-               WFu, WFi, delta, w, v, .Machine$double.eps^(1/4))
+    Hgammazeta(c(gamma, zeta), b, Sigma, S, SS, Fu, Fi, l0u, Delta, 
+               WFu, WFi, delta, gamma.disp, w, v, 1e-3)#.Machine$double.eps^(1/4))
   }, b = b.hat, Sigma = Sigma, S = sv$S, SS = sv$SS, Fu = sv$Fu, Fi = sv$Fi, l0u = sv$l0u, Delta = sv$Delta,
   WFu = sv$WFu, WFi = sv$WFi, delta = delta, SIMPLIFY = F)
   
@@ -109,7 +109,7 @@ EMupdate <- function(Omega, dmats, delta, b, sv, w, v, n, m, summax, debug,
                    b.hat[[i]], beta, summax[[i]], w, v, tau[[i]], delta.update.quad)
       # Contribution of presence of delta in survival log-likelihood...
       svs <- delta_update(delta[[i]], sv$WFu[[i]], sv$WFi[[i]], sv$Delta[[i]],
-                          sv$SS[[i]], sv$Fu[[i]], b.hat[[i]], gamma, .2, zeta,
+                          sv$SS[[i]], sv$Fu[[i]], b.hat[[i]], gamma, gamma.disp, zeta,
                           sv$l0u[[i]], Sigma[[i]], w, v)
       return(delta[[i]] - solve(-lls$H + svs$Hessian, c(lls$Score + c(svs$Score))))
     }else{
@@ -118,26 +118,52 @@ EMupdate <- function(Omega, dmats, delta, b, sv, w, v, n, m, summax, debug,
   })
 
   # Survival parameters (gamma, zeta)
-  (gammazeta.new <- c(gamma, gamma.disp, zeta) - solve(Reduce('+', Hgz), rowSums(Sgz)))
+  # inds.to.remove <- which(apply(do.call(rbind, delta), 1, function(i) any(abs(i) == max.val)))
+  # qw <- length(c(gamma, gamma.disp, zeta))
+  
+  gamma.disp.update <- lapply(1:n, function(i){
+    if(i %in% inds.met && abs(delta[[i]]) < max.val){
+      disp_gamma_update(delta[[i]], b.hat[[i]], Sigma[[i]], sv$S[[i]], sv$SS[[i]],
+                        sv$Fu[[i]], sv$Fi[[i]], sv$l0u[[i]], sv$Delta[[i]], sv$WFu[[i]], sv$WFi[[i]],
+                        gamma.surv, gamma.disp, zeta, w, v)
+    }else{
+      return(list(Score = 0, Hessian = 0)) # Those at max value do __not__ contribute to update g_2
+    }
+  })
+  
+  # (gamma.disp.new <- gamma.disp - sum(sapply(gamma.disp.update, el, 1))/sum(sapply(gamma.disp.update, el, 2)))
+  (gammazeta.new <- c(gamma, zeta) - solve(Reduce('+', Hgz), rowSums(Sgz)))
+  if(iter >= 1){
+    (gamma.disp.new <- gamma.disp - sum(sapply(gamma.disp.update, el, 1)) / sum(sapply(gamma.disp.update, el, 2)))
+  }else{
+    (gamma.disp.new <- gamma.disp)
+  }
+    
+  gamma.surv.new <- gammazeta.new[1]; 
+  zeta.new <- gammazeta.new[-1]
+
   
   # The baseline hazard and related objects
-  lambda.update <- lambdaUpdate(sv$surv.times, sv$ft.mat, gamma, zeta, S, Sigma, b.hat, w, v)
+  lambda.update <- lambdaUpdate(sv$surv.times, sv$ft.mat, delta, sv$WFu, gamma, gamma.disp, zeta, sv$S, Sigma, b.hat, w, v)
   l0.new <- sv$nev/rowSums(lambda.update)
-  l0u.new <- lapply(l0u, function(ll){
+  l0u.new <- lapply(sv$l0u, function(ll){
     l0.new[1:length(ll)]
   })
   l0i.new <- l0.new[match(sv$Ti, sv$ft)] 
   l0i.new[is.na(l0i.new)] <- 0
-  if(debug){plot(l0.new~l0,pch=20);abline(0,1,col='red')}
+  if(debug){plot(l0.new~sv$l0,pch=20);abline(0,1,col='red')}
   e <- proc.time()[3]
   # Return
   list(
-    D = D.new, beta = beta.new, delta = delta.new,       # <Y>
-    gamma = gammazeta.new[1], zeta = gammazeta.new[-1],  # Survival
-    l0 = l0.new, l0u = l0u.new, l0i = as.list(l0i.new),  # ---""---
-    b = b.hat,                                #   REs.
+    # Longit.
+    D = D.new, beta = beta.new, delta = delta.new, b = b.hat,                              
+    # Survival
+    gamma.surv = gamma.surv.new, gamma.disp = gamma.disp.new,
+    zeta = zeta.new,
+    l0 = l0.new, l0u = l0u.new, l0i = as.list(l0i.new),  
+    # Timing
     t = round(e-s,3)
-  ) # -> update
+  )  -> update
   
 }
 
@@ -168,6 +194,7 @@ EM <- function(long.formula, surv.formula, disp.formula,
   
   #' Data objects ----
   dmats <- createDataMatrices(data, formulas, disp.formula)
+  m <- sapply(dmats$Y, length)
   
   #' Unpack control args ----
   if(!is.null(control$tol)) tol <- control$tol else tol <- 1e-2
@@ -200,31 +227,32 @@ EM <- function(long.formula, surv.formula, disp.formula,
   
   #' An initial condition for delta ---------------------------------------
   delta <- lapply(1:n, function(i) setNames(rep(0, dmats$w), dmats$nw))
-  delta <- lapply(1:n, function(i){
-    if(i %in% inds.met){
-      return(delta.update(delta[[i]],
-                          dmats$X[[i]], dmats$Z[[i]], dmats$W[[i]], dmats$Y[[i]],
-                          b[[i]], beta, summax[[i]], NULL, NULL, NULL, F)$new)
-    }else{
-      return(delta[[i]])
-    }
-  })
+  # delta <- lapply(1:n, function(i){ # Quickly find delta at initial conditions (not yet conditioned on survival part)
+  #   if(i %in% inds.met){            # and eschew quadrature for now...
+  #     return(delta.update(delta[[i]],
+  #                         dmats$X[[i]], dmats$Z[[i]], dmats$W[[i]], dmats$Y[[i]],
+  #                         b[[i]], beta, summax[[i]], NULL, NULL, NULL, F)$new)
+  #   }else{
+  #     return(delta[[i]])
+  #   }
+  # })
+  # delta <- lapply(delta, function(x) ifelse(abs(x) > max.val, sign(x) * max.val, x))
   
   #' Initial conditions --> survival... ----
-  inits.surv <- TimeVarCox(data, do.call(rbind, b), surv$ph, formulas)
+  inits.surv <- TimeVarCox(data, do.call(rbind, b), surv$ph, formulas, disp.formula, delta, max.val)
   # Survival data objects ...
-  sv <- surv.mod(surv$ph, surv$survdata, formulas, disp.formula, dmats$w, inits.surv$l0.init)
+  sv <- surv.mod(surv$ph, surv$survdata, formulas, disp.formula, surv, inits.surv$l0.init, dmats$w)
+  sv$Delta <- surv$Delta
   # Extract survival parameters
   zeta <- inits.surv$inits[match(colnames(surv$ph$x), names(inits.surv$inits))]
   names(zeta) <- paste0('zeta_', names(zeta))
-  gamma <- inits.surv$inits[grepl('gamma', names(inits.surv$inits))]
-  gamma.disp <- c(gama.disp = 0)
-  sv$Delta <- surv$Delta
+  gamma.surv <- inits.surv$inits[grepl('gamma1$', names(inits.surv$inits))]
+  gamma.disp <- c('gamma2' = 0)#inits.surv$inits[grepl('gamma2$', names(inits.surv$inits))]
    
   #' Parameter vector and list ----
-  Omega <- list(D=D, beta = beta, gamma = gamma, gamma.disp = gamma.disp, zeta = zeta)
+  Omega <- list(D=D, beta = beta, gamma.surv = gamma.surv, gamma.disp = gamma.disp, zeta = zeta)
   params <- c(setNames(vech(D), paste0('D[', apply(which(lower.tri(D, T), arr.ind = T), 1, paste, collapse = ','), ']')),
-              beta, gamma, gamma.disp, zeta)
+              beta, gamma.surv, gamma.disp, zeta)
   
   #' Gauss-hermite quadrature ----
   GH <- statmod::gauss.quad.prob(.gh, 'normal', sigma = .sigma)
@@ -240,9 +268,10 @@ EM <- function(long.formula, surv.formula, disp.formula,
   if(verbose) message('Starting EM algorithm.')
   while(diff > tol && iter < maxit){
     s.em.i <- proc.time()[3]
-    update <- EMupdate(Omega, dmats, sv, delta, b, w, v, n, m, summax, debug, optim.control, inds.met, delta.update.quad, beta.update.quad)
+    update <- EMupdate(Omega, dmats, delta, b, sv, w, v, n, m, summax, debug, 
+                       optim.control, inds.met, delta.update.quad, beta.update.quad, max.val, iter)
     if(debug) DEBUG.update <<- update
-    params.new <- c(vech(update$D), update$beta, update$gamma, update$zeta)
+    params.new <- c(vech(update$D), update$beta, update$gamma.surv, update$gamma.disp, update$zeta)
     names(params.new) <- names(params)
     
     delta.old <- do.call(rbind, delta)
@@ -275,10 +304,10 @@ EM <- function(long.formula, surv.formula, disp.formula,
     #' Set new estimates as current
     b <- update$b
     D <- update$D; beta <- update$beta; delta <- lapply(1:n, function(i) delta[i,])
-    gamma <- update$gamma; zeta <- update$zeta
-    l0 <- update$l0; l0u <- update$l0u; l0i <- update$l0i
+    gamma <- update$gamma.surv; gamma.disp <- update$gamma.disp; zeta <- update$zeta
+    sv$l0 <- update$l0; sv$l0u <- update$l0u; sv$l0i <- update$l0i
     iter <- iter + 1
-    Omega <- list(D=D, beta = beta, gamma = gamma, zeta = zeta)
+    Omega <- list(D=D, beta = beta, gamma.surv = gamma, gamma.disp = gamma.disp, zeta = zeta)
     params <- params.new
     step.times[iter] <- proc.time()[3] - s.em.i # Store timings, as this could be interesting?
   }
@@ -302,16 +331,17 @@ EM <- function(long.formula, surv.formula, disp.formula,
   if(initialise.delta) modelInfo$delta.init <- delta.inits.raw # Return ALL information.
   modelInfo$optimHess <- c(optimiser = optim.control$optimiser, Hessian = optim.control$Hessian, epsilon = optim.control$eps)
   out$modelInfo <- modelInfo
-  out$hazard <- cbind(ft = sv$ft, haz = l0, nev = sv$nev)
+  out$hazard <- cbind(ft = sv$ft, haz = sv$l0, nev = sv$nev)
   out$stepmat <- cbind(iter = 1:iter, time = step.times)
   
   if(post.process){
     message('\nCalculating SEs...')
     start.time.p <- proc.time()[3]
     #' Calculating \b and \Sigma at MLEs
-    b.update <- b.minimise(b, X, Y, lY, Z, W, delta, S, SS, Fi, Fu, l0i, l0u, Delta, 
-                           Omega, summax, method = optim.control$optimiser, obj = 'joint_density', 
-                           Hessian = optim.control$Hessian, optim.control$eps)
+    b.update <- b.minimise(b, dmats, sv, delta, 
+                           Omega, summax, method = optim.control$optimiser, 
+                           obj = 'joint_density', 
+                           Hessian = optim.control$Hessian, Hessian.eps = optim.control$eps)
     b <- b.update$b.hat
     Sigma <- b.update$Sigma
   
