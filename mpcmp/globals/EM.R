@@ -167,6 +167,8 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = NULL, po
   if(!conv%in%c('absolute', 'relative')) stop('Only "absolute" and "relative" difference convergence criteria implemented.')
   if(!is.null(control$min.profile.length)) min.profile.length <- control$min.profile.length else min.profile.length <- 3
   if(!is.null(control$max.val)) max.val <- control$max.val else max.val <- 2.5
+  if(!is.null(control$delta.update.quad)) delta.update.quad <- control$delta.update.quad else delta.update.quad <- T
+  if(!is.null(control$beta.update.quad)) beta.update.quad <- control$beta.update.quad else beta.update.quad <- F
   
   #' Truncation amount (`summax`)
   if(is.null(summax.fn)) summax.fn <- function(y) 2 * max(y)

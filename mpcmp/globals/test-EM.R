@@ -78,9 +78,9 @@ source('EM.R')
 data <- replicate(100, simData_joint2(n = 250, delta = c(.6, -.1), 
                                       ntms = 10, theta = c(-2, .1), fup = 3,
                                       beta = c(2, -0.1, 0.1, -0.2), gamma = 0.6, zeta= c(0.0, -0.2),
-                                      D = matrix(c(0.25, 0, 0, 0), 2, 2))$data
+                                      D = matrix(c(0.25, 0, 0, 0.05), 2, 2))$data
                   , simplify = F)
-long.formula <- Y~time+cont+bin+(1|id)
+long.formula <- Y~time+cont+bin+(1+time|id)
 surv.formula <- Surv(survtime, status) ~ bin
 disp.formula <- ~time
 genpois.inits <- T
@@ -96,7 +96,7 @@ fits <- vector('list', 100)
 for(i in 1:100){
   d <- data[[i]]
   ff <- tryCatch(suppressMessages(EM(long.formula, disp.formula, surv.formula, 
-                    d, control = list(verbose = F), 
+                    d, control = list(verbose = F, beta.update.quad=F), 
                     optim.control = optim.control, 
                     genpois.inits = genpois.inits,
                     individual.summax = T,
