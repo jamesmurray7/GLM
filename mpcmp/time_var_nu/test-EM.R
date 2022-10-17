@@ -133,13 +133,15 @@ fit <- EM(long.formula, surv.formula, disp.formula, data,
 
 fit$logLik
 # just poisson
-(a <- glmmTMB(long.formula, data, poisson))
+system.time(a <- glmmTMB(long.formula, data, poisson))
 glmmTMB:::logLik.glmmTMB(a)
+# Negative binomial
+aa <- glmmTMB(long.formula, data, nbinom2, dispformula = ~ as.factor(id))
 # global dispersion (not subj. spec)
 (b <- glmmTMB(long.formula, data, genpois, dispformula = ~ 1)) 
 glmmTMB:::logLik.glmmTMB(b)
 # subj-specific dispersion 
-(cc <- glmmTMB(long.formula, data, genpois, dispformula = ~ as.factor(id) - 1))
+system.time(cc <- glmmTMB(long.formula, data, genpois, dispformula = ~ as.factor(id) - 1))
 glmmTMB:::logLik.glmmTMB(cc)
 -2 * -cc$fit$objective + 2 * (length(fit$modelInfo$inds.met) + 7) # not all inds are met.
 
@@ -149,3 +151,7 @@ tm <- data.frame(id = 1:250, delta_tmb = cc$fit$parfull[names(cc$fit$parfull) ==
 tm <- tm[tm$id %in% my$`(Intercept)`$id,]
 # Look to be broadly the same (just opposite sign).
 my <- merge(my$`(Intercept)`, tm, 'id')
+
+# What about CMP?
+system.time(d <- glmmTMB(long.formula, data, compois, dispformula = ~ as.factor(id) - 1))
+# Doesnt everfit! sad!
