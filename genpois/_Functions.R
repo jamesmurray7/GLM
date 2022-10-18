@@ -186,19 +186,6 @@ surv.mod <- function(ph, survdata, formulas, l0.init){
 }
 
 
-# \beta update ------------------------------------------------------------
-# (not really used)
-
-Sbeta <- function(X, Y, mu, nu, lambda, V){
-  if(length(mu) > 1) lhs <- diag(c(mu)) else lhs <- diag(mu)
-  crossprod(lhs %*% X, ((Y-mu) / V))
-}
-
-getW1 <- function(X, mu, nu, lambda, V){
-  if(length(mu) > 1) lhs <- diag(c(mu^2)/c(V)) else lhs <- diag(mu^2/V)
-  -crossprod(X, lhs) %*% X
-}
-
 # Taking difference -------------------------------------------------------
 difference <- function(params.old, params.new, type){
   if(type == 'absolute'){
@@ -211,79 +198,23 @@ difference <- function(params.old, params.new, type){
   rtn
 }
 
-# delta update ------------------------------------------------------------
-
-delta.update <- function(delta, X, Z, W, Y, b, beta, summax, w, v, tau, quad){
-  eta <- X %*% beta + Z %*% b
-  nu <- exp(W %*% delta)
-  diagnu <- diag(x = as.vector(nu))
-  xi <- summax
-  if(quad){
-    S <- rep(0, ncol(W))
-    H <- matrix(0, nr = ncol(W), nc = ncol(W))
-    for(l in 1:length(w)){
-      thisH <- matrix(0, nr = ncol(W), nc = ncol(W))
-      eta.l <- eta + tau * v[l]
-      mu <- exp(eta.l)
-      loglam <- log(lambda_appx(mu, nu, xi))
-      logZ <- logZ_c(loglam, nu, xi)
-      # Expected value and variances.
-      YlY <- E_YlY(loglam, logZ, nu, xi)
-      lY <- E_lY(loglam, logZ, nu, xi)
-      VY <- V_Y(loglam, logZ, nu, xi)
-      VlY <- V_lY(loglam, logZ, nu, lY, xi)
-      A <- YlY - mu * lY
-      Snu <- A * (Y - mu) / VY - lgamma(Y + 1) + lY
-      S <- S + w[l] * crossprod(Snu, diagnu %*% W) 
-      ## Old code - slightly slower to use apply rather than loop over mis.
-      ## Cpp implementation.
-      H <- H + w[l] * getW2(A, VY, VlY, W, nu)
-    }
-    delta.new <- delta + solve(H, c(S)) # H is actually the information, oops.
-  }else{
-    mu <- exp(eta)
-    loglam <- log(lambda_appx(mu, nu, xi))
-    logZ <- logZ_c(loglam, nu, xi)
-    # Expected value and variances.
-    YlY <- E_YlY(loglam, logZ, nu, xi)
-    lY <- E_lY(loglam, logZ, nu, xi)
-    VY <- V_Y(loglam, logZ, nu, xi)
-    VlY <- V_lY(loglam, logZ, nu, lY, xi)
-    A <- YlY - mu * lY
-    Snu <- A * (Y - mu) / VY - lgamma(Y + 1) + lY
-    S <- crossprod(Snu, diagnu %*% W)
-    H <- getW2(A, VY, VlY, W, nu)
-    delta.new <- delta + solve(H, S) # H is information, not hessian -- oops.
-  }
-  
-  list(
-    Score = S,
-    Hessian = H   # Actually the information.
-  )
-  
-}
-
-
 # Calculating the log-likelihood ------------------------------------------
-log.lik <- function(Omega, dmats, b, delta, surv, sv, l0u, l0i, summax){
+log.lik <- function(Omega, dmats, b, surv, sv, l0u, l0i){
   # joint density - REs; Marginal ll of Y(s) added to f(T_i,\Delta_i|...).
   Y <- dmats$Y; X <- dmats$X; Z <- dmats$Z; lY <- lapply(Y, lfactorial); 
   W <- dmats$W
   
   beta <- Omega$beta; D <- Omega$D; zeta <- Omega$zeta; gamma <- Omega$gamma
-  delta <- Omega$delta
+  phi <- Omega$phi
   S <- sv$S; SS <- sv$SS; Delta <- surv$Delta
   Fu <- sv$Fu; Fi <- sv$Fi; 
   q <- dmats$q; w <- dmats$w; P <- dmats$p; n <- surv$n
   
   #' f(Y|...; Omega)
-  ll.cmp <- mapply(function(Y, lY, X, Z, W, b, summax){
+  ll.GP1 <- mapply(function(Y, X, Z, b){
     mu <- exp(X %*% beta + Z %*% b)
-    nu <- exp(W %*% delta)
-    loglam <- log(lambda_appx(mu, nu, summax))
-    logZ <- logZ_c(loglam, nu, summax)
-    ll_cmp(loglam, nu, logZ, Y, lY)
-  }, Y = Y, lY = lY, X = X, Z = Z, W =W, b = b, summax = summax)
+    ll_genpois(mu, phi, Y)
+  }, Y = Y, X = X, Z = Z, b = b)
   
   #' f(T, Delta|...; Omega)
   ll.ft <- mapply(function(S, SS, Fi, Fu, b, Delta, l0i, l0u){
@@ -296,7 +227,7 @@ log.lik <- function(Omega, dmats, b, delta, surv, sv, l0u, l0i, summax){
   
   #' log likelihood.
   ll.b <- mapply(function(b) mvtnorm::dmvnorm(b, sigma = D, log = T), b = b)
-  ll <- sum(ll.cmp + ll.ft + ll.b)
+  ll <- sum(ll.GP1 + ll.ft + ll.b)
   
   # Number of observations
   N <- sum(sapply(Y, length))
@@ -316,114 +247,16 @@ log.lik <- function(Omega, dmats, b, delta, surv, sv, l0u, l0i, summax){
             df = df, df.residual = df.residual)
 }
 
-# Wrapper for minimisation of f(Y|.) wrt b --------------------------------
-b.minimise <- function(b, X, Y, lY, Z, W, S, SS, Fi, Fu, l0i, l0u, Delta, 
-                       Omega, summax, method = 'optim', obj = 'joint_density', Hessian = 'grad', Hessian.epsilon){
-  if(!obj%in%c('joint_density', 'marginal')) 
-    stop("'obj' must be either the 'joint_density' or the 'marginal' Y|~CMP(.).\n")
-  if(!method%in%c('optim', 'bobyqa'))
-    stop("'method' must be either 'optim' or 'bobyqa'.\n")
-  if(!Hessian%in%c('grad', 'obj'))
-    stop("'Hessian' must be either 'grad' (forward differencing on gradient function) or 'obj' (forward differencing on objective function).")
-  
-  beta <- Omega$beta; D <- Omega$D; gamma <- Omega$gamma; zeta <- Omega$zeta; delta <- Omega$delta
-  
-  if(obj == 'joint_density'){
-    if(method == 'optim'){
-      b.hat <- mapply(function(b, X, Y, lY, Z, W, S, SS, Fi, Fu, l0i, l0u, Delta, summax){
-        optim(b, joint_density, joint_density_ddb,
-              X = X, Y = Y, lY = lY, Z = Z, W = W, beta = beta, delta = delta, D = D,
-              S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-              gamma = gamma, zeta = zeta, summax = summax, method = 'BFGS', hessian = F)$par
-      }, b = b, X = X, Y = Y, lY = lY, Z = Z, W = W, S = S, SS = SS, Fi = Fi, Fu = Fu,
-      l0i = l0i, l0u = l0u, Delta = Delta, summax = summax, SIMPLIFY = F)
-    }else{
-      b.hat <- mapply(function(b, X, Y, lY, Z, W, S, SS, Fi, Fu, l0i, l0u, Delta, summax){
-        nloptr::bobyqa(b, joint_density,
-                       X = X, Y = Y, lY = lY, Z = Z, W = W, beta = beta, delta = delta, D = D,
-                       S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-                       gamma = gamma, zeta = zeta, summax = summax)$par
-      }, b = b, X = X, Y = Y, lY = lY, Z = Z, W = W, S = S, SS = SS, Fi = Fi, Fu = Fu,
-      l0i = l0i, l0u = l0u, Delta = Delta, summax = summax, SIMPLIFY = F)
-    }
-    
-    #' Calculate the inverse of the second derivative of the negative log-likelihood ----
-    if(Hessian == 'obj'){
-      Sigma <- mapply(function(b, X, Y, lY, Z, W, S, SS, Fi, Fu, l0i, l0u, Delta, summax){
-        out <- solve(H_joint_density(b = b, X = X, Y = Y, lY = lY, Z = Z, W = W, beta = beta, delta = delta, D = D,
-                              S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-                              gamma = gamma, zeta = zeta,
-                              summax = summax, eps = Hessian.epsilon))
-        if(det(out) <= 0 && Hessian.epsilon != .Machine$double.eps^(1/3)){ 
-          # 1/4 __SHOULD__ work majoirty of time; fail-safe coded in case it doesn't.
-          out <- solve(H_joint_density(b = b, X = X, Y = Y, lY = lY, Z = Z, W = W, beta = beta, delta = delta, D = D,
-                                       S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-                                       gamma = gamma, zeta = zeta,
-                                       summax = summax, eps = .Machine$double.eps^(1/3)))
-        }
-        out
-      }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, W = W, S = S, SS = SS, Fi = Fi, Fu = Fu,
-      l0i = l0i, l0u = l0u, Delta = Delta, summax = summax, SIMPLIFY = F)
-    }else{
-      Sigma <- mapply(function(b, X, Y, lY, Z, W, S, SS, Fi, Fu, l0i, l0u, Delta, summax){
-        solve(joint_density_sdb(b = b, X = X, Y = Y, lY = lY, Z = Z, W = W, beta = beta, delta = delta, D = D,
-                                S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
-                                gamma = gamma, zeta = zeta, summax = summax, eps = Hessian.epsilon))
-      }, b = b.hat, X = X, Y = Y, lY = lY, Z = Z, W = W, S = S, SS = SS, Fi = Fi, Fu = Fu,
-      l0i = l0i, l0u = l0u, Delta = Delta, summax = summax, SIMPLIFY = F)
-    }
-    
-    
-  }
-  
-  list(
-    b.hat = b.hat,
-    Sigma = if(obj == 'joint_density') Sigma else NULL
-  )
-  
-}
-
 #' ########################################################################
 # Misc functions ----------------------------------------------------------
 #' ########################################################################
 
-.safevar <- function(x) ifelse(length(x)>1, var(x, na.rm =T), 1)
-.summax <- function(x) ceiling(max(x) + 20 * sqrt(.safevar(x)))
 .any <- function(x, f) any(f(x))
 
 plot.stepmat <- function(fit){
   plot(fit$stepmat, type = 'o', col = 'blue', ylab = 'Time (s)', xlab = 'Iteration #', pch = 20,
        main = paste0("EM took ", round(fit$EMtime + fit$postprocess.time, 2), 's'))
 }
-
-plot.delta.inits <- function(fit, show.medians = F, show.means = F){
-  
-  # Extract delta info
-  x <- fit$modelInfo$delta.init
-  s <- x$subject.estimates
-  # Make 'cut' object
-  cuts <- s[round(abs(s), 3) < 2 & !is.na(s)]
-  
-  # Densities and plot limits
-  d1 <- density(s); d2 <- density(cuts)
-  xlims <- c(min(d1$x, d2$x), max(d1$x, d2$x))
-  ylims <- c(min(d1$y, d2$y), max(d1$y, d2$y))
-  
-  # The plot
-  plot(d1, main = '', xlab = expression(delta), xlim = xlims, ylim = ylims)
-  lines(d2, col = 'red')
-  
-  # (optional vertical lines)
-  if(show.means)
-    abline(v = c(x$mean.estimate, x$mean.cut.estimate), col = c('black', 'red'))
-  if(show.medians)
-    abline(v = c(x$median.estimate, x$median.cut.estimate), col = c('black', 'red'))
-  
-  # The legend
-  legend('topleft', col = c('black', 'red'), lty = c(1, 1),
-         legend = c('No cuts', 'Cuts'), bty = 'n')
-}
-
 
 # Tabulate summary --------------------------------------------------------
 
@@ -434,14 +267,14 @@ my.summary <- function(myfit, printD = F){
   # Model fit info
   K <- 1
   responses <- myfit$modelInfo$forms$response
-  families <- "mean parameterised Conway-Maxwell Poisson"
+  families <- "Generalised Poisson"
   # Standard errors and parameter estimates.
   SE <- myfit$SE
   D <- myfit$co$D
   betas <- myfit$co$beta
   sigmas <- unlist(myfit$co$sigma)
   gammas <- myfit$co$gamma
-  delta <- myfit$co$delta
+  phi <- myfit$co$phi
   zetas <- myfit$co$zeta
   
   #' Random effects matrix
@@ -452,9 +285,9 @@ my.summary <- function(myfit, printD = F){
   }
   
   beta <- setNames(c(betas), row.names(betas))
-  my <- c(beta, delta)
+  my <- c(beta, phi)
   
-  rSE <- SE[grepl('^beta|^delta', names(SE))]
+  rSE <- SE[grepl('^beta|^phi', names(SE))]
   lb <- my - qz * rSE; ub <- my + qz * rSE
   z <- my/rSE
   p <- 2 * (pnorm(abs(z), lower.tail = F))

@@ -75,7 +75,7 @@ adj.ll <- logLik(a) + coxph(Surv(survtime, status) ~ bin, data= test$surv.data, 
 # Mini simulation study, to be appraised in parse.R
 rm(list=ls())
 source('EM.R')
-data <- replicate(100, simData_joint2(n = 250, delta = c(.6, -.1), 
+data <- replicate(100, simData_joint2(n = 250, delta = c(1., -.1), 
                                       ntms = 10, theta = c(-2, .1), fup = 3,
                                       beta = c(2, -0.1, 0.1, -0.2), gamma = 0.6, zeta= c(0.0, -0.2),
                                       D = matrix(c(0.25, 0, 0, 0.05), 2, 2))$data
@@ -105,6 +105,6 @@ for(i in 1:100){
   fits[[i]] <- ff
   utils::setTxtProgressBar(pb, i)
 }
-save(fits, file = '/data/c0061461/14oct22/global_intslope.RData')
+save(fits, file = '/data/c0061461/14oct22/global_intslope2.RData')
 
 

@@ -13,6 +13,14 @@ using namespace arma;
 // 	return sum(out);
 // }
 
+// Specifically for obtaining pmf in simulations --------------------------
+// [[Rcpp::export]]
+double GP1_pmf_scalar(double mu, double & phi, double & Y){
+  double L = mu * pow(mu + phi* Y, Y - 1.) * exp(-(mu+phi*Y)/(1.+phi)) / (pow(1. + phi, Y) * tgamma(Y + 1.));
+  vec LL = vec(1, fill::value(L));
+  LL.replace(datum::inf, 1e100);
+  return as_scalar(LL);
+}
 
 // Log-likelihoods.
 // GP1 from Zamani & Ismail (2012)
@@ -23,6 +31,9 @@ double ll_genpois(vec& mu, double & phi, vec& Y){
   vec out = log(mu) + (Y - 1.) % log(mu + phi * Y) - lgamma(Y + 1.) - Y * log(1. + phi) - frac;
   return sum(out);
 }
+
+
+
  
 // log f(T_i, \Delta_i|\b; \Omega).
 // [[Rcpp::export]]
@@ -46,11 +57,9 @@ double joint_density(vec& b, mat& X, vec& Y, mat& Z,vec& beta, double & phi,
                      int Delta, double gamma, vec& zeta){
   // Define mu, nu
   vec mu = exp(X * beta + Z * b);
-  
   // Consituent parts.
   double ll_GP =   ll_genpois(mu, phi, Y);
   double ll_surv = logfti(b, S, SS, Fi, Fu, l0i, haz, Delta, gamma, zeta);
-  
   int q = b.size();
   return -1. * (ll_GP + as_scalar(-(double)q/2.0 * log2pi - 0.5 * log(det(D)) - 0.5 * b.t() * D.i() * b) + ll_surv);
 }
@@ -127,7 +136,7 @@ vec joint_density_sdb(vec& b, mat& X, vec& Y, mat& Z,vec& beta, double & phi,
 List phi_update(vec& b, mat& X, vec& Y, mat& Z,vec& beta, double & phi,
                 vec& w, vec& v, vec& tau){
   int gh = w.size();
-  double rhs = sum(Y)/(1.+phi), Score = 0., Hess = 0.;
+  double rhs = sum(Y)/(1.+phi), lhs = sum(Y)/(pow(1.+phi,2.)), Score = 0., Hess = 0.;
   vec eta = X * beta + Z * b;
   for(int l = 0; l < gh; l++){
     vec eta_l = eta + tau * v[l];
@@ -139,5 +148,80 @@ List phi_update(vec& b, mat& X, vec& Y, mat& Z,vec& beta, double & phi,
       (2. * (Y - mu))/(pow(phi + 1., 3.)) - (square(Y) % (Y - 1.))/(square(mu + phi * Y))
     );
   }
-  return List::create(_["Score"] = Score - rhs, _["Hessian"] = rhs + Hess);
+  return List::create(_["Score"] = Score - rhs, _["Hessian"] = lhs + Hess);
 }
+
+// Survival pair (gamma, zeta) ----------------------------
+
+// Define the conditional expectation
+double Egammazeta(vec& gammazeta, vec& b, mat& Sigma,
+                  rowvec& S, mat& SS, mat& Fu, rowvec& Fi, vec& haz, int Delta, vec& w, vec& v){
+  double g = as_scalar(gammazeta.head(1)); // gamma will always be scalar and the first element
+  vec z = gammazeta.subvec(1, gammazeta.size() - 1);  // with the rest of the vector constructed by zeta
+  // determine tau
+  vec tau = pow(g, 2.0) * diagvec(Fu * Sigma * Fu.t());
+  double rhs = 0.0;
+  for(int l = 0; l < w.size(); l++){
+    rhs += w[l] * as_scalar(haz.t() * exp(SS * z + Fu * (g * b) + v[l] * pow(tau, 0.5)));
+  }
+  return as_scalar(Delta * (S * z + Fi * (g * b)) - rhs);
+}
+
+// Score AND Hessian via forward differencing.
+// [[Rcpp::export]]
+vec Sgammazeta(vec& gammazeta, vec& b, mat& Sigma,
+               rowvec& S, mat& SS, mat& Fu, rowvec& Fi, vec& haz, int Delta, vec& w, vec& v, long double eps){
+  vec out = vec(gammazeta.size());
+  double f0 = Egammazeta(gammazeta, b, Sigma, S, SS, Fu, Fi, haz, Delta, w, v);
+  for(int i = 0; i < gammazeta.size(); i++){
+    vec ge = gammazeta;
+    double xi = std::max(ge[i], 1.0);
+    ge[i] = gammazeta[i] + xi * eps;
+    double fdiff = Egammazeta(ge, b, Sigma, S, SS, Fu, Fi, haz, Delta, w, v) - f0;
+    out[i] = fdiff/(ge[i]-gammazeta[i]);
+  }
+  return out;
+}
+// [[Rcpp::export]]
+mat Hgammazeta(vec& gammazeta, vec& b, mat& Sigma,
+               rowvec& S, mat& SS, mat& Fu, rowvec& Fi, vec& haz, int Delta, vec& w, vec& v, long double eps){
+  mat out = zeros<mat>(gammazeta.size(), gammazeta.size());
+  vec f0 = Sgammazeta(gammazeta, b, Sigma, S, SS, Fu, Fi, haz, Delta, w, v, eps);
+  for(int i = 0; i < gammazeta.size(); i++){
+    vec ge = gammazeta;
+    double xi = std::max(ge[i], 1.0);
+    ge[i] = gammazeta[i] + xi * eps;
+    vec fdiff = Sgammazeta(ge, b, Sigma, S, SS, Fu, Fi, haz, Delta, w, v, eps) - f0;
+    out.col(i) = fdiff/(ge[i]-gammazeta[i]);
+  }
+  return 0.5 * (out + out.t());
+}
+
+// Baseline hazard \lambda_0 ------------------------
+// [[Rcpp::export]]
+mat lambdaUpdate(List survtimes, mat& ft, double gamma, vec& zeta,
+                 List S, List Sigma, List b, vec& w, vec& v){
+  int gh = w.size(), id = b.size();
+  mat store = zeros<mat>(ft.n_rows, id);
+  for(int i = 0; i < id; i++){
+    vec survtimes_i = survtimes[i];
+    mat Sigma_i = Sigma[i];
+    vec b_i = b[i];
+    rowvec S_i = S[i];
+    for(int j = 0; j < survtimes_i.size(); j++){
+      rowvec Fst = ft.row(j);
+      double tau = as_scalar(pow(gamma, 2.0) * Fst * Sigma_i * Fst.t());
+      vec rhs = gamma * b_i; //vec(b_i.size());
+      double mu = as_scalar(exp(S_i * zeta + Fst * rhs));
+      for(int l = 0; l < gh; l++){
+        store(j, i) += as_scalar(w[l] * mu * exp(v[l] * sqrt(tau)));
+      }
+    }
+  }
+  return store;
+}
+
+
+/* *****
+ * End *
+ * *****/

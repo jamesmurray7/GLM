@@ -5,7 +5,7 @@
 
 rm(list=ls())
 data.dir <- '/data/c0061461/14oct22/'
-load(paste0(data.dir, 'global_intslope2.RData'))
+load(paste0(data.dir, 'global_intslope_genpois.RData'))
 
 
 # Plot parameter estimates ------------------------------------------------
@@ -16,13 +16,13 @@ library(tidyr)
 # Set out true values
 true.value <- data.frame(
   parameter = names(fits[[1]]$SE),
-  true = c(.25, 0, .05, 2, -0.1, 0.1, -0.2, 1., -.1, .6, -.2)
+  true = c(.25, 2, -0.1, 0.1, -0.2, -0.5, .6, -.2)
 )
 
 # Collate all fitted objects...
 ests <- as.data.frame(do.call(rbind, lapply(fits, function(x){
   co <- x$coeffs
-  setNames(c(co$D[lower.tri(co$D, T)], c(co$beta), c(co$delta), co$gamma, co$zeta),
+  setNames(c(co$D[lower.tri(co$D, T)], c(co$beta), c(co$phi), co$gamma, co$zeta),
            names(x$SE))
 })))
 
@@ -39,13 +39,13 @@ ests %>%
   facet_wrap(~parameter, scales = 'free') + 
   theme_bw()
 
-ggsave('/data/c0061461/sept-29-sims/parameter_estimates.png')
+ggsave('/data/c0061461/14oct22/genpois_parameter_estimates.png')
 
 # Parameter coverage ------------------------------------------------------
 qz <- qnorm(.975)
 CP <- colSums(do.call(rbind, lapply(fits, function(x){
   co <- x$coeffs; se <- x$SE
-  est <- setNames(c(co$D[lower.tri(co$D, T)], c(co$beta), c(co$delta), co$gamma, co$zeta),
+  est <- setNames(c(co$D[lower.tri(co$D, T)], c(co$beta), c(co$phi), co$gamma, co$zeta),
            names(se))
   lb <- est - qz * se; ub <- est + qz * se
   lb <= true.value$true & ub >= true.value$true

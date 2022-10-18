@@ -14,18 +14,18 @@ rgenpois <- function(mu, phi){
   for(j in 1:n){
     ans <- 0;
     rand <- runif(1)
-    kum <- exp(ll_genpois(mu[j], phi, 0))
+    kum <- GP1_pmf_scalar(mu[j], phi, 0)
     while(rand > kum){
       ans <- ans + 1
       # message(ans)
-      kum <- kum + exp(ll_genpois(mu[j], phi, ans))
+      kum <- kum + GP1_pmf_scalar(mu[j], phi, ans)
     }
     out[j] <- ans
   }
   out
 }
 
-simData_joint <- function(n = 250, ntms = 10, summax = 100,  fup = 3, 
+simData_joint <- function(n = 250, ntms = 10, fup = 3, 
                           beta = c(2, -0.1, 0.1, -0.2),               # (int, time, cont, bin)
                           phi = -0.5,
                           D = matrix(c(0.25, 0, 0, 0.00), 2, 2), 

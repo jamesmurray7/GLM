@@ -1,6 +1,6 @@
 #' ####
 #' inits.R // Initial conditions for longitudinal and survival sub-models
-#'                   for poisson (univariate currently) sub-model.
+#'                   for poisson sub-model.
 #' ####
 
 
@@ -17,7 +17,7 @@ Longit.inits <- function(long.formula, disp.formula, data, genpois.inits){
     beta <- glmmTMB::fixef(fit)$cond
     names(beta) <- paste0('beta', '_', names(beta))
     
-    delta.init <- NULL
+    phi.init <- NULL
   }else{ # Else fit with generalised poisson
     fit <- suppressWarnings(glmmTMB(long.formula, data, family = genpois,
                    dispformula = disp.formula))
@@ -26,8 +26,8 @@ Longit.inits <- function(long.formula, disp.formula, data, genpois.inits){
     names(beta) <- paste0('beta', '_', names(beta))
     
     #' Dispersion is characterised as -{cmp disp}
-    delta.init <- -1 * glmmTMB::fixef(fit)$disp
-    delta.init <- setNames(delta.init, paste0('delta_', names(delta.init)))
+    phi.init <- exp(glmmTMB::fixef(fit)$disp/2) - 1
+    phi.init <- setNames(phi.init, paste0('phi_', names(phi.init)))
   }
   
   D <- glmmTMB::VarCorr(fit)$c$id; dimD <- dim(D)
@@ -47,49 +47,9 @@ Longit.inits <- function(long.formula, disp.formula, data, genpois.inits){
     D.init = D,
     sigma.init = sigma,
     b = b,
-    delta.init = delta.init
+    phi.init = phi.init
   )
 }
-
-# Dispersion --------------------------------------------------------------
-source('disp_inits.R')
-get.delta.inits <- function(dmats, beta, b, method, summax = NULL, verbose = F, min.profile.length = 1, max.val){
-  
-  #' Data objects ----
-  X <- dmats$X; Y <- dmats$Y; Z <- dmats$Z # Longitudinal data matrices
-  G <- dmats$G                             # Dispersion data matrix
-  N <- length(b)
-  
-  if(is.null(summax)) summax <- ceiling(max(sapply(Y, max)) * 2) else summax <- summax
-  mus <- mapply(function(X, Z, b) exp(X %*% beta + Z %*% b), X = X, Z = Z, b = b)
-  
-  if(verbose) message('Obtaining initial estimate for dispersion parameter delta...\n')
-  a <- proc.time()[3]
-  if(method == 'bobyqa'){
-    raw <- find.deltas.bobyqa(Y, G, mus, summax, verbose, min.profile.length)
-  }else{
-    raw <- find.deltas.optim(Y, G, mus, summax, verbose, min.profile.length)  
-  }
-  b <- proc.time()[3]
-  
-  # Adding to discount instances where estimate doesn't at all move.
-  o <- raw[round(abs(raw), 3) < max.val & !is.na(raw)]
-  
-  
-  # Return
-  list(
-    subject.estimates = raw,
-    median.estimate = median(raw, na.rm = T),
-    mean.estimate = mean(raw, na.rm = T),
-    median.cut.estimate = median(o),
-    mean.cut.estimate = mean(o),
-    IQR.estimates = IQR(raw, na.rm = T),
-    sd.estimates = sd(raw, na.rm = T),
-    time = round(b - a,3)
-  )
-  
-}
-
 
 # Survival Inits ----------------------------------------------------------
 # Getting data into time1/time2 format...
@@ -126,11 +86,8 @@ TimeVarCox <- function(data, b, ph, formulas){
   ss3 <- ss3[!duplicated.matrix(ss3), ]
   
   # Create gamma variable
-  lhs <- .ToRanefForm(ss3[,'time1'], formulas$random, q) #sapply(1:q, function(i) ss3[, 'time1']^(i-1))
+  lhs <- .ToRanefForm(ss3[,'time1'], formulas$random, q) 
   gamma <- unname(rowSums(lhs * b[ss3$id,]))
-  # gamma2 <- lhs * ss3[,(4:(3+q))]
-  # gamma <- unname(rowSums(lhs * rhs))
-
   # And join on ...
   ss3 <- cbind(ss3, gamma)
   # Update this to deal with ties too?
