@@ -1,0 +1,1 @@
+Version of generalised poisson which matches with that implemented in glmmTMB (i think).

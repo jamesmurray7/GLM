@@ -1,0 +1,1 @@
+Version of generalised poisson so-called "GP-1". See reference in cpp file.
