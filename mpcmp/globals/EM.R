@@ -153,7 +153,7 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = NULL, po
   if(genpois.inits){
     delta <- inits.long$delta.init
   }else{
-    delta <- setNames(rep(0, dmats$w), dmats$nw)
+    delta <- setNames(rep(0, dmats$w), paste0('delta_', dmats$nw))
   }
   
   #' Unpack control args ----
