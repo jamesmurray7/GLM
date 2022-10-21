@@ -43,7 +43,7 @@ fit2a <- EM(long.formula = Y~ time+ cont + bin + (1|id),
             disp.formula = ~1,
             surv.formula = Surv(survtime, status) ~ cont + bin,
             genpois.inits = F,
-            data = test2, control = list(verbose = T),
+            data = test2, control = list(verbose = T, min.profile.length = 1),
             optim.control = list(Hessian = 'grad', eps = 1e-3), 
             individual.summax = T)
 
@@ -51,7 +51,7 @@ fit2a <- EM(long.formula = Y~ time+ cont + bin + (1|id),
 fit2b <- EM(long.formula = Y~ time+ cont + bin + (1|id),
             disp.formula = ~1,
             surv.formula = Surv(survtime, status) ~ cont + bin,
-            data = test2, control = list(verbose = T),
+            data = test2, control = list(verbose = T, min.profile.length = 1),
             genpois.inits = T,
             optim.control = list(Hessian = 'grad', eps = 1e-3), 
             individual.summax = T)
@@ -60,8 +60,8 @@ fit2b <- EM(long.formula = Y~ time+ cont + bin + (1|id),
 fit2c <- EM(long.formula = Y~ time+ cont + bin + (1|id),
             disp.formula = ~1,
             surv.formula = Surv(survtime, status) ~ cont + bin,
-            data = test2, control = list(verbose = T),
-            genpois.inits = F,
+            data = test2, control = list(verbose = T, min.profile.length = 1),
+            genpois.inits = T,
             optim.control = list(Hessian = 'grad', eps = 1e-3), 
             individual.summax = T, summax.fn = max, min.summax = 10)
 
@@ -82,3 +82,21 @@ fit2g <- EM(long.formula = Y ~ time+ cont + bin + (1|id),
             surv.formula = Surv(survtime, status) ~ cont + bin,
             data = test2, control = list(verbose = T, debug = T), genpois.inits = T) # Runs decently well.
 
+#my.summary(fit2g)
+# Y (Generalised Poisson)
+# Estimate    SE   2.5%  97.5% p-value
+# beta_(Intercept)    0.520 0.043  0.436  0.604   0.000
+# beta_time           0.048 0.006  0.035  0.060   0.000
+# beta_cont           0.075 0.031  0.014  0.135   0.015
+# beta_bin           -0.123 0.060 -0.241 -0.005   0.041
+# phi_(Intercept)    -0.396 0.000 -0.396 -0.395   0.000
+# 
+# Event-time sub-model: 
+#   Estimate    SE   2.5%  97.5% p-value
+# zeta_cont    0.030 0.111 -0.188  0.248   0.789
+# zeta_bin    -0.527 0.171 -0.863 -0.191   0.002
+# gamma        0.246 0.268 -0.279  0.771   0.359
+# 
+# Elapsed times as follows (3 iterations):
+#   startup time                EM time        post processing Total computation time 
+# 3.111                  0.918                  0.300                  4.436 

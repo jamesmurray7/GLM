@@ -104,7 +104,12 @@ createDataMatrices <- function(data, formulas){
    }) 
   }
   
-  list(X = X, Y = Y, Z = Z)
+  list(X = X, Y = Y, Z = Z,
+       P = sapply(X[[1]], ncol),
+       q = sapply(Z[[1]], ncol),
+       np = lapply(X[[1]], colnames),
+       nq = lapply(Z[[1]], colnames)
+       )
 }
 
 # Survival objects --------------------------------------------------------
@@ -287,6 +292,12 @@ my.summary <- function(myfit, printD = F){
   gammas <- myfit$co$gamma
   zetas <- myfit$co$zeta
   
+  # Log-likelihood
+  #' Print loglikelihood
+  cat(.print.loglik(myfit))
+  cat('\n')
+  
+  
   #' Random effects matrix
   if(printD){
     cat(paste0('Random effects variance-covariance matrix: \n'))
@@ -428,28 +439,67 @@ log.lik <- function(coeffs, dmats, b, surv, sv, l0u, l0i, gamma.rep, beta.inds, 
   Y <- dmats$Y; X <- dmats$X; Z <- dmats$Z
   beta <- coeffs$beta; D <- coeffs$D; sigma <- coeffs$sigma; zeta <- coeffs$zeta
   S <- sv$S; SS <- sv$SS; Delta <- surv$Delta
-  Fu <- sv$Fu; Fi <- sv$Fi; 
+  Fu <- sv$Fu; Fi <- sv$Fi
 
-  #' "Full" joint density ----
-  ll1 <- mapply(function(Y, X, Z, b, S, SS, Fu, Fi, Delta, l0i, l0u){
-    joint_density(b = b, Y = Y, X = X, Z = Z, beta = beta, D = D, sigma = sigma, family = family, 
-                  Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS, Fu = Fu, haz = l0u, gamma_rep = gamma.rep, zeta = zeta,
-                  beta_inds = beta.inds, b_inds = b.inds, K = K) * -1
-  }, Y = Y, X = X, Z = Z, b = b, S = S, SS = SS, Fu = Fu, Fi = Fi, Delta = Delta, l0i = l0i, l0u = l0u)
+  #' f(Y|b; \Omega) + f(T|\Omega) + f(\b|D)
+  #' f(Y|b; \Omega)
+  llY <- mapply(function(Y, X, Z, b){
+    sapply(1:K, function(k){
+      f <- family[[k]]
+      eta <- X[[k]] %*% beta[beta.inds[[k]]] + Z[[k]] %*% b[b.inds[[k]]]
+      switch(f,
+             gaussian = out <- dnorm(Y[[k]], eta, sqrt(sigma[[k]]), T),
+             poisson = out <- dpois(Y[[k]], exp(eta), T),
+             binomial = out <- dbinom(Y[[k]], 1, plogis(eta), T),
+             negative.binomial = out <- negbin_ll(Y[[k]], eta, sigma[[k]]))
+      sum(out)
+    })
+  }, Y = Y, X = X, Z = Z, b = b)
+  
+  llT <- mapply(function(S, SS, l0i, l0u, Delta){
+    temp <- 0
+    if(Delta == 1) temp <- log(l0i)
+    temp + Delta * S %*% zeta - crossprod(l0u, exp(SS %*% zeta))
+  }, S = S, SS = SS, l0i = l0i, l0u = l0u, Delta = Delta)
+  
+  llb <- mapply(function(b) mvtnorm::dmvnorm(b, sigma = D, log = T), b = b)
+  
+  llY <- if(K > 1) colSums(llY) else llY
+  out <- sum(llY + llT + llb)
+  
+  # ll1 <- mapply(function(Y, X, Z, b, S, SS, Fu, Fi, Delta, l0i, l0u){
+  #   joint_density(b = b, Y = Y, X = X, Z = Z, beta = beta, D = D, sigma = sigma, family = family, 
+  #                 Delta = Delta, S = S, Fi = Fi, l0i = l0i, SS = SS, Fu = Fu, haz = l0u, gamma_rep = rep(0, length(gamma.rep)), zeta = zeta,
+  #                 beta_inds = beta.inds2, b_inds = b.inds2, K = K) * -1
+  # }, Y = Y, X = X, Z = Z, b = b, S = S, SS = SS, Fu = Fu, Fi = Fi, Delta = Delta, l0i = l0i, l0u = l0u)
   
   #' Only the joint density associated with REs ----
-  ll2 <- mapply(function(b) dmvnrm_arma_fast(t(b), rep(0, q), D), b = b)
+  #   ll2 <- mapply(function(b) dmvnrm_arma_fast(t(b), rep(0, q), D), b = b)
   #' Calculate the marginal ll of the Yks and the survival density.
-  out <- sum(ll1 - ll2)
+  # out <- sum(ll1)# - ll2)
   
   #' Calculate AIC and BIC
   N <- sum(colSums(do.call(rbind, lapply(Y, function(y) sapply(y, length)))))
-  P <- sum(sapply(1:K, function(k) ncol(X[[1]][[k]]) - 1))
-  Ps <- ncol(S[[1]])
-  df <- P + Ps + 2 * K + (q * (q + 1)/2)
+  # P <- dmats$P
+  # Ps <- ncol(S[[1]])
+  # df <- P + Ps + 2 * K + (q * (q + 1)/2)
   
-  attr(out, 'df') <- df; attr(out, 'N') <- N
-  attr(out, 'AIC') <- -2 * c(out) + 2 * df
-  attr(out, 'BIC') <- -2 * c(out) + log(N) * df
-  out
+  df <- sum(dmats$P) + length(vech(D)) +                                   # Fixed effects + D terms,
+        sum(unlist(family) %in% c('gaussian', 'negative.binomial')) +      # Dispersion terms,
+        K + ncol(S[[1]])                                                   # K gammas, ncol(S) zetas.
+  
+  df.residual <- N - (df + sum(dim(do.call(rbind, b))))                    # DF - num. REs
+  
+  structure(out,
+            'df' = df, 'df.residual' = df.residual,
+            'AIC' = -2 * out + 2 * df,
+            'BIC' = -2 * out + log(N) * df)
 }
+
+.print.loglik <- function(fit){
+  ll <- fit$logLik
+  df <- attr(ll, 'df')
+  aic <- attr(ll, 'AIC')
+  cat(sprintf("logLik: %.3f (df: %d), AIC: %.3f\n", ll, df, aic))
+}
+
