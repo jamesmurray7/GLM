@@ -1,8 +1,7 @@
 rm(list=ls())
 #' Case study: Underdispersed low counts...
-setwd('~/Documents/GLMM/mpcmp/globals')
+# setwd('~/Documents/GLMM/mpcmp/globals')
 source('EM.R')
-
 
 test1 <- simData_joint2(delta = c(1.35, 0.0), D = matrix(c(.2, 0,0,0),2,2))$data
 quantile(with(test1, tapply(Y, id, var))/with(test1, tapply(Y, id, mean)),na.rm=T)
@@ -18,14 +17,16 @@ hist(test1$Y, breaks = 5)  # roughly in [0,5]
 hist(test2$Y, breaks = 10) # roughly in [0,10)
 par(mfrow=c(1,1))
 
+a <- glmmTMB(Y~ time+ cont + bin + (1|id), test1, poisson)
 
 # 'Standard' // Genpois inits dont appear to work too well for lower counts...
 fit1a <- EM(long.formula = Y~ time+ cont + bin + (1|id),
             disp.formula = ~1,
             surv.formula = Surv(survtime, status) ~ cont + bin,
-            data = test1, control = list(verbose = T),
+            data = test1, control = list(verbose = T,
+                                         min.profile.length=1), # note this 
             optim.control = list(Hessian = 'grad', eps = 1e-3), 
-            individual.summax = T)
+            individual.summax = T, min.summax = 30)
 
 # Place all on lower summax -> can we speed up fit?
 fit1b <- EM(long.formula = Y~ time+ cont + bin + (1|id),
