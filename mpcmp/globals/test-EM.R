@@ -24,6 +24,10 @@ fit <- EM(long.formula, disp.formula, surv.formula,
           individual.summax = T,
           summax.fn = function(y) 2 * max(y))
 
+setwd('../../genpois/')
+source('EM.R')
+fit.gp <- EM(long.formula, disp.formula, surv.formula, data = data,
+             genpois.inits = T, control = list(verbose = T))
 
 # Time-varying
 rm(list=ls())
