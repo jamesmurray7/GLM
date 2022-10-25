@@ -11,7 +11,7 @@ surv.formula <- Surv(survtime, status) ~ bin
 disp.formula <- ~1
 genpois.inits <- T
 delta.update.quad <- beta.update.quad <- T
-optimiser.arguments <- optim.control <- list(optimiser = 'optim', Hessian = 'grad', eps = 1e-3)
+# optimiser.arguments <- optim.control <- list(optimiser = 'optim', Hessian = 'grad', eps = 1e-3)
 individual.summax <- T
 summax.fn <- NULL
 min.summax <- 20
@@ -19,20 +19,11 @@ control <- list(verbose = T)
 
 fit <- EM(long.formula, disp.formula, surv.formula, 
           data, control = list(verbose = T), 
-          optim.control = optim.control, 
-          genpois.inits = genpois.inits,
+          optim.control = list(reltol = .Machine$double.eps^(1/7)),
+          genpois.inits = F,
           individual.summax = T,
           summax.fn = function(y) 2 * max(y))
 
-sdat <- test$surv.data
-svpart <- coxph(Surv(survtime, status) ~ bin, data = sdat)
-coxph(Surv(survtime, status) ~ bin, data= sdat, init = c(fit$coeffs$zeta), 
-      control=coxph.control(iter.max = 0))$loglik[2]
-fit$logLik
-(a <- glmmTMB(long.formula, data, family = genpois()))
-adj.ll <- logLik(a) + coxph(Surv(survtime, status) ~ bin, data= sdat, init = c(fit$coeffs$zeta), 
-                  control=coxph.control(iter.max = 0))$loglik[2]
--2 * adj.ll + (attr(logLik(a), 'df') + 1) * 2
 
 # Time-varying
 rm(list=ls())

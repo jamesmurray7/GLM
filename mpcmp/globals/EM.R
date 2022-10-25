@@ -17,18 +17,30 @@ source('inits.R')
 vech <- function(x) x[lower.tri(x, T)]
 
 EMupdate <- function(Omega, X, Y, lY, Z, W, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0, 
-                     sv, w, v, n, m, summax, debug, optimiser.arguments, inds.met, delta.update.quad,
+                     sv, w, v, n, m, summax, debug, optim.control, inds.met, delta.update.quad,
                      beta.update.quad, ww){
   s <- proc.time()[3]
   #' Unpack Omega, the parameter vector
   D <- Omega$D; beta <- Omega$beta; delta <- Omega$delta; gamma <- Omega$gamma; zeta <- Omega$zeta
   
   #' Find b.hat and Sigma
-  b.update <- b.minimise(b, X, Y, lY, Z, W, S, SS, Fi, Fu, l0i, l0u, Delta, 
-                         Omega, summax, method = optimiser.arguments$optimiser, 
-                         obj = 'joint_density', Hessian = optimiser.arguments$Hessian, Hessian.eps = optimiser.arguments$eps)
-  b.hat <- b.update$b.hat
-  Sigma <- b.update$Sigma
+  b.update <- mapply(function(b, X, Y, lY, Z, W, S, SS, Fi, Fu, l0i, l0u,
+                              Delta, summax){
+    optim(b, joint_density, joint_density_ddb,
+          X = X, Y = Y, lY = lY, Z = Z, W = W, beta = beta, delta = delta, D = D,
+          S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
+          gamma = gamma, zeta = zeta, summax = summax, method = 'BFGS', hessian = T,
+          control = optim.control)
+  }, b = b, X = X, Y = Y, lY = lY, Z = Z, W = W, S = S, SS = SS, Fi = Fi, Fu = Fu,
+     l0i = l0i, l0u = l0u, Delta = Delta, summax = summax, SIMPLIFY = F)
+  b.hat <- lapply(b.update, el, 1)
+  Sigma <- lapply(b.update, function(x) solve(x$hessian))
+  
+  # b.update <- b.minimise(b, X, Y, lY, Z, W, S, SS, Fi, Fu, l0i, l0u, Delta, 
+  #                        Omega, summax, method = optimiser.arguments$optimiser, 
+  #                        obj = 'joint_density', Hessian = optimiser.arguments$Hessian, Hessian.eps = optimiser.arguments$eps)
+  # b.hat <- b.update$b.hat
+  # Sigma <- b.update$Sigma
   
   if(debug){DEBUG.b.hat <<- b.hat; DEBUG.Sigma <<- Sigma}
   check <- sapply(Sigma, det)
@@ -187,11 +199,6 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = NULL, po
   inds.not <- which(sapply(Y, function(y) length(unique(y))) <= min.profile.length)
   (criteria.met <- sprintf("%.2f%%", length(inds.met)/n*100))
   
-  #' Set default optimiser arguments if _not_ specified.                      By default we...
-  if(is.null(optim.control$optimiser)) optim.control$optimiser <- 'optim'             # Use optim by default (BFGS).
-  if(is.null(optim.control$Hessian))   optim.control$Hessian <- 'obj'                 # Appraise 2nd deriv on objective function (not grad).
-  if(is.null(optim.control$eps))       optim.control$eps <- .Machine$double.eps^(1/4) # Usual for fd.
-  
   #' Initial conditions --> survival... ----
   inits.surv <- TimeVarCox(data, do.call(rbind, b), surv$ph, formulas)
   # Survival data objects ...
@@ -275,11 +282,17 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = NULL, po
     message('\nCalculating SEs...')
     start.time.p <- proc.time()[3]
     #' Calculating \b and \Sigma at MLEs
-    b.update <- b.minimise(b, X, Y, lY, Z, W, S, SS, Fi, Fu, l0i, l0u, Delta, 
-                           Omega, summax, method = optim.control$optimiser, obj = 'joint_density', 
-                           Hessian = optim.control$Hessian, optim.control$eps)
-    b <- b.update$b.hat
-    Sigma <- b.update$Sigma
+    b.update <- mapply(function(b, X, Y, lY, Z, W, S, SS, Fi, Fu, l0i, l0u,
+                                Delta, summax){
+      optim(b, joint_density, joint_density_ddb,
+            X = X, Y = Y, lY = lY, Z = Z, W = W, beta = beta, delta = delta, D = D,
+            S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta,
+            gamma = gamma, zeta = zeta, summax = summax, method = 'BFGS', hessian = T,
+            control = optim.control)
+    }, b = b, X = X, Y = Y, lY = lY, Z = Z, W = W, S = S, SS = SS, Fi = Fi, Fu = Fu,
+    l0i = l0i, l0u = l0u, Delta = Delta, summax = summax, SIMPLIFY = F)
+    b <- lapply(b.update, el, 1)
+    Sigma <- lapply(b.update, function(x) solve(x$hessian))
     
     # The Information matrix
     I <- structure(vcov(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, n, summax,
