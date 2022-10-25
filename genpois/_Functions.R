@@ -211,10 +211,11 @@ log.lik <- function(Omega, dmats, b, surv, sv, l0u, l0i){
   q <- dmats$q; w <- dmats$w; P <- dmats$p; n <- surv$n
   
   #' f(Y|...; Omega)
-  ll.GP1 <- mapply(function(Y, X, Z, b){
+  ll.GP1 <- mapply(function(Y, X, Z, W, b){
     mu <- exp(X %*% beta + Z %*% b)
-    ll_genpois(mu, phi, Y)
-  }, Y = Y, X = X, Z = Z, b = b)
+    phiv <- W %*% phi
+    ll_genpois(mu, phiv, Y)
+  }, Y = Y, X = X, Z = Z, W = W, b = b)
   
   #' f(T, Delta|...; Omega)
   ll.ft <- mapply(function(S, SS, Fi, Fu, b, Delta, l0i, l0u){
@@ -258,6 +259,13 @@ plot.stepmat <- function(fit){
        main = paste0("EM took ", round(fit$EMtime + fit$postprocess.time, 2), 's'))
 }
 
+.print.loglik <- function(fit){
+  ll <- fit$logLik
+  df <- attr(ll, 'df')
+  aic <- attr(ll, 'AIC')
+  cat(sprintf("logLik: %.3f (df: %d), AIC: %.3f\n", ll, df, aic))
+}
+
 # Tabulate summary --------------------------------------------------------
 
 my.summary <- function(myfit, printD = F){
@@ -268,6 +276,13 @@ my.summary <- function(myfit, printD = F){
   K <- 1
   responses <- myfit$modelInfo$forms$response
   families <- "Generalised Poisson"
+  cat(paste0(responses, ' (', families, ')\n'))
+  
+  # Log-likelihood
+  #' Print loglikelihood
+  cat(.print.loglik(myfit))
+  cat('\n')
+  
   # Standard errors and parameter estimates.
   SE <- myfit$SE
   D <- myfit$co$D
@@ -292,9 +307,10 @@ my.summary <- function(myfit, printD = F){
   z <- my/rSE
   p <- 2 * (pnorm(abs(z), lower.tail = F))
   
-  cat(paste0(responses, ' (', families, ')\n'))
+  
   this.out <- setNames(data.frame(.to3dp(my), .to3dp(rSE), .to3dp(lb), .to3dp(ub), round(p, 3)),
                        c('Estimate', 'SE', '2.5%', '97.5%', 'p-value'))
+  cat("Fixed effects:\n")
   print(this.out)
   cat('\n')
   
@@ -318,10 +334,8 @@ my.summary <- function(myfit, printD = F){
   cat(sprintf('\nElapsed times as follows (%d iterations):\n', myfit$iter))
   print(.to3dp(myfit$elapsed.time))
   
-  #' Optimiser info
-  cat('\n')
-  a <- myfit$modelInfo$optim
-  cat(sprintf('Optimiser used: %s, Hessian appraised: %s with epsilon %s.\n', a[1], a[2], a[3]))
+  
+  
   invisible(1+1)
 }
 

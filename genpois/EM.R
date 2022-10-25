@@ -21,36 +21,14 @@ EMupdate <- function(Omega, X, Y, Z, W, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0,
   s <- proc.time()[3]
   #' Unpack Omega, the parameter vector
   D <- Omega$D; beta <- Omega$beta; phi <- Omega$phi; gamma <- Omega$gamma; zeta <- Omega$zeta
-  qb <- mvtnorm::qmvnorm(.975, mean = 0, sigma = D, tail = 'lower.tail')$quantile
+  # qb <- mvtnorm::qmvnorm(.975, mean = 0, sigma = D, tail = 'lower.tail')$quantile
   
-  #' Find b.hat and Sigma
-  # b.hat <- mapply(function(b, X, Y, Z, S, SS, Fi, Fu, l0i, l0u, Delta){
-  #   optim(b, joint_density, joint_density_ddb,
-  #         X = X, Y = Y, Z = Z, beta = beta, phi = phi, D = D, S = S, SS = SS, Fi = Fi, 
-  #         Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta, gamma = gamma, zeta = zeta,
-  #         method = 'BFGS', hessian = F)$par
-  # }, b = b, X = X, Y = Y, Z = Z,  S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, l0u = l0u, Delta = Delta,
-  #   SIMPLIFY = F)
-  
-  # for(i in 1:n){
-  #   message(i)
-  #   optim(b[[i]], joint_density, NULL,
-  #         X = X[[i]], Y = Y[[i]], Z = Z[[i]], beta = beta, phi = phi, D = D, S = S[[i]], SS = SS[[i]], Fi = Fi[[i]], 
-  #         Fu = Fu[[i]], l0i = l0i[[i]], haz = l0u[[i]], Delta = Delta[[i]], gamma = gamma, zeta = zeta, method = 'BFGS')
-  # }
-  # 
-  # Sigma <- mapply(function(b, X, Y, Z, S, SS, Fi, Fu, l0i, l0u, Delta){
-  #   solve(joint_density_sdb(b = b, X = X, Y = Y, Z = Z, beta = beta, phi = phi, D = D, S = S, SS = SS, Fi = Fi, 
-  #                     Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta, gamma = gamma, zeta = zeta))
-  # }, b = b.hat, X = X, Y = Y, Z = Z,  S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, l0u = l0u, Delta = Delta,
-  #    SIMPLIFY = F)
-  
-  b.hat <- mapply(function(b, X, Y, Z, S, SS, Fi, Fu, l0i, l0u, Delta){
+  b.hat <- mapply(function(b, X, Y, Z, W, S, SS, Fi, Fu, l0i, l0u, Delta){
     optim(b, joint_density, joint_density_ddb,
-          X = X, Y = Y, Z = Z, beta = beta, phi = phi, D = D, S = S, SS = SS, Fi = Fi, 
+          X = X, Y = Y, Z = Z, W = W, beta = beta, phi = phi, D = D, S = S, SS = SS, Fi = Fi, 
           Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta, gamma = gamma, zeta = zeta,
           method = 'BFGS', hessian = T)
-  }, b = b, X = X, Y = Y, Z = Z,  S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, l0u = l0u, Delta = Delta,
+  }, b = b, X = X, Y = Y, Z = Z,  W = W, S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, l0u = l0u, Delta = Delta,
   SIMPLIFY = F)
   Sigma <- lapply(b.hat, function(x) solve(x$hessian))
   b.hat <- lapply(b.hat, function(x) x$par)
@@ -70,6 +48,7 @@ EMupdate <- function(Omega, X, Y, Z, W, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0,
   #' #########
   
   tau <- mapply(function(Z, S) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), S = Sigma, Z = Z, SIMPLIFY = F)
+  phivec <- mapply(function(W) W %*% phi, W = W, SIMPLIFY = F)
   
   # D
   D.update <- mapply(function(Sigma, b) Sigma + tcrossprod(b), Sigma = Sigma, b = b.hat, SIMPLIFY = F)
@@ -85,9 +64,9 @@ EMupdate <- function(Omega, X, Y, Z, W, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0,
     # }, b = b.hat, X = X, Z = Z, W = W, Y = Y, lY = lY, tau = tau, summax = summax, SIMPLIFY = F)
     stop('beta.update.quad = T not yet implemented!')
   }else{                #' Taken **without** quadrature
-    beta.update <- mapply(function(b, X, Y, Z){
-      long_derivs(b = b, X = X, Y = Y, Z = Z, beta = beta, phi = phi, design = X)
-    }, b = b.hat, X = X, Y = Y, Z = Z, SIMPLIFY = F)
+    beta.update <- mapply(function(b, X, Y, Z, phivec){
+      long_derivs(b = b, X = X, Y = Y, Z = Z, beta = beta, phi = phivec, design = X)
+    }, b = b.hat, X = X, Y = Y, Z = Z, phivec = phivec, SIMPLIFY = F)
     Sb <- lapply(beta.update, el, 1)
     Hb <- lapply(beta.update, el, 2)
   }
@@ -95,10 +74,10 @@ EMupdate <- function(Omega, X, Y, Z, W, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0,
   # \phi
   phi.updates <- lapply(1:n, function(i){ # (All-in-one function!)
     if(include.all){
-      return(phi_update(b.hat[[i]], X[[i]], Y[[i]], Z[[i]], beta, phi,
+      return(phi_update(b.hat[[i]], X[[i]], Y[[i]], Z[[i]], W[[i]], beta, phi,
                         w, v, tau[[i]]))
     }else if(i %in% inds.met){
-      return(phi_update(b.hat[[i]], X[[i]], Y[[i]], Z[[i]], beta, phi,
+      return(phi_update(b.hat[[i]], X[[i]], Y[[i]], Z[[i]], W[[i]], beta, phi,
                         w, v, tau[[i]]))
     }else{
       return(list(Score = rep(0, ww), Hessian = matrix(0, ww, ww))) # No contribution.
@@ -147,7 +126,7 @@ EMupdate <- function(Omega, X, Y, Z, W, b, S, SS, Fi, Fu, l0i, l0u, Delta, l0,
     l0 = l0.new, l0u = l0u.new, l0i = as.list(l0i.new),  # ---""---
     b = b.hat,                                           #   REs.
     t = round(e-s,3)
-  ) #-> update
+  ) -> update
   
 }
 
@@ -178,7 +157,7 @@ EM <- function(long.formula, disp.formula = ~1, surv.formula, data, summax = NUL
   if(genpois.inits){
     phi <- inits.long$phi
   }else{
-    phi <- setNames(rep(0, dmats$w), dmats$nw)
+    phi <- setNames(rep(0, dmats$w), paste0('phi_', dmats$nw))
   }
   
   #' Unpack control args ----
@@ -285,12 +264,12 @@ EM <- function(long.formula, disp.formula = ~1, surv.formula, data, summax = NUL
     message('\nCalculating SEs...')
     start.time.p <- proc.time()[3]
     #' Calculating \b and \Sigma at MLEs
-    b <- mapply(function(b, X, Y, Z, S, SS, Fi, Fu, l0i, l0u, Delta){
+    b <- mapply(function(b, X, Y, Z, W, S, SS, Fi, Fu, l0i, l0u, Delta){
       optim(b, joint_density, joint_density_ddb,
-            X = X, Y = Y, Z = Z, beta = beta, phi = phi, D = D, S = S, SS = SS, Fi = Fi, 
+            X = X, Y = Y, Z = Z, W = W, beta = beta, phi = phi, D = D, S = S, SS = SS, Fi = Fi, 
             Fu = Fu, l0i = l0i, haz = l0u, Delta = Delta, gamma = gamma, zeta = zeta,
             method = 'BFGS', hessian = T)
-    }, b = b, X = X, Y = Y, Z = Z,  S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, l0u = l0u, Delta = Delta,
+    }, b = b, X = X, Y = Y, Z = Z,  W = W, S = S, SS = SS, Fi = Fi, Fu = Fu, l0i = l0i, l0u = l0u, Delta = Delta,
     SIMPLIFY = F)
     Sigma <- lapply(b, function(x) solve(x$hessian))
     b <- lapply(b, function(x) x$par)

@@ -3,7 +3,9 @@
 #' survival sub-model by its random effects, which are assumed to be Gaussian.
 #' ----
 #' Bespoke functions to find pmf of, and then simulate random deviates from 
-#' "GP-1" pmf
+#' "GP-1" pmf which characterises its dispersion by (1 + phi)^2. 
+#' phi can therefore be a vector (i.e. one value repeated ('global')) or time-varying.
+#' This is captured by phi = c(x,y) -> y = 0 if global only, {x,y} specified for bidispersion.
 #' #######
 
 # Taken from
@@ -14,11 +16,11 @@ rgenpois <- function(mu, phi){
   for(j in 1:n){
     ans <- 0;
     rand <- runif(1)
-    kum <- GP1_pmf_scalar(mu[j], phi, 0)
+    kum <- GP1_pmf_scalar(mu[j], phi[j], 0)
     while(rand > kum){
       ans <- ans + 1
       # message(ans)
-      kum <- kum + GP1_pmf_scalar(mu[j], phi, ans)
+      kum <- kum + GP1_pmf_scalar(mu[j], phi[j], ans)
     }
     out[j] <- ans
   }
@@ -27,7 +29,7 @@ rgenpois <- function(mu, phi){
 
 simData_joint <- function(n = 250, ntms = 10, fup = 3, 
                           beta = c(2, -0.1, 0.1, -0.2),               # (int, time, cont, bin)
-                          phi = -0.5,
+                          phi = c(-0.25, -0.05),                      # (int, time)
                           D = matrix(c(0.25, 0, 0, 0.00), 2, 2), 
                           gamma = 0.6, zeta = c(0.00, -0.20), theta = c(-2, 0.10),
                           cens.rate = exp(-3.5), diff.tol = 6){
@@ -72,11 +74,12 @@ simData_joint <- function(n = 250, ntms = 10, fup = 3,
   
   # Design matrices 
   X <- model.matrix(~ time + cont + bin, data = df)
-  Z <- model.matrix(~ time, data = df)
+  Z <- W <- model.matrix(~ time, data = df)
   
   #' Simulate CMP response //
   eta <- X %*% beta + rowSums(Z * b[df$id, ]) # Linear predictor
   mu <- exp(eta)                              # Mean 
+  phi <- W %*% phi                            # Dispersion
   
   Y <- vector('list', n)
   pb <- utils::txtProgressBar(max = n, style = 3)
@@ -84,7 +87,7 @@ simData_joint <- function(n = 250, ntms = 10, fup = 3,
     ind <- which(df$id==i)
     biggest.abs.diff <- 100
     while(biggest.abs.diff > diff.tol){
-      yy <- rgenpois(mu[ind], phi)
+      yy <- rgenpois(mu[ind], phi[ind])
       if(length(yy) > 1) biggest.abs.diff <- max(abs(diff(yy))) else biggest.abs.diff <- 0
     }
     Y[[i]] <- yy
@@ -93,8 +96,10 @@ simData_joint <- function(n = 250, ntms = 10, fup = 3,
   }
   df$Y <- do.call(c, Y)
   
-  df$Y <- do.call(c, Y)
   cat('\n')
   list(data = df, 
        surv.data =  dplyr::distinct(df, id, survtime, status, cont, bin))
 }
+
+#glmmTMB(Y~time+cont+bin+(1|id), d$data, genpois, dispformula = ~time)->a
+#exp(fixef(a)$disp/2)-1

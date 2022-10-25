@@ -52,27 +52,27 @@ vcov <- function(Omega, dmats, surv, sv, Sigma, b, l0u, w, v, n, include.all,
   sD <- sapply(1:nrow(vech.indices), sDi)
   sD <- lapply(1:nrow(sD), function(x) sD[x, ]) # Cast to list
   
-  #' Score for the dispersion parameter(s), \delta 
+  #' Score for the dispersion parameter(s), \delta and score for the fixed effects, \beta 
+  phivec <- mapply(function(W) W %*% phi, W = W, SIMPLIFY = F)
   tau <- mapply(function(Z, S) unname(sqrt(diag(tcrossprod(Z %*% S, Z)))), S = Sigma, Z = Z, SIMPLIFY = F)
-  #' Score for the fixed effects, \beta 
-  # Score for fixed effects (beta)
+  
   if(beta.update.quad){
     Sb <- mapply(function(b, X, Z, W, Y, lY, tau, summax){
       Sbeta2(beta, b, X, Z, W, Y, lY, delta, tau, w, v, summax)
     }, b = b, X = X, Z = Z, W = W, Y = Y, lY = lY, tau = tau, summax = summax, SIMPLIFY = F)
   }else{
-    Sb <- mapply(function(b, X, Y, Z){
-      long_derivs(b = b, X = X, Y = Y, Z = Z, beta = beta, phi = phi, design = X)$grad
-    }, b = b, X = X, Y = Y, Z = Z, SIMPLIFY = F)
+    Sb <- mapply(function(b, X, Y, Z, phivec){
+      long_derivs(b = b, X = X, Y = Y, Z = Z, beta = beta, phi = phivec, design = X)$grad
+    }, b = b, X = X, Y = Y, Z = Z, phivec = phivec, SIMPLIFY = F)
   }
   
   # Information of subject-specific dispersion parameter
   Sp <- lapply(1:n, function(i){ 
     if(include.all){
-      return(phi_update(b[[i]], X[[i]], Y[[i]], Z[[i]], beta, phi,
-                        w, v, tau[[i]])$Score)
+      return(phi_update(b[[i]], X[[i]], Y[[i]], Z[[i]], W[[i]], beta, phi,
+                        w=w, v=v, tau[[i]])$Score)
     }else if(i %in% inds.met){
-      return(phi_update(b[[i]], X[[i]], Y[[i]], Z[[i]], beta, phi,
+      return(phi_update(b[[i]], X[[i]], Y[[i]], Z[[i]], W[[i]], beta, phi,
                         w, v, tau[[i]])$Score)
     }else{
       return(rep(0, dmats$w)) # No contribution.
