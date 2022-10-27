@@ -28,11 +28,3 @@ double dgamma_(const vec& Y,
 }
 
 // [[Rcpp::export]]
-vec log_dgamma(const vec &x, const double &shape, const vec &scale) {
-  uword n = x.n_rows;
-  vec out(n);
-  for (uword i = 0; i < n; ++i) {
-    out.at(i) = R::dgamma(x.at(i), shape, scale.at(i), 1);
-  }
-  return out;
-}
