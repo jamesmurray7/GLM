@@ -269,11 +269,12 @@ EM <- function(long.formula, disp.formula, surv.formula, data, summax = NULL, po
     max.val = max.val,
     delta.update.quad = delta.update.quad,
     beta.update.quad = beta.update.quad,
+    min.profile.length = min.profile.length,
     summax.fn = summax.fn,
     min.summax = min.summax
   )
   
-  modelInfo$optimHess <- c(optimiser = optim.control$optimiser, Hessian = optim.control$Hessian, epsilon = optim.control$eps)
+  modelInfo$optimControl <- optim.control
   out$modelInfo <- modelInfo
   out$hazard <- cbind(ft = sv$ft, haz = l0, nev = sv$nev)
   out$stepmat <- cbind(iter = 1:iter, time = step.times)
