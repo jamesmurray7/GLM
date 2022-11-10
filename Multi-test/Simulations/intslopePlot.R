@@ -6,6 +6,25 @@ source('Simulations/funs.R')
 theme_set(theme_bw())
 dataDir <- paste0(getwd(), '/Simulations/fits')
 
+# Function to create med[iqr] to compare
+make.et.summary <- function(et){
+  et %>%
+    pivot_longer(K1:K3) %>% 
+    group_by(method, name) %>%
+    summarise(avg_time = median(value, na.rm = T),
+              p25 = quantile(value, probs = .25, na.rm = T),
+              p75 = quantile(value, probs = .75, na.rm = T),
+              .groups = 'keep') %>% ungroup %>%
+    mutate(across(avg_time:p75, ~ format(round(.x, 2), nsmall = 2))) %>%
+    mutate(out = paste0(avg_time, ' [', p25, ', ', p75, ']')) %>%
+    select(method, name, out) %>%
+    pivot_wider(id_cols = method, names_from = name, values_from = out) %>%
+    as.data.frame() %>%
+    xtable %>%
+    print(., include.rownames = T)
+}
+
+
 # Plotting elapsed times --------------------------------------------------
 #' Gaussian
 rm(list = ls()[grepl('fit',ls())])
@@ -42,20 +61,26 @@ inj.times <- data.frame(method = 'INLAjoint',
 
 elapsed.times <- rbind(aEM.times, jML.times, JMb.times, inj.times)
 
+make.et.summary(elapsed.times)
+
 elapsed.times %>% 
   pivot_longer(K1:K3, names_to = 'K', values_to = 'elapsed') %>% 
-  # mutate_at('elapsed', log10) %>% # Different to scale_y_log10?
+  mutate_at('elapsed', log10) %>% # Different to scale_y_log10?
   mutate_at('K', parse_number) %>% 
   mutate(
     s = ifelse(K == 1, '', 's'),
     K_label = paste0('K = ', K)#, ' Gaussian response', s)
   ) %>% 
-  ggplot(aes(x = K_label, y = log10(elapsed))) + 
+  filter(!(method == 'joinerRML' & elapsed > 250)) %>%
+  ggplot(aes(x = K_label, y = elapsed)) + # log10(elapsed))) + 
   geom_boxplot(outlier.alpha = .50) + 
   stat_summary(fun=median, geom="line", aes(group=1), lty = 5, alpha = .5) +
   stat_summary(fun=median, geom="point", size = 2) + 
   facet_wrap(~ method, scales = 'free_y') +
   theme_csda() + 
+  theme(
+    strip.text = element_text(vjust = 1.25) 
+  ) +
   labs(
     x = NULL, y = expression(underline(bold(Gaussian)))
   ) -> Gplot
@@ -90,6 +115,7 @@ inj.times <- data.frame(method = 'INLAjoint',
                         `K3` = do.call(c, lapply(fit3.INLA, elapsed.INLA)))
 
 elapsed.times <- rbind(aEM.times, JMb.times, inj.times)
+make.et.summary(elapsed.times)
 
 elapsed.times %>% 
   pivot_longer(K1:K3, names_to = 'K', values_to = 'elapsed') %>% 
@@ -107,7 +133,10 @@ elapsed.times %>%
   labs(
     x = NULL, y = expression(underline(bold(Poisson)))
   ) + 
-  theme_csda() -> Pplot
+  theme_csda() + 
+  theme(
+    strip.text = element_text(vjust = 1.25) 
+  ) -> Pplot
 
 #' Binomial
 rm(list = ls()[grepl('fit',ls())])
@@ -139,7 +168,7 @@ inj.times <- data.frame(method = 'INLAjoint',
                         `K3` = do.call(c, lapply(fit3.INLA, elapsed.INLA)))
 
 elapsed.times <- rbind(aEM.times, JMb.times, inj.times)
-
+make.et.summary(elapsed.times)
 elapsed.times %>% 
   pivot_longer(K1:K3, names_to = 'K', values_to = 'elapsed') %>% 
   mutate_at('K', parse_number) %>% 
@@ -155,7 +184,10 @@ elapsed.times %>%
   labs(
     x = NULL, y = expression(underline(bold(Binomial)))
   ) + 
-  theme_csda() -> Bplot
+  theme_csda() + 
+  theme(
+    strip.text = element_text(vjust = 1.25) 
+  )-> Bplot
 
 #' Combine?
 all.plots <- ggpubr::ggarrange(Gplot,Pplot,Bplot,ncol=1)
@@ -174,7 +206,7 @@ for(file in dir(dataDir, '^gaussian')){ # load in all data -> Gaussian
 # K=1
 plot.ests(fit1, fit1.jML, fit1.JMb, fit1.INLA, f = 'gaussian', K = 1)
 plot.ests(fit2, fit2.jML, fit2.JMb, fit2.INLA, f = 'gaussian', K = 2)
-plot.ests(fit3, fit3.jML, fit3.JMb, fit3.INLA, f = 'gaussian', K = 3)
+p <- plot.ests(fit3, fit3.jML, fit3.JMb, fit3.INLA, f = 'gaussian', K = 3)
 
 #' Poisson
 rm(list = ls()[grepl('fit',ls())])

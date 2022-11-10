@@ -192,15 +192,15 @@ save(fit3.jML, file =  'Simulations/fits/gaussianK-3_joineRML.RData')
 # JMbayes2 ----------------------------------------------------------------
 # K=1 JMbayes 2------------------------------------------------------------
 library(JMbayes2)
-data1 <- .loader('Simulations/data/gaussianK-1.RData')
-fit1.JMb <- vector('list', 100)
+data2 <- .loader('Simulations/data/gaussianK-2.RData')
+fit2.JMb <- vector('list', 100)
 pb <- utils::txtProgressBar(max=100,style=3)
 for(i in 1:100){
-  d <- data1[[i]]
-  fit1.JMb[[i]] <- JMbayes2fit(d, 1, 'gaussian')
+  d <- data2[[i]]
+  fit2.JMb[[i]] <- JMbayes2fit(d, 2, 'gaussian')
   utils::setTxtProgressBar(pb, i)
 }
-save(fit1.JMb, file = 'Simulations/fits/gaussianK-1_JMbayes2-2.RData')
+save(fit2.JMb, file = 'Simulations/fits/gaussianK-2_JMbayes2-2.RData')
 
 # K=2 JMbayes 2------------------------------------------------------------
   
